@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useProtoAuth } from "@/lib/proto-auth";
 
@@ -38,7 +38,7 @@ function AppleIcon() {
   );
 }
 
-export default function LoginPage() {
+function LoginInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login } = useProtoAuth();
@@ -113,7 +113,7 @@ export default function LoginPage() {
 
 
   const handleLogin = () => {
-    login({ name: "Nicki Larsen", email: "nicki@cbx.demo" });
+    login({ name: "Nicki Larsen", email: "nicki@colourbox.com" });
 
     // Demo auth flag used by gated pages (e.g. /drive)
     try {
@@ -123,7 +123,7 @@ export default function LoginPage() {
       // ignore
     }
 
-    router.replace("/home");
+    router.replace(returnTo);
   };
 
   return (
@@ -295,5 +295,13 @@ export default function LoginPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <LoginInner />
+    </Suspense>
   );
 }
