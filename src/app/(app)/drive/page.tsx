@@ -109,6 +109,42 @@ function safeJsonParse<T>(raw: string | null, fallback: T): T {
   }
 }
 
+function readLSString(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeLSString(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // ignore
+  }
+}
+
+function readLSNumber(key: string): number | null {
+  const raw = readLSString(key);
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function writeLSJson(key: string, value: unknown) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore
+  }
+}
+
+function readLSJson<T>(key: string, fallback: T): T {
+  const raw = readLSString(key);
+  return safeJsonParse(raw, fallback);
+}
+
 const demoImages = demoAssets.map((a, idx) => ({
   id: Number(a.id) || idx + 1,
   title: a.title,
@@ -236,21 +272,12 @@ export default function Page() {
     };
   }, [mounted]);
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(LS_KEYS.thumbSize);
-      const n = raw ? Number(raw) : NaN;
-      if (Number.isFinite(n) && n >= 140 && n <= 520) setThumbSize(n);
-    } catch {
-      // ignore
-    }
+    const n = readLSNumber(LS_KEYS.thumbSize);
+    if (typeof n === "number" && n >= 140 && n <= 520) setThumbSize(n);
   }, []);
   useEffect(() => {
     if (!mounted) return;
-    try {
-      window.localStorage.setItem(LS_KEYS.thumbSize, String(thumbSize));
-    } catch {
-      // ignore
-    }
+    writeLSString(LS_KEYS.thumbSize, String(thumbSize));
   }, [mounted, thumbSize]);
 
   const effectiveThumbSize = isDesktop ? thumbSize : 140;
@@ -314,62 +341,35 @@ export default function Page() {
     .join("");
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(LS_KEYS.sort);
-      if (raw && isAssetSort(raw)) {
-        setAssetSort(raw);
-      } else {
-        setAssetSort("name_asc");
-      }
-    } catch {
-      setAssetSort("name_asc");
-    }
+    const raw = readLSString(LS_KEYS.sort);
+    if (raw && isAssetSort(raw)) setAssetSort(raw);
+    else setAssetSort("name_asc");
   }, []);
 
   useEffect(() => {
     if (!mounted) return;
-    try {
-      window.localStorage.setItem(LS_KEYS.sort, assetSort);
-    } catch {
-      // ignore
-    }
+    writeLSString(LS_KEYS.sort, assetSort);
   }, [mounted, assetSort]);
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(LS_KEYS.view);
-      if (raw === "list" || raw === "grid") setAssetView(raw);
-    } catch {
-      // ignore
-    }
+    const raw = readLSString(LS_KEYS.view);
+    if (raw === "list" || raw === "grid") setAssetView(raw);
   }, []);
 
   useEffect(() => {
     if (!mounted) return;
-    try {
-      window.localStorage.setItem(LS_KEYS.view, assetView);
-    } catch {
-      // ignore
-    }
+    writeLSString(LS_KEYS.view, assetView);
   }, [mounted, assetView]);
 
   useEffect(() => {
     if (!mounted) return;
-    try {
-      const raw = window.localStorage.getItem(LS_KEYS.selectedFolder);
-      if (typeof raw === "string" && raw.length > 0) setSelectedFolder(raw);
-    } catch {
-      // ignore
-    }
+    const raw = readLSString(LS_KEYS.selectedFolder);
+    if (typeof raw === "string" && raw.length > 0) setSelectedFolder(raw);
   }, [mounted]);
 
   useEffect(() => {
     if (!mounted) return;
-    try {
-      window.localStorage.setItem(LS_KEYS.selectedFolder, selectedFolder);
-    } catch {
-      // ignore
-    }
+    writeLSString(LS_KEYS.selectedFolder, selectedFolder);
   }, [mounted, selectedFolder]);
 
   const [foldersOpen, setFoldersOpen] = useState(false);
