@@ -94,20 +94,25 @@ export default function StockAssetPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-        <div className="relative overflow-hidden rounded-2xl border border-border bg-black">
+        <div className="relative max-h-[calc(100vh-180px)] overflow-hidden rounded-2xl border border-border bg-muted/20">
           <Image
             src={imageSrc}
             alt={title}
             width={2000}
             height={1400}
             priority
-            className="w-full object-contain motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-300"
+            className="h-full w-full object-contain motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-300"
           />
-          <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/10" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-black/10" />
+          <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-black/5 dark:ring-white/10" />
         </div>
 
-        <Card className="p-4">
-          <h1 className="text-xl font-semibold leading-tight">{title}</h1>
+        <Card className="p-4 lg:sticky lg:top-24 h-fit">
+          <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+            <span>Royalty-free · Instant download</span>
+            <span className="font-medium text-foreground/80">From €{priceStandard}</span>
+          </div>
+          <h1 className="text-xl font-semibold leading-tight sm:text-2xl">{title}</h1>
           <p className="mt-1 text-sm text-muted-foreground">by Colourbox / Demo Photographer</p>
           {!loggedIn ? (
             <div className="mt-3 rounded-lg border bg-muted/40 p-3 text-sm">
@@ -165,6 +170,7 @@ export default function StockAssetPage() {
 
           <Button
             className="mt-4 w-full gap-2"
+            variant={added ? 'secondary' : 'default'}
             onClick={() => {
               addItem({
                 id: assetId,
@@ -177,7 +183,7 @@ export default function StockAssetPage() {
               window.setTimeout(() => setAdded(false), 2000);
             }}
           >
-            <ShoppingCart className="h-4 w-4" /> {added ? 'Added' : 'Add to cart'} · €{price}
+            <ShoppingCart className="h-4 w-4" /> {added ? 'Added to cart' : 'Add to cart'} · €{price}
           </Button>
 
           <Link
@@ -217,7 +223,7 @@ export default function StockAssetPage() {
             <Link
               key={a.id}
               href={`/stock/assets/${a.id}`}
-              className="group overflow-hidden rounded-lg border border-border"
+              className="group relative overflow-hidden rounded-lg bg-muted/20 ring-1 ring-black/5 transition hover:ring-black/10 dark:ring-white/10 dark:hover:ring-white/20"
             >
               <Image
                 src={getAssetImage(a) ?? fallbackImage}
@@ -226,6 +232,7 @@ export default function StockAssetPage() {
                 height={800}
                 className="aspect-square w-full object-cover transition-transform duration-300 group-hover:scale-[1.05]"
               />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/15 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
             </Link>
           ))}
         </div>
