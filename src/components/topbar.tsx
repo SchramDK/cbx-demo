@@ -273,6 +273,9 @@ export function Topbar({
   const shouldShowSwitcher = Boolean(showProductSwitcher) && !loggedIn;
   const resolvedCartCount = typeof cartCount === "number" ? cartCount : 0;
   const isBuiltInSearch = !centerSlot && shouldShowSearch;
+  const hasRightCluster = Boolean(
+    (shouldShowCart && mounted) || (showThemeToggle && mounted) || rightSlot
+  );
 
   // Mobile: show the search bar as a full-width second row
   const showMobileSearchRow = Boolean(isBuiltInSearch);
@@ -425,7 +428,7 @@ export function Topbar({
               <CartButton count={resolvedCartCount} href={cartHref} label="Open cart" />
             ) : null}
 
-            {showThemeToggle ? <ThemeToggle /> : null}
+            {showThemeToggle && mounted ? <ThemeToggle /> : null}
 
             {rightSlot ? <div className="flex items-center gap-2">{rightSlot}</div> : null}
 
@@ -500,7 +503,7 @@ export function Topbar({
 
         {/* Mobile search row */}
         {showMobileSearchRow ? (
-          <div className="col-span-2 sm:hidden">
+          <div className="sm:hidden">
             <div className="border-t border-border/60 pt-3 pb-4">
               <form
                 className="w-full"

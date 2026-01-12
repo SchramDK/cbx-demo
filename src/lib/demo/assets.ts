@@ -18,6 +18,31 @@ const withPreviewParams = (url: string, w = 1400) => {
   return `${url}${joiner}q=80&w=${w}&auto=format&fit=crop`;
 };
 
+const inferRatio = (width: number, height: number): DemoAsset['ratio'] => {
+  const r = width / height;
+
+  // target ratios
+  const targets: Array<{ key: DemoAsset['ratio']; value: number }> = [
+    { key: '3/4', value: 3 / 4 },
+    { key: '4/3', value: 4 / 3 },
+    { key: '1/1', value: 1 },
+    { key: '16/9', value: 16 / 9 },
+  ];
+
+  let best = targets[0];
+  let bestDelta = Math.abs(r - best.value);
+
+  for (const t of targets) {
+    const d = Math.abs(r - t.value);
+    if (d < bestDelta) {
+      best = t;
+      bestDelta = d;
+    }
+  }
+
+  return best.key;
+};
+
 const demoAssetsRaw = [
   {
     id: "1",
@@ -644,6 +669,7 @@ const demoAssetsRaw = [
 
 export const demoAssets: DemoAsset[] = demoAssetsRaw.map((a) => ({
   ...a,
+  ratio: inferRatio(a.width, a.height),
   preview: withPreviewParams(a.src),
 })) as DemoAsset[];
 

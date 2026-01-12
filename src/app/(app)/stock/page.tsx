@@ -20,11 +20,9 @@ type Asset = {
   url?: string;
 };
 
-const FALLBACK_IMAGE =
-  'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1200&auto=format&fit=crop';
+const getAssetImage = (asset?: Asset) => asset?.preview ?? asset?.src ?? asset?.image ?? asset?.url;
 
-const getImage = (asset: Asset) =>
-  asset.preview ?? asset.src ?? asset.image ?? asset.url ?? FALLBACK_IMAGE;
+const getImage = (asset: Asset, fallback: string) => getAssetImage(asset) ?? fallback;
 
 function Pill({ children }: { children: React.ReactNode }) {
   return (
@@ -42,13 +40,20 @@ export default function StockPage() {
   const [q, setQ] = useState('');
   const [heroIndex, setHeroIndex] = useState(0);
 
-  const featured = useMemo(() => (ASSETS as Asset[]).slice(0, 10), []);
-  const newest = useMemo(() => (ASSETS as Asset[]).slice(0, 12), []);
+  const assets = useMemo(() => ASSETS as Asset[], []);
+
+  const fallbackImage = useMemo(() => {
+    const first = assets[0];
+    return getAssetImage(first) ?? '';
+  }, [assets]);
+
+  const featured = useMemo(() => assets.slice(0, 10), [assets]);
+  const newest = useMemo(() => assets.slice(0, 12), [assets]);
 
   const heroImages = useMemo(() => {
-    const list = featured.slice(0, 6).map(getImage);
-    return list.length > 1 ? list : [FALLBACK_IMAGE, FALLBACK_IMAGE];
-  }, [featured]);
+    const list = featured.slice(0, 6).map((a) => getImage(a, fallbackImage));
+    return list.length > 1 ? list : fallbackImage ? [fallbackImage, fallbackImage] : [];
+  }, [featured, fallbackImage]);
 
   useEffect(() => {
     if (heroImages.length <= 1) return;
@@ -75,7 +80,10 @@ export default function StockPage() {
       {/* Hero */}
       <section className="relative mb-12 flex min-h-[70vh] items-center overflow-hidden">
         <div className="absolute inset-0">
-          {heroImages.map((src, idx) => (
+          {(heroImages.length
+            ? heroImages
+            : featured.slice(0, 1).map((a) => getImage(a, fallbackImage))
+          ).map((src, idx) => (
             <Image
               key={`${src}-${idx}`}
               src={src}
@@ -229,7 +237,7 @@ export default function StockPage() {
                           </div>
 
                           <Image
-                            src={getImage(a)}
+                            src={getImage(a, fallbackImage)}
                             alt={a.title}
                             fill
                             sizes="176px"
@@ -345,7 +353,7 @@ export default function StockPage() {
             >
               <div className="relative aspect-[4/3] w-full overflow-hidden">
                 <Image
-                  src={getImage(a)}
+                  src={getImage(a, fallbackImage)}
                   alt={a.title}
                   fill
                   sizes="(min-width: 1024px) 220px, (min-width: 640px) 30vw, 45vw"
@@ -407,8 +415,8 @@ export default function StockPage() {
               <div className="relative aspect-[16/9] w-full overflow-hidden">
                 <Image
                   src={getImage(
-                    (ASSETS as Asset[]).find((a) => (a.keywords ?? []).includes(c.q)) ??
-                      (featured[0] as Asset)
+                    assets.find((a) => (a.keywords ?? []).includes(c.q)) ?? featured[0],
+                    fallbackImage
                   )}
                   alt={c.title}
                   fill
@@ -453,7 +461,7 @@ export default function StockPage() {
             >
               <div className="relative aspect-[16/10] w-full overflow-hidden">
                 <Image
-                  src={getImage(a)}
+                  src={getImage(a, fallbackImage)}
                   alt={a.title}
                   fill
                   sizes="(min-width: 1024px) 260px, (min-width: 768px) 33vw, 100vw"

@@ -4,6 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
+import { ASSETS } from '@/lib/demo/assets';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
@@ -11,33 +12,28 @@ import { ArrowLeft, ShoppingCart } from 'lucide-react';
 import { useCart } from '@/lib/cart/cart-context';
 import { useProtoAuth } from '@/lib/proto-auth';
 
-const UNSPLASH_IDS = [
-  '1542291026-7eec264c27ff',
-  '1520975869018-5b8b4f87e4b4',
-  '1519681393784-d120267933ba',
-  '1482192596544-9eb780fc7f66',
-  '1500530855697-b586d89ba3ee',
-  '1520975916090-3105956dac38',
-  '1516455207990-7a41ce80f7ee',
-  '1519996529931-28324d5a630e',
-  '1489515217757-5fd1be406fef',
-  '1517487881594-2787fef5ebf7',
-] as const;
+type Asset = {
+  id: string;
+  title: string;
+  description?: string;
+  keywords?: string[];
+  tags?: string[];
+  preview?: string;
+  src?: string;
+  image?: string;
+  url?: string;
+};
 
-function getDemoAsset(id: string) {
-  const n = Math.max(1, Number(id) || 1);
-  const photoId = UNSPLASH_IDS[(n - 1) % UNSPLASH_IDS.length];
+const getAssetImage = (asset?: Asset) =>
+  asset?.preview ?? asset?.src ?? asset?.image ?? asset?.url ?? '';
 
-  return {
-    id: String(n),
-    title: `Winter Lifestyle ${n}`,
-    src: `https://images.unsplash.com/photo-${photoId}?q=80&w=2000&auto=format&fit=crop`,
-    photographer: 'Colourbox / Demo Photographer',
-    tags: ['winter', 'people', 'lifestyle'],
-    priceStandard: 9,
-    priceExtended: 29,
-  };
-}
+const pickTags = (asset?: Asset) => {
+  const fromTags = asset?.tags ?? [];
+  const fromKeywords = asset?.keywords ?? [];
+  const merged = [...fromTags, ...fromKeywords].filter(Boolean);
+  // unique
+  return Array.from(new Set(merged)).slice(0, 8);
+};
 
 export default function StockAssetPage() {
   const { id } = useParams<{ id: string }>();
@@ -46,14 +42,36 @@ export default function StockAssetPage() {
   const loggedIn = isReady && isLoggedIn;
   const { addItem } = useCart();
 
-  const asset = useMemo(() => getDemoAsset(id), [id]);
+  const assets = useMemo(() => ASSETS as Asset[], []);
+
+  const asset = useMemo(() => assets.find((a) => a.id === id), [assets, id]);
+
+  const fallbackImage = useMemo(() => getAssetImage(assets[0]) ?? '', [assets]);
+  const imageSrc = asset ? getAssetImage(asset) ?? fallbackImage : fallbackImage;
+  const title = asset?.title ?? 'Asset';
+  const tags = pickTags(asset);
+
+  const assetId = asset?.id ?? id;
+  const returnTo = `/stock/assets/${assetId}`;
+
+  const priceStandard = 9;
+  const priceExtended = 29;
   const [license, setLicense] = useState<'standard' | 'extended'>('standard');
   const [added, setAdded] = useState(false);
 
-  const price = license === 'standard' ? asset.priceStandard : asset.priceExtended;
+  const price = license === 'standard' ? priceStandard : priceExtended;
 
-  const returnTo = `/stock/assets/${asset.id}`;
   const goLogin = () => router.push(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+
+  if (!assets.length) {
+    return (
+      <main className="w-full px-4 py-6 sm:px-6 lg:px-8">
+        <div className="rounded-xl border border-border bg-muted/20 p-6 text-sm">
+          No demo assets available.
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="w-full px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
@@ -78,8 +96,8 @@ export default function StockAssetPage() {
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
         <div className="relative overflow-hidden rounded-2xl border border-border bg-black">
           <Image
-            src={asset.src}
-            alt={asset.title}
+            src={imageSrc}
+            alt={title}
             width={2000}
             height={1400}
             priority
@@ -89,8 +107,8 @@ export default function StockAssetPage() {
         </div>
 
         <Card className="p-4">
-          <h1 className="text-xl font-semibold leading-tight">{asset.title}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">by {asset.photographer}</p>
+          <h1 className="text-xl font-semibold leading-tight">{title}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">by Colourbox / Demo Photographer</p>
           {!loggedIn ? (
             <div className="mt-3 rounded-lg border bg-muted/40 p-3 text-sm">
               <div className="font-medium">Preview mode</div>
@@ -104,7 +122,7 @@ export default function StockAssetPage() {
           ) : null}
 
           <div className="mt-3 flex flex-wrap gap-2">
-            {asset.tags.map((t) => (
+            {tags.map((t) => (
               <Badge key={t} variant="secondary">
                 {t}
               </Badge>
@@ -123,7 +141,7 @@ export default function StockAssetPage() {
             >
               <div className="flex items-center justify-between">
                 <span className="font-medium">Standard license</span>
-                <span className="font-semibold">€{asset.priceStandard}</span>
+                <span className="font-semibold">€{priceStandard}</span>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">Web, social, marketing</p>
             </button>
@@ -139,7 +157,7 @@ export default function StockAssetPage() {
             >
               <div className="flex items-center justify-between">
                 <span className="font-medium">Extended license</span>
-                <span className="font-semibold">€{asset.priceExtended}</span>
+                <span className="font-semibold">€{priceExtended}</span>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">Print, ads, large distribution</p>
             </button>
@@ -149,11 +167,11 @@ export default function StockAssetPage() {
             className="mt-4 w-full gap-2"
             onClick={() => {
               addItem({
-                id: asset.id,
-                title: asset.title,
+                id: assetId,
+                title,
                 license,
                 price,
-                image: asset.src,
+                image: imageSrc,
               });
               setAdded(true);
               window.setTimeout(() => setAdded(false), 2000);
@@ -187,26 +205,29 @@ export default function StockAssetPage() {
           </button>
         </div>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {[1, 2, 3, 4].map((n) => {
-            const idx = (Number(asset.id) + n - 1) % UNSPLASH_IDS.length;
-            const src = `https://images.unsplash.com/photo-${UNSPLASH_IDS[idx]}?q=80&w=800&auto=format&fit=crop`;
-
-            return (
-              <Link
-                key={n}
-                href={`/stock/assets/${Number(asset.id) + n}`}
-                className="group overflow-hidden rounded-lg border border-border"
-              >
-                <Image
-                  src={src}
-                  alt={`Similar image ${n}`}
-                  width={800}
-                  height={800}
-                  className="aspect-square w-full object-cover transition-transform duration-300 group-hover:scale-[1.05]"
-                />
-              </Link>
-            );
-          })}
+          {(() => {
+            const idx = Math.max(0, assets.findIndex((a) => a.id === assetId));
+            const picks: Asset[] = [];
+            for (let i = 1; i <= 4; i++) {
+              const a = assets[(idx + i) % assets.length];
+              if (a) picks.push(a);
+            }
+            return picks;
+          })().map((a) => (
+            <Link
+              key={a.id}
+              href={`/stock/assets/${a.id}`}
+              className="group overflow-hidden rounded-lg border border-border"
+            >
+              <Image
+                src={getAssetImage(a) ?? fallbackImage}
+                alt={a.title}
+                width={800}
+                height={800}
+                className="aspect-square w-full object-cover transition-transform duration-300 group-hover:scale-[1.05]"
+              />
+            </Link>
+          ))}
         </div>
       </section>
     </main>
