@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useMemo, type ReactNode } from 'react';
+import { Suspense, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -22,14 +22,6 @@ function getImage(asset: Asset) {
   return (
     asset.image ||
     `https://picsum.photos/seed/${asset.id}/600/450`
-  );
-}
-
-function Chip({ children }: { children: ReactNode }) {
-  return (
-    <span className="inline-block rounded bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
-      {children}
-    </span>
   );
 }
 
@@ -92,6 +84,7 @@ function StockSearchInner() {
                   src={getImage(asset)}
                   alt={asset.title}
                   fill
+                  unoptimized
                   sizes="(min-width: 1024px) 20vw, (min-width: 640px) 33vw, 50vw"
                   className="object-cover transition-transform duration-300 group-hover:scale-105"
                 />
