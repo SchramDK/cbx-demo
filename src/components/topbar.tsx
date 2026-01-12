@@ -100,7 +100,7 @@ function applyTheme(mode: ThemeMode) {
 }
 
 function ThemeToggle() {
-  const [mode, setMode] = React.useState<ThemeMode>("system");
+  const [mode, setMode] = React.useState<ThemeMode>("dark");
 
   React.useEffect(() => {
     // Load persisted preference
@@ -110,10 +110,11 @@ function ThemeToggle() {
         setMode(saved);
         applyTheme(saved);
       } else {
-        applyTheme("system");
+        setMode("dark");
+        applyTheme("dark");
       }
     } catch {
-      applyTheme("system");
+      applyTheme("dark");
     }
 
     // React to OS theme changes when in system mode
@@ -125,9 +126,9 @@ function ThemeToggle() {
       try {
         const saved = window.localStorage.getItem("cbx_theme") as ThemeMode | null;
         const current = saved === "light" || saved === "dark" || saved === "system" ? saved : "system";
-        if (current === "system") applyTheme("system");
+        if (current === "system") applyTheme("dark");
       } catch {
-        applyTheme("system");
+        applyTheme("dark");
       }
     };
 
