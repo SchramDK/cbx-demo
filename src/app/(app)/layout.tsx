@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { Topbar } from '@/components/topbar';
 import { LeftNavigation } from '@/components/left-navigation';
@@ -12,6 +12,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { isReady, isLoggedIn, user, logout } = useProtoAuth();
+
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Never show Share landing to logged-in users (avoid routing during render)
   useEffect(() => {
@@ -51,18 +57,24 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <header
           className={`sticky top-0 z-30 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm ${withLeftNav}`}
         >
-          <Topbar
-            title={title}
-            showProductSwitcher
-            isLoggedIn={isLoggedIn}
-            user={user ?? undefined}
-            onLogin={() => router.push(`/login?returnTo=${encodeURIComponent(pathname ?? '/home')}`)}
-            onLogout={handleLogout}
-          />
+          {mounted ? (
+            <Topbar
+              title={title}
+              showProductSwitcher
+              isLoggedIn={isLoggedIn}
+              user={user ?? undefined}
+              onLogin={() =>
+                router.push(`/login?returnTo=${encodeURIComponent(pathname ?? '/home')}`)
+              }
+              onLogout={handleLogout}
+            />
+          ) : (
+            <div className="h-14" aria-hidden="true" />
+          )}
         </header>
 
         {/* Fixed left rail (md+ & logged in) */}
-        {showLeftNavigation ? <LeftNavigation /> : null}
+        {mounted && showLeftNavigation ? <LeftNavigation /> : null}
 
         {/* Content */}
         <div className={`w-full ${withLeftNav}`}>
