@@ -283,11 +283,14 @@ export function Topbar({
   const resolvedCartCount = typeof cartCount === "number" ? cartCount : cartCountFromContext;
   const isBuiltInSearch = !centerSlot && shouldShowSearch;
 
+  // Mobile: show the search bar as a full-width second row
+  const showMobileSearchRow = Boolean(isBuiltInSearch);
+
   const center = centerSlot
     ? centerSlot
     : shouldShowSearch
     ? (
-        <div className="max-w-xl w-full">
+        <div className="w-full sm:max-w-xl">
           <SearchBar
             value={onSearchChange ? (searchValue ?? "") : internalQuery}
             onChange={onSearchChange ?? setInternalQuery}
@@ -317,29 +320,13 @@ export function Topbar({
           <Link href={`/login?returnTo=${encodeURIComponent(pathname ?? '/')}`}>Log in</Link>
         </Button>
       )}
-
-      {onSignup ? (
-        <Button type="button" variant="outline" size="sm" onClick={onSignup} aria-label="Sign up">
-          Sign up
-        </Button>
-      ) : (
-        <Button
-          asChild
-          type="button"
-          variant="outline"
-          size="sm"
-          aria-label="Sign up"
-        >
-          <Link href="/signup">Sign up</Link>
-        </Button>
-      )}
     </div>
   );
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm">
-      <div className="h-16 w-full px-4 sm:px-6">
-        <div className="flex h-full items-center gap-2 sm:gap-3">
+    <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm sm:shadow">
+      <div className="w-full px-4 sm:px-6">
+        <div className="flex h-16 items-center gap-2 sm:gap-3">
           {/* Left */}
           <div className="flex shrink-0 items-center gap-3 sm:gap-4">
             {leftSlot ? <div className="flex h-10 items-center">{leftSlot}</div> : null}
@@ -408,7 +395,7 @@ export function Topbar({
             )}
           </div>
 
-          {/* Center */}
+          {/* Center (desktop) */}
           <div className="hidden min-w-0 flex-1 items-center justify-center px-1 sm:flex sm:px-3">
             <div className="w-full max-w-2xl">
               <div className="flex h-10 items-center">
@@ -430,8 +417,8 @@ export function Topbar({
           </div>
 
           {/* Right */}
-          <div className="flex shrink-0 h-10 items-center justify-end gap-2 sm:gap-3">
-            {shouldShowSearch ? (
+          <div className="flex h-10 shrink-0 items-center justify-end gap-1.5 sm:gap-3">
+            {shouldShowSearch && !showMobileSearchRow ? (
               <Button
                 type="button"
                 variant="ghost"
@@ -519,6 +506,23 @@ export function Topbar({
             )}
           </div>
         </div>
+
+        {/* Mobile search row */}
+        {showMobileSearchRow ? (
+          <div className="sm:hidden">
+            <div className="border-t border-border/60 pt-3 pb-4">
+              <form
+                className="w-full"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  submitSearch();
+                }}
+              >
+                <div className="w-full">{center}</div>
+              </form>
+            </div>
+          </div>
+        ) : null}
       </div>
     </header>
   );

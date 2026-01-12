@@ -123,7 +123,7 @@ function LoginInner() {
       // ignore
     }
 
-    router.replace(returnTo);
+    router.replace("/home");
   };
 
   return (

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ArrowRight, Search, X } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 
 import { ASSETS } from '@/lib/demo/assets';
 import { useProtoAuth } from '@/lib/proto-auth';
@@ -111,7 +111,6 @@ export default function StockPage() {
                 <div className="relative sm:flex-1">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <input
-                    autoFocus
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
                     placeholder="Search images, keywords…"
@@ -236,7 +235,7 @@ export default function StockPage() {
 
       <div className="mb-10 h-px w-full bg-border" />
 
-      {/* Featured (wireframe) */}
+      {/* Featured */}
       <div id="featured" className="mb-12 px-4 sm:px-6 lg:px-10">
         <div className="mb-4 flex items-end justify-between">
           <div>
@@ -343,7 +342,7 @@ export default function StockPage() {
 
       <div className="mb-10 h-px w-full bg-border" />
 
-      {/* New this week (wireframe) */}
+      {/* New this week */}
       <div id="new" className="mb-12 px-4 sm:px-6 lg:px-10">
         <div className="mb-4 flex items-end justify-between">
           <div>
@@ -391,10 +390,6 @@ export default function StockPage() {
         </div>
       </div>
 
-      {/* Minimal debug */}
-      <div className="px-4 pb-8 text-xs text-muted-foreground sm:px-6 lg:px-10">
-        Prototype • Assets: {(ASSETS as Asset[]).length}
-      </div>
     </div>
   );
 }
