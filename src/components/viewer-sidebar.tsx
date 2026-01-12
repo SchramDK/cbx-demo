@@ -28,6 +28,8 @@ export type AssetMeta = {
   };
 };
 
+export type ViewerTab = "info" | "comments" | "stats";
+const isViewerTab = (v: string): v is ViewerTab => v === "info" || v === "comments" || v === "stats";
 export type ViewerSidebarProps = {
   meta: AssetMeta;
   setMeta: React.Dispatch<React.SetStateAction<AssetMeta>>;
@@ -37,8 +39,8 @@ export type ViewerSidebarProps = {
   assetId: string;
 
   // Tabs
-  viewerTab: string;
-  setViewerTab: (v: string) => void;
+  viewerTab: ViewerTab;
+  setViewerTab: (v: ViewerTab) => void;
 
   // Tags
   tagInput: string;
@@ -104,6 +106,7 @@ export function ViewerSidebar(props: ViewerSidebarProps) {
   } = props;
 
   const fields = meta.fields ?? {};
+
 
   const setField = (key: keyof NonNullable<AssetMeta["fields"]>, value: string) => {
     props.setMeta((prev) => ({
@@ -219,16 +222,11 @@ export function ViewerSidebar(props: ViewerSidebarProps) {
                   e.preventDefault();
                   commit();
                 }
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  commit();
-                }
                 if (e.key === "Escape") {
                   e.preventDefault();
                   cancel();
                 }
               }}
-              onBlur={() => commit()}
             />
           ) : (
             <Input
@@ -268,7 +266,7 @@ export function ViewerSidebar(props: ViewerSidebarProps) {
 
         {editing && (
           <div className="mt-1 text-xs text-muted-foreground">
-            Enter saves • Esc cancels
+            {multiline ? "Ctrl/⌘ + Enter saves • Esc cancels" : "Enter saves • Esc cancels"}
           </div>
         )}
       </div>
@@ -277,7 +275,13 @@ export function ViewerSidebar(props: ViewerSidebarProps) {
 
   return (
     <div className="flex h-full w-full flex-col bg-background">
-      <Tabs value={viewerTab} onValueChange={setViewerTab} className="flex h-full flex-col">
+      <Tabs
+        value={viewerTab}
+        onValueChange={(v) => {
+          if (isViewerTab(v)) setViewerTab(v);
+        }}
+        className="flex h-full flex-col"
+      >
         <div className="border-b border-border px-3 py-2">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="info">Info</TabsTrigger>

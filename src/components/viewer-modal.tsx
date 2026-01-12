@@ -10,6 +10,32 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ViewerSidebar } from "@/components/viewer-sidebar";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { demoAssets } from "@/lib/demo/assets";
+
+function withUnsplashParams(src: string, params: Record<string, string | number>) {
+  try {
+    const url = new URL(src);
+    if (url.hostname !== "images.unsplash.com") return src;
+
+    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
+    url.searchParams.set("auto", url.searchParams.get("auto") ?? "format");
+    url.searchParams.set("fit", url.searchParams.get("fit") ?? "max");
+
+    return url.toString();
+  } catch {
+    return src;
+  }
+}
+
+function preloadImage(src: string) {
+  try {
+    const img = new Image();
+    img.decoding = "async";
+    img.src = src;
+  } catch {
+    // ignore
+  }
+}
 
 export type ViewerItem = {
   id: number | string;
@@ -31,9 +57,19 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+  const swipeRef = useRef({
+    active: false,
+    pointerId: -1,
+    x0: 0,
+    y0: 0,
+    t0: 0,
+  });
+  const lastTapRef = useRef<{ t: number; x: number; y: number }>({ t: 0, x: 0, y: 0 });
+  const slideRef = useRef<number | null>(null);
+  const [slide, setSlide] = useState<{ x: number; opacity: number }>({ x: 0, opacity: 1 });
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [viewerTab, setViewerTab] = useState<"info" | "comments">("info");
+  const [viewerTab, setViewerTab] = useState<"info" | "comments" | "stats">("info");
 
   const [isMobile, setIsMobile] = useState(false);
 
@@ -46,17 +82,18 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
     apply();
 
     // Safari < 14 fallback
-    // @ts-ignore
-    if (mq.addEventListener) mq.addEventListener("change", apply);
-    // @ts-ignore
-    else mq.addListener(apply);
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", apply);
+      return () => mq.removeEventListener("change", apply);
+    }
 
-    return () => {
-      // @ts-ignore
-      if (mq.removeEventListener) mq.removeEventListener("change", apply);
-      // @ts-ignore
-      else mq.removeListener(apply);
+    const legacyMq = mq as unknown as {
+      addListener?: (fn: () => void) => void;
+      removeListener?: (fn: () => void) => void;
     };
+
+    legacyMq.addListener?.(apply);
+    return () => legacyMq.removeListener?.(apply);
   }, []);
 
   const [palette, setPalette] = useState<string[]>([]);
@@ -99,14 +136,81 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
 
   // const metaKey = current ? `CBX_META_V1:${String(current.id)}` : null;
 
+  const getDemoKeywordsForAsset = (assetId: number | string): string[] => {
+    const match = demoAssets.find((a) => String(a.id) === String(assetId));
+    return Array.isArray(match?.keywords) ? match!.keywords!.filter(Boolean) : [];
+  };
+
   const endPan = () => setIsPanning(false);
+
+  const viewerSrc = useMemo(() => {
+    if (!current) return "";
+    // Large, but not huge (good for viewer)
+    return withUnsplashParams(current.src, { w: 1800, q: 85 });
+  }, [current]);
+
+  const paletteSrc = useMemo(() => {
+    if (!current) return "";
+    // Smaller variant for palette extraction (faster decode)
+    return withUnsplashParams(current.src, { w: 900, q: 80 });
+  }, [current]);
 
   const currentIndex = useMemo(() => {
     if (!current) return -1;
-    return items.findIndex((i) => i.id === current.id);
+    const cid = String(current.id);
+    return items.findIndex((i) => String(i.id) === cid);
   }, [current, items]);
 
   const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
+
+  const toggleZoom = () => {
+    setZoom((z) => {
+      const next = z <= 1 ? 2 : 1;
+      if (next === 1) {
+        setPan({ x: 0, y: 0 });
+        setIsPanning(false);
+      }
+      return next;
+    });
+  };
+
+  const runSlideTransition = (dir: "next" | "prev", go: () => void) => {
+    // Only when not zoomed
+    if (zoom > 1) {
+      go();
+      return;
+    }
+
+    const outX = dir === "next" ? -36 : 36;
+    const inX = dir === "next" ? 36 : -36;
+
+    if (slideRef.current) window.clearTimeout(slideRef.current);
+
+    // Slide out a touch
+    setSlide({ x: outX, opacity: 0.85 });
+
+    slideRef.current = window.setTimeout(() => {
+      go();
+      // Jump to the other side, then animate to center
+      setSlide({ x: inX, opacity: 0.85 });
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setSlide({ x: 0, opacity: 1 }));
+      });
+    }, 90);
+  };
+
+  useEffect(() => {
+    if (!open && slideRef.current) {
+      window.clearTimeout(slideRef.current);
+      slideRef.current = null;
+    }
+    return () => {
+      if (slideRef.current) {
+        window.clearTimeout(slideRef.current);
+        slideRef.current = null;
+      }
+    };
+  }, [open]);
 
   const rgbToHex = (r: number, g: number, b: number) => {
     const toHex = (n: number) => n.toString(16).padStart(2, "0");
@@ -248,6 +352,7 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
     setZoom(1);
     setPan({ x: 0, y: 0 });
     setIsPanning(false);
+    setSlide({ x: 0, opacity: 1 });
   };
 
   const addTag = (raw: string) => {
@@ -366,21 +471,44 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
     setZoom(1);
     setPan({ x: 0, y: 0 });
     setIsPanning(false);
-    setSidebarOpen(true);
+
+    // Desktop/tablet: open info sidebar by default
+    // Mobile: start closed (user opens via ⓘ)
+    setSidebarOpen(!isMobile);
+
+    setSlide({ x: 0, opacity: 1 });
     setViewerTab("info");
     setReplyToId(null);
     setReplyText("");
-  }, [item]);
+  }, [item, isMobile]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (isMobile) setSidebarOpen(false);
+  }, [open, isMobile]);
 
   // Load asset meta from localStorage
   useEffect(() => {
     if (!open || !current) return;
     const key = `CBX_META_V1:${String(current.id)}`;
 
+    const seedFromDemo = (id: number | string, existingTags: string[]) => {
+      if (existingTags && existingTags.length > 0) return existingTags;
+      const demo = getDemoKeywordsForAsset(id);
+      return demo.length > 0 ? Array.from(new Set(demo)) : existingTags;
+    };
+
     try {
       const raw = localStorage.getItem(key);
       if (!raw) {
-        setMeta({ tags: [], comments: [], updatedAt: new Date().toISOString() });
+        const seededTags = seedFromDemo(current.id, []);
+        const nextMeta = { tags: seededTags, comments: [], updatedAt: new Date().toISOString() };
+        setMeta(nextMeta);
+        try {
+          localStorage.setItem(key, JSON.stringify(nextMeta));
+        } catch {
+          // ignore
+        }
         setTagInput("");
         setCommentInput("");
         setReplyToId(null);
@@ -388,8 +516,10 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
         return;
       }
       const parsed = JSON.parse(raw) as Partial<AssetMeta>;
+      const parsedTags = Array.isArray(parsed.tags) ? parsed.tags.filter((t) => typeof t === "string") : [];
+      const seededTags = seedFromDemo(current.id, parsedTags);
       setMeta({
-        tags: Array.isArray(parsed.tags) ? parsed.tags.filter((t) => typeof t === "string") : [],
+        tags: seededTags,
         comments: Array.isArray(parsed.comments)
           ? parsed.comments
               .filter((c: any) => c && typeof c.text === "string")
@@ -411,8 +541,29 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
           : [],
         updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : new Date().toISOString(),
       });
+      if (parsedTags.length === 0 && seededTags.length > 0) {
+        try {
+          localStorage.setItem(
+            key,
+            JSON.stringify({
+              tags: seededTags,
+              comments: Array.isArray(parsed.comments) ? parsed.comments : [],
+              updatedAt: new Date().toISOString(),
+            })
+          );
+        } catch {
+          // ignore
+        }
+      }
     } catch {
-      setMeta({ tags: [], comments: [], updatedAt: new Date().toISOString() });
+      const seededTags = seedFromDemo(current.id, []);
+      const nextMeta = { tags: seededTags, comments: [], updatedAt: new Date().toISOString() };
+      setMeta(nextMeta);
+      try {
+        localStorage.setItem(key, JSON.stringify(nextMeta));
+      } catch {
+        // ignore
+      }
     }
 
     setTagInput("");
@@ -443,6 +594,19 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
     };
   }, [open, current, meta]);
 
+  // Preload adjacent images for snappier next/prev
+  useEffect(() => {
+    if (!open) return;
+    if (!items.length) return;
+    if (currentIndex < 0) return;
+
+    const next = items[(currentIndex + 1) % items.length];
+    const prev = items[(currentIndex - 1 + items.length) % items.length];
+
+    if (next?.src) preloadImage(withUnsplashParams(next.src, { w: 1800, q: 85 }));
+    if (prev?.src) preloadImage(withUnsplashParams(prev.src, { w: 1800, q: 85 }));
+  }, [open, items, currentIndex]);
+
   // Extract palette for the current image (requires CORS-enabled images)
   useEffect(() => {
     if (!open || !current) return;
@@ -453,7 +617,7 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
     const img = new Image();
     // Required for canvas sampling on remote images that support CORS
     img.crossOrigin = "anonymous";
-    img.src = current.src;
+    img.src = paletteSrc;
 
     img.onload = () => {
       if (cancelled) return;
@@ -478,7 +642,7 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
     return () => {
       cancelled = true;
     };
-  }, [open, current]);
+  }, [open, current, paletteSrc]);
 
   // Recenter when zooming back out
   useEffect(() => {
@@ -536,11 +700,21 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
 
   return (
     <TooltipProvider delayDuration={150}>
-      <div className="fixed inset-0 z-50 bg-background/95" onClick={onClose}>
+      <div
+        className="fixed inset-0 z-50 bg-background/95 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200 motion-reduce:animate-none"
+        onClick={() => {
+          // On mobile: close the sidebar sheet first
+          if (isMobile && sidebarOpen) {
+            setSidebarOpen(false);
+            return;
+          }
+          onClose();
+        }}
+      >
         {/* click on overlay closes; clicking inside should not */}
-        <div className="flex h-full w-full flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex h-full w-full flex-col motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-250 motion-reduce:animate-none" onClick={(e) => e.stopPropagation()}>
           {/* Top menu */}
-          <div className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-background/70 px-3 backdrop-blur sm:px-4">
+          <div className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-background/70 px-3 backdrop-blur sm:px-4 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1 motion-safe:duration-250 motion-reduce:animate-none">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button type="button" variant="ghost" className="max-w-[55vw] justify-start gap-2 rounded-full px-3 py-1">
@@ -634,28 +808,113 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
           <div
             className="relative flex min-w-0 flex-1 items-center justify-center overflow-hidden"
             onPointerDown={(e) => {
+              // Swipe (mobile, when not zoomed and sidebar is closed)
+              if (
+                isMobile &&
+                !sidebarOpen &&
+                zoom <= 1 &&
+                (e.pointerType === "touch" || e.pointerType === "pen")
+              ) {
+                swipeRef.current = {
+                  active: true,
+                  pointerId: e.pointerId,
+                  x0: e.clientX,
+                  y0: e.clientY,
+                  t0: Date.now(),
+                };
+              }
+
               if (zoom <= 1) return;
               // start panning
               setIsPanning(true);
               panStartRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
             }}
             onPointerMove={(e) => {
-              if (!isPanning || zoom <= 1) return;
-              const dx = e.clientX - panStartRef.current.x;
-              const dy = e.clientY - panStartRef.current.y;
-              setPan({ x: panStartRef.current.panX + dx, y: panStartRef.current.panY + dy });
+              if (isPanning && zoom > 1) {
+                const dx = e.clientX - panStartRef.current.x;
+                const dy = e.clientY - panStartRef.current.y;
+                setPan({ x: panStartRef.current.panX + dx, y: panStartRef.current.panY + dy });
+                return;
+              }
             }}
-            onPointerUp={endPan}
-            onPointerCancel={endPan}
-            style={{ cursor: zoom > 1 ? (isPanning ? "grabbing" : "grab") : "default" }}
+            onPointerUp={(e) => {
+              // End pan
+              if (isPanning) endPan();
+
+              // Double-tap zoom (mobile) – only when sidebar is closed
+              if (isMobile && !sidebarOpen && zoom <= 1) {
+                const now = Date.now();
+                const lt = lastTapRef.current;
+                const dtTap = now - lt.t;
+                const dxTap = e.clientX - lt.x;
+                const dyTap = e.clientY - lt.y;
+                const dist2Tap = dxTap * dxTap + dyTap * dyTap;
+
+                // If it's a quick second tap and not moving much, toggle zoom
+                if (dtTap > 0 && dtTap < 320 && dist2Tap < 18 * 18) {
+                  lastTapRef.current = { t: 0, x: 0, y: 0 };
+                  toggleZoom();
+                  return;
+                }
+
+                // Record this tap for the next one
+                lastTapRef.current = { t: now, x: e.clientX, y: e.clientY };
+              }
+
+              // Swipe navigate
+              const s = swipeRef.current;
+              if (!s.active || s.pointerId !== e.pointerId) return;
+              swipeRef.current.active = false;
+
+              if (!isMobile || zoom > 1) return;
+
+              const dx = e.clientX - s.x0;
+              const dy = e.clientY - s.y0;
+              const adx = Math.abs(dx);
+              const ady = Math.abs(dy);
+              const dt = Date.now() - s.t0;
+
+              // Heuristics: horizontal swipe, not a scroll
+              const MIN_DIST = 55;
+              const MAX_TIME = 700;
+              if (adx < MIN_DIST) return;
+              if (dt > MAX_TIME) return;
+              if (adx < ady * 1.2) return;
+
+              // dx < 0 => swipe left => next image
+              if (dx < 0) {
+                runSlideTransition("next", () => openAt(currentIndex + 1));
+              } else {
+                runSlideTransition("prev", () => openAt(currentIndex - 1));
+              }
+            }}
+            onPointerCancel={(e) => {
+              swipeRef.current.active = false;
+              endPan();
+            }}
+            onDoubleClick={(e) => {
+              e.preventDefault();
+              toggleZoom();
+            }}
+            style={{
+              cursor: zoom > 1 ? (isPanning ? "grabbing" : "grab") : "default",
+              touchAction: zoom > 1 ? "none" : "pan-y",
+            }}
           >
             <img
-              src={current.src}
+              src={viewerSrc}
               alt={current.title}
-              className="max-h-[90vh] max-w-[90vw] select-none object-contain"
+              decoding="async"
+              fetchPriority="high"
+              className="max-h-[90vh] max-w-[90vw] select-none object-contain motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-250 motion-reduce:animate-none"
               style={{
-                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-                transition: isPanning ? "none" : "transform 120ms ease-out",
+                transform: `translate(${pan.x + (zoom <= 1 ? slide.x : 0)}px, ${pan.y}px) scale(${zoom})`,
+                opacity: zoom <= 1 ? slide.opacity : 1,
+                transition: isPanning
+                  ? "none"
+                  : zoom <= 1
+                  ? "transform 180ms ease-out, opacity 180ms ease-out"
+                  : "transform 120ms ease-out",
               }}
               draggable={false}
             />
@@ -697,22 +956,18 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
               </div>
             )}
 
-            {/* Mobile hint */}
-            <div className="pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-background/80 px-4 py-2 text-sm text-foreground backdrop-blur sm:hidden">
-              Tap outside to close • ← → to navigate • ESC
-            </div>
           </div>
 
           {/* Right sidebar (desktop/tablet) */}
           {!isMobile && sidebarOpen && (
-            <aside className="h-full w-[360px] shrink-0 border-l border-border bg-background/70 backdrop-blur">
+            <aside className="h-full w-[360px] shrink-0 border-l border-border bg-background/70 backdrop-blur motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-2 motion-safe:duration-200 motion-reduce:animate-none">
               <ViewerSidebar
                 meta={meta}
                 setMeta={setMeta}
                 assetTitle={current.title}
                 assetId={String(current.id)}
                 viewerTab={viewerTab}
-                setViewerTab={(v) => setViewerTab(v as "info" | "comments")}
+                setViewerTab={setViewerTab}
                 tagInput={tagInput}
                 setTagInput={setTagInput}
                 addTag={() => addTag(tagInput)}
@@ -739,9 +994,21 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
           {/* Mobile sidebar as Sheet */}
           {isMobile && (
             <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-              <SheetContent side="right" className="w-[92vw] max-w-[360px] p-0">
-                <SheetHeader className="sr-only">
-                  <SheetTitle>Asset information</SheetTitle>
+              <SheetContent side="right" className="w-[92vw] max-w-[360px] p-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-2 motion-safe:duration-200 motion-reduce:animate-none">
+                <SheetHeader className="border-b border-border bg-background/70 px-3 py-2 backdrop-blur">
+                  <div className="flex items-center justify-between">
+                    <SheetTitle className="text-sm">Asset information</SheetTitle>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 rounded-full px-3"
+                      onClick={() => setSidebarOpen(false)}
+                      aria-label="Close sidebar"
+                    >
+                      Close
+                    </Button>
+                  </div>
                 </SheetHeader>
 
                 <div className="flex h-full flex-col bg-background/70 backdrop-blur">
@@ -751,7 +1018,7 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
                     assetTitle={current.title}
                     assetId={String(current.id)}
                     viewerTab={viewerTab}
-                    setViewerTab={(v) => setViewerTab(v as "info" | "comments")}
+                    setViewerTab={setViewerTab}
                     tagInput={tagInput}
                     setTagInput={setTagInput}
                     addTag={() => addTag(tagInput)}

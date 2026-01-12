@@ -1,39 +1,556 @@
 "use client";
 
-import { X } from "lucide-react";
+import * as React from "react";
+import { Search, X } from "lucide-react";
+import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+type SearchBarProps = {
+  value: string;
+  /** Immediate change callback (fires on every keystroke) */
+  onChange: (next: string) => void;
+  /** Optional debounced callback (fires after user stops typing) */
+  onChangeDebounced?: (next: string) => void;
+  /** Debounce delay for onChangeDebounced */
+  debounceMs?: number;
+  placeholder?: string;
+  /** Called when user presses Enter */
+  onSubmit?: (value: string) => void;
+  /**
+   * Optional suggestions provider. If provided, a dropdown will show under the input.
+   * Return up to ~8-12 items for best UX.
+   */
+  getSuggestions?: (query: string) => string[] | Promise<string[]>;
+  /** Called when a suggestion is clicked/selected */
+  onSelectSuggestion?: (value: string) => void;
+  /** Max number of suggestions to show (default 8) */
+  maxSuggestions?: number;
+  /** Minimum query length before suggestions show (default 1) */
+  minSuggestionChars?: number;
+  /** Show recent searches when the input is focused and empty (default true) */
+  showRecents?: boolean;
+  /** Max recent items to store/show (default 6) */
+  maxRecents?: number;
+  /** localStorage key for recents (default CBX_SEARCH_RECENTS_V1) */
+  recentsStorageKey?: string;
+  /** Show a search icon on the left inside the input */
+  showIcon?: boolean;
+  /** Autofocus input on mount */
+  autoFocus?: boolean;
+  /** Optional controls rendered to the right of the search input (e.g. view toggle, sort) */
+  rightSlot?: React.ReactNode;
+  /** Additional wrapper classes */
+  className?: string;
+};
 
 export function SearchBar({
   value,
   onChange,
+  onChangeDebounced,
+  debounceMs = 180,
   placeholder = "Search images, keywords, tags…",
-}: {
-  value: string;
-  onChange: (next: string) => void;
-  placeholder?: string;
-}) {
+  onSubmit,
+  getSuggestions,
+  onSelectSuggestion,
+  maxSuggestions,
+  minSuggestionChars,
+  showRecents = true,
+  maxRecents = 6,
+  recentsStorageKey = "CBX_SEARCH_RECENTS_V1",
+  showIcon = true,
+  autoFocus = false,
+  rightSlot,
+  className,
+}: SearchBarProps) {
+  const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const triggerRef = React.useRef<HTMLDivElement | null>(null);
+  const suppressOpenRef = React.useRef(false);
+  const [isFocused, setIsFocused] = React.useState(false);
+  const [popoverWidth, setPopoverWidth] = React.useState<number | undefined>(undefined);
+
+  React.useLayoutEffect(() => {
+    const el = triggerRef.current;
+    if (!el) return;
+
+    const update = () => setPopoverWidth(el.getBoundingClientRect().width);
+    update();
+
+    const ro = new ResizeObserver(() => update());
+    ro.observe(el);
+
+    return () => ro.disconnect();
+  }, []);
+
+  const [suggestions, setSuggestions] = React.useState<string[]>([]);
+  const [suggestionsOpen, setSuggestionsOpen] = React.useState(false);
+  const [suggestionsLoading, setSuggestionsLoading] = React.useState(false);
+  const [highlight, setHighlight] = React.useState<string>("");
+
+  const [recents, setRecents] = React.useState<string[]>(() => {
+    if (!showRecents) return [];
+    try {
+      const raw = window.localStorage.getItem(recentsStorageKey);
+      const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+      const list = Array.isArray(parsed)
+        ? parsed.map((x) => String(x).trim()).filter(Boolean)
+        : [];
+      return list.slice(0, Math.max(1, maxRecents));
+    } catch {
+      return [];
+    }
+  });
+
+  const selectableItems = React.useMemo(() => {
+    return value.trim().length === 0 ? recents : suggestions;
+  }, [value, recents, suggestions]);
+
+  const loadRecents = React.useCallback(() => {
+    if (!showRecents) return [];
+    try {
+      const raw = window.localStorage.getItem(recentsStorageKey);
+      const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+      const list = Array.isArray(parsed)
+        ? parsed.map((x) => String(x).trim()).filter(Boolean)
+        : [];
+      return list.slice(0, Math.max(1, maxRecents));
+    } catch {
+      return [];
+    }
+  }, [showRecents, recentsStorageKey, maxRecents]);
+
+  const persistRecents = React.useCallback(
+    (next: string[]) => {
+      if (!showRecents) return;
+      try {
+        window.localStorage.setItem(recentsStorageKey, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+    },
+    [showRecents, recentsStorageKey]
+  );
+
+  const addRecent = React.useCallback(
+    (term: string) => {
+      if (!showRecents) return;
+      const t = term.trim();
+      if (!t) return;
+      setRecents((prev) => {
+        const uniq = [t, ...prev.filter((x) => x.toLowerCase() !== t.toLowerCase())]
+          .slice(0, Math.max(1, maxRecents));
+        persistRecents(uniq);
+        return uniq;
+      });
+    },
+    [showRecents, maxRecents, persistRecents]
+  );
+
+  const clearRecents = React.useCallback(() => {
+    try {
+      window.localStorage.removeItem(recentsStorageKey);
+    } catch {
+      // ignore
+    }
+    setRecents([]);
+  }, [recentsStorageKey]);
+
+  const maxSug = maxSuggestions ?? 8;
+  const minChars = minSuggestionChars ?? 1;
+
+  // Avoid SSR/CSR mismatch: render a stable default and update after mount
+  const [primaryShortcut, setPrimaryShortcut] = React.useState("Ctrl K");
+
+  React.useEffect(() => {
+    const isMac =
+      typeof navigator !== "undefined" &&
+      /Mac|iPhone|iPad|iPod/.test(navigator.platform);
+    setPrimaryShortcut(isMac ? "⌘K" : "Ctrl K");
+  }, []);
+
+  // Debounce
+  React.useEffect(() => {
+    if (!onChangeDebounced) return;
+    const t = window.setTimeout(() => onChangeDebounced(value), debounceMs);
+    return () => window.clearTimeout(t);
+  }, [value, debounceMs, onChangeDebounced]);
+
+  React.useEffect(() => {
+    if (!getSuggestions) {
+      setSuggestions([]);
+      setSuggestionsLoading(false);
+      return;
+    }
+
+    const q = value.trim();
+    const isInputFocused =
+      typeof document !== "undefined" && document.activeElement === inputRef.current;
+
+    if (!isInputFocused || q.length < minChars) {
+      setSuggestions([]);
+      setSuggestionsLoading(false);
+
+      // Keep the popover stable on first focus when empty.
+      // We show the hint row and, if available, recent searches.
+      if (isInputFocused && q.length === 0) {
+        setSuggestionsOpen(true);
+      } else {
+        setSuggestionsOpen(false);
+      }
+
+      return;
+    }
+
+    // Open immediately so the user sees Loading/Empty states
+    if (!suppressOpenRef.current) {
+      setSuggestionsOpen(true);
+    } else {
+      // Keep closed right after selecting a suggestion
+      setSuggestionsOpen(false);
+      setSuggestions([]);
+      setSuggestionsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSuggestionsLoading(true);
+
+    const t = window.setTimeout(async () => {
+      try {
+        const res = await getSuggestions(q);
+        if (cancelled) return;
+        const cleaned = (Array.isArray(res) ? res : [])
+          .map((s) => String(s))
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .slice(0, maxSug);
+        setSuggestions(cleaned);
+        setSuggestionsOpen(true);
+      } finally {
+        if (!cancelled) setSuggestionsLoading(false);
+      }
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [value, getSuggestions, minChars, maxSug]);
+
+  React.useEffect(() => {
+    if (!suggestionsOpen) return;
+
+    if (selectableItems.length === 0) {
+      setHighlight("");
+      return;
+    }
+
+    // Keep current highlight if still present, otherwise default to first
+    if (!highlight || !selectableItems.includes(highlight)) {
+      setHighlight(selectableItems[0] ?? "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestionsOpen, selectableItems]);
+
+  React.useEffect(() => {
+    if (!autoFocus) return;
+    // next tick to avoid hydration/focus flicker
+    const t = window.setTimeout(() => inputRef.current?.focus(), 0);
+    return () => window.clearTimeout(t);
+  }, [autoFocus]);
+
+  React.useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      // Don’t steal focus when user is typing in a form field
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName?.toLowerCase();
+      const isEditable =
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select" ||
+        Boolean(el && (el as any).isContentEditable);
+
+      if (isEditable) return;
+
+      const key = e.key;
+      const isSlash = key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey;
+      const isCmdK = (e.metaKey || e.ctrlKey) && key.toLowerCase() === "k";
+
+      if (isSlash || isCmdK) {
+        e.preventDefault();
+        inputRef.current?.focus();
+        // Give immediate feedback
+        setSuggestionsOpen(true);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const clear = React.useCallback(() => {
+    onChange("");
+    setSuggestionsOpen(false);
+    setSuggestions([]);
+    // keep focus so user can continue typing
+    inputRef.current?.focus();
+  }, [onChange]);
+
+  const selectSuggestion = React.useCallback(
+    (s: string) => {
+      suppressOpenRef.current = true;
+      addRecent(s);
+      if (onSelectSuggestion) onSelectSuggestion(s);
+      else onChange(s);
+      setSuggestionsOpen(false);
+      // keep focus so user can continue typing
+      inputRef.current?.focus();
+    },
+    [onSelectSuggestion, onChange, addRecent]
+  );
+
   return (
-    <div className="mb-6 flex w-full max-w-md items-center gap-2">
-      <Input
-        type="search"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="h-10 bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring focus-visible:ring-offset-background [&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none [&::-webkit-search-results-button]:appearance-none [&::-webkit-search-results-decoration]:appearance-none"
-      />
-      {value && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label="Clear search"
-          title="Clear search"
-          onClick={() => onChange("")}
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      )}
+    <div className={cn("flex w-full items-center gap-3", className)}>
+      <Popover
+        open={suggestionsOpen}
+        onOpenChange={(open) => {
+          setSuggestionsOpen(open);
+        }}
+      >
+        <div role="search" className="relative w-full">
+          <PopoverAnchor asChild>
+            <div ref={triggerRef}>
+              <Input
+                ref={inputRef}
+                type="search"
+                value={value}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  // User is typing again; allow suggestions to open
+                  suppressOpenRef.current = false;
+                  onChange(next);
+
+                  // Ensure suggestions can open on first type
+                  if (next.trim().length >= minChars) {
+                    setSuggestionsOpen(true);
+                  }
+                }}
+                onFocus={() => {
+                  setIsFocused(true);
+                  const q = value.trim();
+                  if (q.length >= minChars) {
+                    setSuggestionsOpen(true);
+                    return;
+                  }
+
+                  if (q.length === 0) {
+                    setSuggestionsOpen(true);
+                  }
+                }}
+                onBlur={() => {
+                  setIsFocused(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    const q = value.trim();
+                    const canNavigate =
+                      (q.length >= minChars && suggestions.length > 0) ||
+                      (q.length === 0 && showRecents && recents.length > 0);
+
+                    if (canNavigate) {
+                      setSuggestionsOpen(true);
+
+                      const list = selectableItems;
+                      if (list.length > 0) {
+                        e.preventDefault();
+                        const dir = e.key === "ArrowDown" ? 1 : -1;
+                        const currentIndex = highlight ? list.indexOf(highlight) : -1;
+                        const nextIndex =
+                          currentIndex === -1
+                            ? 0
+                            : (currentIndex + dir + list.length) % list.length;
+                        setHighlight(list[nextIndex] ?? "");
+                      }
+                    }
+                  }
+
+                  if (e.key === "Escape") {
+                    if (suggestionsOpen) {
+                      e.preventDefault();
+                      setSuggestionsOpen(false);
+                      setHighlight("");
+                      return;
+                    }
+
+                    if (value) {
+                      e.preventDefault();
+                      clear();
+                      return;
+                    }
+                  }
+
+                  if (e.key === "Enter") {
+                    if (suggestionsOpen && highlight && selectableItems.includes(highlight)) {
+                      e.preventDefault();
+                      selectSuggestion(highlight);
+                      return;
+                    }
+
+                    // Submitting a search should close the popover
+                    suppressOpenRef.current = true;
+                    setSuggestionsOpen(false);
+                    setHighlight("");
+
+                    if (value.trim()) addRecent(value);
+                    if (onSubmit) onSubmit(value);
+                  }
+                }}
+                placeholder={placeholder}
+                aria-label="Search assets"
+                className={cn(
+                  "h-10 bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring focus-visible:ring-offset-background",
+                  showIcon ? "pl-9" : "pl-3",
+                  value ? "pr-9" : "pr-16",
+                  "[&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none [&::-webkit-search-results-button]:appearance-none [&::-webkit-search-results-decoration]:appearance-none"
+                )}
+              />
+            </div>
+          </PopoverAnchor>
+
+          {showIcon ? (
+            <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+              <Search className="h-4 w-4" />
+            </div>
+          ) : null}
+
+          {value ? (
+            <button
+              type="button"
+              aria-label="Clear search"
+              title="Clear search"
+              onClick={clear}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          ) : null}
+
+          {/* Show shortcut hint only when input is NOT focused */}
+          {!value && !isFocused ? (
+            <div
+              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[11px] text-muted-foreground"
+              suppressHydrationWarning
+            >
+              <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">
+                {primaryShortcut.startsWith("⌘") ? (
+                  <span className="flex items-center gap-0.5">
+                    <span className="text-[12px] leading-none">⌘</span>
+                    <span>K</span>
+                  </span>
+                ) : (
+                  primaryShortcut
+                )}
+              </kbd>
+              <span className="opacity-60">·</span>
+              <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">
+                /
+              </kbd>
+            </div>
+          ) : null}
+
+          {suggestionsOpen ? (
+            <PopoverContent
+              align="start"
+              side="bottom"
+              sideOffset={8}
+              className="p-0"
+              style={{ width: popoverWidth }}
+              onOpenAutoFocus={(e) => e.preventDefault()}
+              onInteractOutside={(e) => {
+                // If you click the trigger/input again, don't close
+                const target = e.target as HTMLElement | null;
+                if (
+                  target &&
+                  ((inputRef.current && inputRef.current.contains(target)) ||
+                    (triggerRef.current && triggerRef.current.contains(target)))
+                ) {
+                  e.preventDefault();
+                  return;
+                }
+
+                setSuggestionsOpen(false);
+                setHighlight("");
+              }}
+            >
+              <Command className="rounded-xl border border-border bg-popover shadow-md">
+                <CommandList>
+                  <div className="px-3 py-2 text-xs text-muted-foreground">
+                    Use ↑/↓ to navigate • Enter to select • Esc to close
+                  </div>
+                  {showRecents && value.trim().length === 0 && recents.length > 0 ? (
+                    <CommandGroup
+                      heading={
+                        <div className="flex items-center justify-between">
+                          <span>Recent searches</span>
+                          <button
+                            type="button"
+                            onClick={clearRecents}
+                            className="text-xs text-muted-foreground hover:text-foreground"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      }
+                    >
+                      {recents.map((r) => (
+                        <CommandItem
+                          key={r}
+                          value={r}
+                          onSelect={() => selectSuggestion(r)}
+                          className={cn(
+                            highlight === r && "bg-accent text-accent-foreground"
+                          )}
+                        >
+                          {r}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  ) : null}
+                  {suggestionsLoading ? (
+                    <CommandGroup>
+                      <div className="px-3 py-2 text-xs text-muted-foreground">Loading…</div>
+                    </CommandGroup>
+                  ) : null}
+
+                  {!suggestionsLoading && value.trim().length > 0 ? (
+                    <CommandEmpty>No suggestions</CommandEmpty>
+                  ) : null}
+
+                  {suggestions.length > 0 ? (
+                    <CommandGroup heading="Suggestions">
+                      {suggestions.map((s) => (
+                        <CommandItem
+                          key={s}
+                          value={s}
+                          onSelect={() => selectSuggestion(s)}
+                          className={cn(
+                            highlight === s && "bg-accent text-accent-foreground"
+                          )}
+                        >
+                          {s}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  ) : null}
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          ) : null}
+        </div>
+      </Popover>
+
+      {rightSlot ? <div className="shrink-0">{rightSlot}</div> : null}
     </div>
   );
 }
