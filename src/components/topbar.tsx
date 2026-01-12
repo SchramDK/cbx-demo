@@ -16,7 +16,6 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { CartButton } from "@/components/cart-button";
-import { useCart } from "@/lib/cart/cart-context";
 import { Laptop2, Moon, Sun, Search } from "lucide-react";
 
 type TopbarProps = {
@@ -25,7 +24,6 @@ type TopbarProps = {
   /** Optional content shown on the right when logged OUT (e.g. Login/Sign up buttons) */
   loggedOutRightSlot?: React.ReactNode;
   onLogin?: () => void;
-  onSignup?: () => void;
   title?: string;
   /** Show a product switcher (Drive / Stock) on the left side */
   showProductSwitcher?: boolean;
@@ -126,9 +124,9 @@ function ThemeToggle() {
       try {
         const saved = window.localStorage.getItem("cbx_theme") as ThemeMode | null;
         const current = saved === "light" || saved === "dark" || saved === "system" ? saved : "system";
-        if (current === "system") applyTheme("dark");
+        if (current === "system") applyTheme("system");
       } catch {
-        applyTheme("dark");
+        applyTheme("system");
       }
     };
 
@@ -192,7 +190,6 @@ export function Topbar({
   isLoggedIn,
   loggedOutRightSlot,
   onLogin,
-  onSignup,
   showAccountMenu = true,
   searchValue,
   onSearchChange,
@@ -225,12 +222,6 @@ export function Topbar({
     }
   }, [mounted]);
 
-  let cartCountFromContext = 0;
-  try {
-    cartCountFromContext = useCart().count;
-  } catch {
-    // Topbar can render outside CartProvider (e.g. logged out). Keep 0.
-  }
 
   const loggedIn = typeof isLoggedIn === "boolean" ? isLoggedIn : demoLoggedIn;
 
@@ -280,7 +271,7 @@ export function Topbar({
   const shouldShowSearch = enableSearch || Boolean(onSearchChange);
   const shouldShowLogo = showLogo && !loggedIn;
   const shouldShowSwitcher = Boolean(showProductSwitcher) && !loggedIn;
-  const resolvedCartCount = typeof cartCount === "number" ? cartCount : cartCountFromContext;
+  const resolvedCartCount = typeof cartCount === "number" ? cartCount : 0;
   const isBuiltInSearch = !centerSlot && shouldShowSearch;
 
   // Mobile: show the search bar as a full-width second row

@@ -55,7 +55,7 @@ export default function HomePage() {
             <div className="grid items-center gap-12 md:grid-cols-2">
               {/* Copy */}
               <div className="max-w-xl">
-                <div className="inline-flex items-center gap-2 rounded-full bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow-sm ring-1 ring-border/30 backdrop-blur">
+                <div className="inline-flex items-center gap-2 rounded-full bg-muted/30 px-3 py-1 text-xs text-muted-foreground backdrop-blur">
                   <Sparkles className="h-3.5 w-3.5" />
                   <span>Home</span>
                 </div>
@@ -80,7 +80,7 @@ export default function HomePage() {
                   </button>
                   <button
                     onClick={() => router.push('/stock')}
-                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full border bg-background px-5 text-sm font-medium transition hover:bg-muted sm:w-auto"
+                    className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-muted/30 px-5 text-sm font-medium transition hover:bg-muted/40 sm:w-auto"
                   >
                     Browse Stock <ArrowRight className="h-4 w-4" />
                   </button>
@@ -101,7 +101,7 @@ export default function HomePage() {
                         {[0, 1, 2, 3].map((i) => (
                           <div
                             key={i}
-                            className="relative h-28 w-44 shrink-0 snap-start overflow-hidden rounded-xl border bg-muted"
+                            className="relative h-28 w-44 shrink-0 snap-start overflow-hidden rounded-xl bg-muted"
                           >
                             {heroSrcs[i] ? (
                               <NextImage
@@ -118,6 +118,9 @@ export default function HomePage() {
                       </div>
                     </div>
                   </div>
+                  <div className="mt-3 px-4 text-xs text-muted-foreground">
+                    Recent visuals from Stock — swipe to browse
+                  </div>
                 </div>
 
                 {/* Desktop: 2x2 grid */}
@@ -126,7 +129,7 @@ export default function HomePage() {
                     {[0, 1, 2, 3].map((i) => (
                       <div
                         key={i}
-                        className="relative aspect-[4/3] overflow-hidden rounded-xl border bg-muted"
+                        className="relative aspect-[4/3] overflow-hidden rounded-xl bg-muted"
                       >
                         {heroSrcs[i] ? (
                           <NextImage
@@ -149,14 +152,13 @@ export default function HomePage() {
         </section>
 
         <div className="px-4 sm:px-6 lg:px-10 space-y-8">
-
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             <button
               onClick={() => router.push('/drive')}
-              className="group relative overflow-hidden rounded-2xl bg-muted/20 p-6 text-left shadow-sm ring-1 ring-border/40 transition hover:bg-muted/30 hover:ring-border/70"
+              className="group relative overflow-hidden rounded-2xl bg-muted/20 p-6 text-left transition will-change-transform hover:-translate-y-0.5 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
             >
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl border bg-background">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-background/70">
                   <LayoutGrid className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
@@ -184,10 +186,10 @@ export default function HomePage() {
 
             <button
               onClick={() => router.push('/stock')}
-              className="group relative overflow-hidden rounded-2xl bg-muted/20 p-6 text-left shadow-sm ring-1 ring-border/40 transition hover:bg-muted/30 hover:ring-border/70"
+              className="group relative overflow-hidden rounded-2xl bg-muted/20 p-6 text-left transition will-change-transform hover:-translate-y-0.5 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
             >
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl border bg-background">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-background/70">
                   <Image className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
@@ -216,7 +218,7 @@ export default function HomePage() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             {/* Quick actions */}
-            <section className="w-full rounded-2xl bg-muted/10 p-6 shadow-sm ring-1 ring-border/40">
+            <section className="w-full rounded-2xl bg-muted/10 p-6">
               <div>
                 <h2 className="text-sm font-semibold">Quick actions</h2>
                 <p className="mt-1 text-xs text-muted-foreground">Jump to common tasks</p>
@@ -227,7 +229,7 @@ export default function HomePage() {
                   <button
                     key={a.label}
                     onClick={() => router.push(a.href)}
-                    className="group rounded-full border bg-background px-4 py-2 text-sm transition hover:bg-muted/70 hover:border-foreground/20"
+                    className="group rounded-full bg-background/60 px-4 py-2 text-sm transition hover:bg-background/80"
                   >
                     <span className="inline-flex items-center gap-2 font-medium">
                       {a.icon ? <a.icon className="h-4 w-4" /> : null}
@@ -242,19 +244,19 @@ export default function HomePage() {
             </section>
 
             {/* Recent activity */}
-            <section className="w-full rounded-2xl bg-muted/10 p-6 shadow-sm ring-1 ring-border/40">
+            <section className="w-full rounded-2xl bg-muted/10 p-6">
               <div>
                 <h2 className="text-sm font-semibold">Recent activity</h2>
                 <p className="mt-1 text-xs text-muted-foreground">A quick snapshot from the prototype</p>
               </div>
 
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-xl bg-background/70 p-4 shadow-sm ring-1 ring-border/30 transition hover:bg-background hover:ring-border/60">
+                <div className="rounded-xl bg-background/60 p-4 transition hover:bg-background/80">
                   <div className="text-xs text-muted-foreground">Share</div>
                   <div className="mt-1 font-medium">2 folders updated</div>
                   <div className="mt-1 text-sm text-muted-foreground">“Campaign uploads” • “Press kit”</div>
                 </div>
-                <div className="rounded-xl bg-background/70 p-4 shadow-sm ring-1 ring-border/30 transition hover:bg-background hover:ring-border/60">
+                <div className="rounded-xl bg-background/60 p-4 transition hover:bg-background/80">
                   <div className="text-xs text-muted-foreground">Stock</div>
                   <div className="mt-1 font-medium">3 assets added to cart</div>
                   <div className="mt-1 text-sm text-muted-foreground">Ready to license when you are</div>
@@ -263,7 +265,7 @@ export default function HomePage() {
             </section>
           </div>
 
-          <section id="news" className="w-full rounded-2xl bg-muted/10 p-6 shadow-sm ring-1 ring-border/40">
+          <section id="news" className="w-full rounded-2xl bg-muted/10 p-6">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold">What’s new</h2>
@@ -276,7 +278,7 @@ export default function HomePage() {
 
             <div className="mt-5 grid gap-4 lg:grid-cols-2">
               {newsItems.map((item) => (
-                <article key={`${item.date}-${item.title}`} className="rounded-xl bg-background/70 p-4 shadow-sm ring-1 ring-border/30 transition hover:bg-background hover:ring-border/60">
+                <article key={`${item.date}-${item.title}`} className="rounded-xl bg-background/60 p-4 transition hover:bg-background/80">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                     <time className="text-xs text-muted-foreground">{item.date}</time>
                     {item.badge ? (

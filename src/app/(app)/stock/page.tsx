@@ -26,7 +26,7 @@ function getImage(asset: Asset) {
 
 function Pill({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex select-none items-center rounded-full border bg-background px-3 py-1 text-xs transition hover:bg-muted hover:border-foreground/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20">
+    <span className="inline-flex select-none items-center rounded-full bg-muted/30 px-3 py-1 text-xs text-muted-foreground transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20">
       {children}
     </span>
   );
@@ -69,7 +69,7 @@ export default function StockPage() {
   return (
     <div className="w-full">
       {/* Hero */}
-      <section className="relative mb-12 min-h-[60vh] overflow-hidden border-b flex items-center">
+      <section className="relative mb-12 min-h-[70vh] overflow-hidden flex items-center">
         <div className="absolute inset-0">
           {heroImages.map((src, idx) => (
             <Image
@@ -85,85 +85,132 @@ export default function StockPage() {
               priority={idx === 0}
             />
           ))}
-          <div className="absolute inset-0 bg-black/25" />
-          <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/55 to-transparent" />
+          <div className="absolute inset-0 bg-black/15" />
+          <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/45 to-transparent" />
+          <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-background to-transparent" />
         </div>
 
         <div className="relative w-full px-4 py-20 sm:px-6 sm:py-28 lg:px-10">
-          <div className="max-w-2xl rounded-2xl border bg-background/65 p-5 backdrop-blur sm:p-7">
-            <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Stock library</h1>
-            <p className="mt-2 text-sm text-muted-foreground sm:text-base">
-              {loggedIn
-                ? 'Search and license assets in seconds.'
-                : 'Browse a preview of the Stock library. Log in to license, download, and save to collections.'}
-            </p>
+          <div className="mx-auto max-w-3xl text-center">
+            <div className="mx-auto max-w-3xl rounded-3xl bg-background/40 p-4 backdrop-blur sm:p-6">
+              <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
+                Find the right visual
+              </h1>
+              <p className="mx-auto mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
+                {loggedIn
+                  ? 'Search, preview, and license assets in seconds.'
+                  : 'Browse a preview of our Stock library. Add to cart now — log in when you’re ready to license or checkout.'}
+              </p>
 
-            {/* Search */}
-            <form
-              role="search"
-              className="mt-6"
-              onSubmit={(e) => {
-                e.preventDefault();
-                router.push(buildSearchHref(q));
-              }}
-            >
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <div className="relative sm:flex-1">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              {/* Big search */}
+              <form
+                role="search"
+                className="mx-auto mt-8 max-w-2xl"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  router.push(buildSearchHref(q));
+                }}
+              >
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+
                   <input
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
-                    placeholder="Search images, keywords…"
-                    className="h-11 w-full rounded-md border bg-background/80 pl-9 pr-20 text-sm outline-none backdrop-blur transition focus:border-foreground/30 focus:ring-2 focus:ring-foreground/10"
+                    placeholder="Search images, people, places, concepts…"
+                    className="h-14 w-full rounded-full bg-background/85 pl-12 pr-28 text-sm outline-none backdrop-blur ring-1 ring-border/10 transition focus:ring-2 focus:ring-foreground/20"
                     autoComplete="off"
                   />
+
                   {q.trim().length > 0 ? (
                     <button
                       type="button"
                       onClick={() => setQ('')}
-                      className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded border bg-background text-muted-foreground hover:bg-muted"
+                      className="absolute right-[5.25rem] top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-muted/30 text-muted-foreground transition hover:bg-muted/40"
                       aria-label="Clear search"
                     >
-                      <X className="h-3.5 w-3.5" />
+                      <X className="h-4 w-4" />
                     </button>
                   ) : null}
+
+                  <button
+                    type="submit"
+                    disabled={!q.trim()}
+                    className="absolute right-2 top-1/2 h-10 -translate-y-1/2 rounded-full bg-foreground px-5 text-sm font-medium text-background transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Search
+                  </button>
                 </div>
 
+              </form>
+
+              <div className="mt-6 flex flex-wrap justify-center gap-2">
                 <button
-                  type="submit"
-                  disabled={!q.trim()}
-                  className="h-11 rounded-md border bg-foreground px-5 text-sm font-medium text-background hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
+                  type="button"
+                  onClick={() => router.push('/stock/search')}
+                  className="rounded-full bg-muted/30 px-4 py-2 text-xs text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
                 >
-                  Search
+                  Browse all
+                </button>
+                <button
+                  type="button"
+                  onClick={() => pushOrLogin('/stock/collections')}
+                  className="rounded-full bg-muted/30 px-4 py-2 text-xs text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+                >
+                  Collections
                 </button>
               </div>
-            </form>
 
-            {!loggedIn ? (
-              <p className="mt-4 text-xs text-muted-foreground">
-                You can browse and add items to your cart. Log in when you’re ready to license or checkout.
-              </p>
-            ) : null}
+              <div className="mt-4 text-xs text-muted-foreground">
+                Trending: <button type="button" onClick={() => router.push(buildSearchHref('business'))} className="underline decoration-muted-foreground/30 underline-offset-4 hover:text-foreground">business</button>,{' '}
+                <button type="button" onClick={() => router.push(buildSearchHref('portrait'))} className="underline decoration-muted-foreground/30 underline-offset-4 hover:text-foreground">portrait</button>,{' '}
+                <button type="button" onClick={() => router.push(buildSearchHref('nature'))} className="underline decoration-muted-foreground/30 underline-offset-4 hover:text-foreground">nature</button>
+              </div>
 
-            {/* Quick actions */}
-            <div className="mt-6 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => router.push('/stock/search')}
-                className="rounded-md border bg-background/70 px-3 py-2 text-xs backdrop-blur transition hover:bg-background hover:border-foreground/20"
-              >
-                Browse all
-              </button>
-              <button
-                type="button"
-                onClick={() => pushOrLogin('/stock/collections')}
-                className="rounded-md border bg-background/70 px-3 py-2 text-xs backdrop-blur transition hover:bg-background hover:border-foreground/20"
-              >
-                Collections
-              </button>
+              {/* Popular today */}
+              <div className="mt-6">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="text-xs font-medium text-muted-foreground">Popular today</div>
+                  <button
+                    type="button"
+                    onClick={() => router.push('/stock/search')}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    View more
+                  </button>
+                </div>
+
+                {/* Single-line strip (all breakpoints) */}
+                <div className="-mx-4 overflow-x-auto px-4">
+                  <div className="flex snap-x snap-mandatory gap-3 pr-6">
+                    {featured.slice(0, 12).map((a) => (
+                      <Link
+                        key={a.id}
+                        href={`/stock/assets/${a.id}`}
+                        className="group relative h-28 w-44 shrink-0 snap-start overflow-hidden rounded-xl bg-muted/20 transition hover:bg-muted/30 focus:outline-none focus:ring-2 focus:ring-foreground/20"
+                      >
+                        <div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+                          <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
+                            <div className="line-clamp-1 text-xs font-medium text-white/95">{a.title}</div>
+                            <div className="ml-2 shrink-0 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-medium text-black">
+                              View
+                            </div>
+                          </div>
+                        </div>
+                        <Image
+                          src={getImage(a)}
+                          alt={a.title}
+                          fill
+                          sizes="176px"
+                          className="object-cover transition-transform duration-300 group-hover:scale-105"
+                        />
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
-
-
           </div>
         </div>
       </section>
@@ -172,7 +219,7 @@ export default function StockPage() {
       <section className="mb-12 px-4 sm:px-6 lg:px-10">
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
           <div className="lg:col-span-8">
-            <div className="rounded-2xl border bg-background p-5 sm:p-6">
+            <div className="rounded-2xl bg-muted/10 p-5 sm:p-6">
               <div className="text-sm font-semibold">Discover faster</div>
               <p className="mt-1 text-xs text-muted-foreground">
                 Explore popular categories and trending searches.
@@ -216,15 +263,15 @@ export default function StockPage() {
 
           <div className="lg:col-span-4">
             <div className="grid grid-cols-1 gap-3">
-              <div className="rounded-2xl border bg-background p-5">
+              <div className="rounded-2xl bg-muted/10 p-5">
                 <div className="text-xs font-medium">Fast licensing</div>
                 <div className="mt-1 text-xs text-muted-foreground">Clear rights and instant download options.</div>
               </div>
-              <div className="rounded-2xl border bg-background p-5">
+              <div className="rounded-2xl bg-muted/10 p-5">
                 <div className="text-xs font-medium">Brand-safe search</div>
                 <div className="mt-1 text-xs text-muted-foreground">Find the right look with keywords and filters.</div>
               </div>
-              <div className="rounded-2xl border bg-background p-5">
+              <div className="rounded-2xl bg-muted/10 p-5">
                 <div className="text-xs font-medium">Team-ready</div>
                 <div className="mt-1 text-xs text-muted-foreground">Share, save, and reuse across projects.</div>
               </div>
@@ -233,7 +280,7 @@ export default function StockPage() {
         </div>
       </section>
 
-      <div className="mb-10 h-px w-full bg-border" />
+      <div className="mb-12 h-px w-full bg-border/50" />
 
       {/* Featured */}
       <div id="featured" className="mb-12 px-4 sm:px-6 lg:px-10">
@@ -256,7 +303,7 @@ export default function StockPage() {
             <Link
               key={a.id}
               href={`/stock/assets/${a.id}`}
-              className="group block overflow-hidden rounded-xl border bg-background transition hover:bg-muted/30 hover:border-foreground/20 focus:outline-none focus:ring-2 focus:ring-foreground/10"
+              className="group block overflow-hidden rounded-xl bg-muted/10 transition hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-foreground/20"
             >
               <div className="relative aspect-[4/3] w-full overflow-hidden">
                 <Image
@@ -270,13 +317,13 @@ export default function StockPage() {
               <div className="p-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="line-clamp-1 text-sm font-medium">{a.title}</div>
-                  <span className="shrink-0 rounded-md border bg-background px-2 py-0.5 text-[10px] text-muted-foreground">
+                  <span className="shrink-0 rounded-md bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground">
                     Featured
                   </span>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1">
                   {(a.keywords ?? []).slice(0, 3).map((k: string) => (
-                    <span key={k} className="rounded-full border bg-background px-2 py-0.5 text-[10px] text-muted-foreground">
+                    <span key={k} className="rounded-full bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground">
                       {k}
                     </span>
                   ))}
@@ -287,7 +334,7 @@ export default function StockPage() {
         </div>
       </div>
 
-      <div className="mb-10 h-px w-full bg-border" />
+      <div className="mb-12 h-px w-full bg-border/50" />
 
       {/* Collections preview */}
       <div id="collections" className="mb-12 px-4 sm:px-6 lg:px-10">
@@ -319,7 +366,7 @@ export default function StockPage() {
             <Link
               key={c.title}
               href={`/stock/search?q=${encodeURIComponent(c.q)}`}
-              className="group overflow-hidden rounded-xl border bg-background transition hover:bg-muted/30 hover:border-foreground/20 focus:outline-none focus:ring-2 focus:ring-foreground/10"
+              className="group overflow-hidden rounded-xl bg-muted/10 transition hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-foreground/20"
             >
               <div className="relative aspect-[16/9] w-full overflow-hidden">
                 <Image
@@ -340,7 +387,7 @@ export default function StockPage() {
         </div>
       </div>
 
-      <div className="mb-10 h-px w-full bg-border" />
+      <div className="mb-12 h-px w-full bg-border/50" />
 
       {/* New this week */}
       <div id="new" className="mb-12 px-4 sm:px-6 lg:px-10">
@@ -363,7 +410,7 @@ export default function StockPage() {
             <Link
               key={a.id}
               href={`/stock/assets/${a.id}`}
-              className="group block overflow-hidden rounded-xl border bg-background transition hover:bg-muted/30 hover:border-foreground/20 focus:outline-none focus:ring-2 focus:ring-foreground/10"
+              className="group block overflow-hidden rounded-xl bg-muted/10 transition hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-foreground/20"
             >
               <div className="relative aspect-[16/10] w-full overflow-hidden">
                 <Image
@@ -377,7 +424,7 @@ export default function StockPage() {
               <div className="p-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="line-clamp-1 text-sm font-medium">{a.title}</div>
-                  <span className="shrink-0 rounded-md border bg-background px-2 py-0.5 text-[10px] text-muted-foreground">
+                  <span className="shrink-0 rounded-md bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground">
                     New
                   </span>
                 </div>
