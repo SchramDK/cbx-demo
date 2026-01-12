@@ -317,9 +317,9 @@ export function Topbar({
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm sm:shadow">
       <div className="w-full px-4 sm:px-6">
-        <div className="flex h-16 items-center gap-2 sm:gap-3">
+        <div className="grid h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:h-16 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-3">
           {/* Left */}
-          <div className="flex shrink-0 items-center gap-3 sm:gap-4">
+          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
             {leftSlot ? <div className="flex h-10 items-center">{leftSlot}</div> : null}
 
             {shouldShowLogo ? (
@@ -334,7 +334,7 @@ export function Topbar({
                   alt="CBX"
                   width={28}
                   height={28}
-                  className="h-7 w-auto dark:hidden"
+                  className="h-6 w-auto dark:hidden sm:h-7"
                   priority
                 />
                 {/* Dark theme logo */}
@@ -343,7 +343,7 @@ export function Topbar({
                   alt="CBX"
                   width={28}
                   height={28}
-                  className="h-7 w-auto hidden dark:block"
+                  className="h-6 w-auto hidden dark:block sm:h-7"
                   priority
                 />
               </Link>
@@ -387,9 +387,9 @@ export function Topbar({
           </div>
 
           {/* Center (desktop) */}
-          <div className="hidden min-w-0 flex-1 items-center justify-center px-1 sm:flex sm:px-3">
-            <div className="w-full max-w-2xl">
-              <div className="flex h-10 items-center">
+          <div className="hidden min-w-0 items-center justify-center sm:flex sm:px-2 md:px-3">
+            <div className="w-full max-w-xl md:max-w-2xl">
+              <div className="flex h-10 min-w-0 items-center">
                 {isBuiltInSearch ? (
                   <form
                     className="w-full"
@@ -408,7 +408,7 @@ export function Topbar({
           </div>
 
           {/* Right */}
-          <div className="flex h-10 shrink-0 items-center justify-end gap-1.5 sm:gap-3">
+          <div className="flex h-10 shrink-0 items-center justify-end gap-1.5 whitespace-nowrap sm:gap-3">
             {shouldShowSearch && !showMobileSearchRow ? (
               <Button
                 type="button"
@@ -500,7 +500,7 @@ export function Topbar({
 
         {/* Mobile search row */}
         {showMobileSearchRow ? (
-          <div className="sm:hidden">
+          <div className="col-span-2 sm:hidden">
             <div className="border-t border-border/60 pt-3 pb-4">
               <form
                 className="w-full"
