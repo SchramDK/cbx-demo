@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Search, X } from 'lucide-react';
 
 import { ASSETS } from '@/lib/demo/assets';
@@ -14,17 +14,19 @@ type Asset = {
   title: string;
   description?: string;
   keywords?: string[];
-  [key: string]: any;
+  preview?: string;
+  src?: string;
+  image?: string;
+  url?: string;
 };
 
 const FALLBACK_IMAGE =
   'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=1200&auto=format&fit=crop';
 
-function getImage(asset: Asset) {
-  return asset.preview ?? asset.src ?? asset.image ?? asset.url ?? FALLBACK_IMAGE;
-}
+const getImage = (asset: Asset) =>
+  asset.preview ?? asset.src ?? asset.image ?? asset.url ?? FALLBACK_IMAGE;
 
-function Pill({ children }: { children: ReactNode }) {
+function Pill({ children }: { children: React.ReactNode }) {
   return (
     <span className="inline-flex select-none items-center rounded-full bg-muted/30 px-3 py-1 text-xs text-muted-foreground transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20">
       {children}
@@ -36,18 +38,17 @@ export default function StockPage() {
   const router = useRouter();
   const { isReady, isLoggedIn } = useProtoAuth();
   const loggedIn = isReady && isLoggedIn;
+
   const [q, setQ] = useState('');
+  const [heroIndex, setHeroIndex] = useState(0);
 
   const featured = useMemo(() => (ASSETS as Asset[]).slice(0, 10), []);
   const newest = useMemo(() => (ASSETS as Asset[]).slice(0, 12), []);
 
   const heroImages = useMemo(() => {
-    const list = (featured as Asset[]).slice(0, 6).map(getImage);
-    // Ensure we have at least 2 images to cycle
+    const list = featured.slice(0, 6).map(getImage);
     return list.length > 1 ? list : [FALLBACK_IMAGE, FALLBACK_IMAGE];
   }, [featured]);
-
-  const [heroIndex, setHeroIndex] = useState(0);
 
   useEffect(() => {
     if (heroImages.length <= 1) return;
@@ -57,19 +58,22 @@ export default function StockPage() {
     return () => window.clearInterval(id);
   }, [heroImages.length]);
 
-  const pushOrLogin = (href: string) => {
-    router.push(loggedIn ? href : `/login?returnTo=${encodeURIComponent(href)}`);
-  };
+  const pushOrLogin = useCallback(
+    (href: string) => {
+      router.push(loggedIn ? href : `/login?returnTo=${encodeURIComponent(href)}`);
+    },
+    [router, loggedIn]
+  );
 
-  const buildSearchHref = (query: string) => {
+  const buildSearchHref = useCallback((query: string) => {
     const trimmed = query.trim();
     return trimmed ? `/stock/search?q=${encodeURIComponent(trimmed)}` : '/stock/search';
-  };
+  }, []);
 
   return (
     <div className="w-full">
       {/* Hero */}
-      <section className="relative mb-12 min-h-[70vh] overflow-hidden flex items-center">
+      <section className="relative mb-12 flex min-h-[70vh] items-center overflow-hidden">
         <div className="absolute inset-0">
           {heroImages.map((src, idx) => (
             <Image
@@ -78,10 +82,9 @@ export default function StockPage() {
               alt="Stock hero"
               fill
               sizes="100vw"
-              className={
-                "object-cover transition-opacity duration-1000 " +
-                (idx === heroIndex ? "opacity-100" : "opacity-0")
-              }
+              className={`object-cover transition-opacity duration-1000 ${
+                idx === heroIndex ? 'opacity-100' : 'opacity-0'
+              }`}
               priority={idx === 0}
             />
           ))}
@@ -92,11 +95,12 @@ export default function StockPage() {
 
         <div className="relative w-full px-4 py-20 sm:px-6 sm:py-28 lg:px-10">
           <div className="mx-auto max-w-3xl text-center">
-            <div className="mx-auto max-w-3xl rounded-3xl bg-background/40 p-4 backdrop-blur sm:p-6">
-              <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
+            <div className="mx-auto max-w-3xl rounded-3xl bg-background/55 p-5 backdrop-blur sm:p-7">
+              <h1 className="text-4xl font-semibold tracking-tight sm:text-6xl">
                 Find the right visual
               </h1>
-              <p className="mx-auto mt-3 max-w-2xl text-sm text-muted-foreground sm:text-base">
+
+              <p className="mx-auto mt-3 max-w-2xl text-sm text-muted-foreground sm:text-[15px]">
                 {loggedIn
                   ? 'Search, preview, and license assets in seconds.'
                   : 'Browse a preview of our Stock library. Add to cart now — log in when you’re ready to license or checkout.'}
@@ -141,30 +145,51 @@ export default function StockPage() {
                     Search
                   </button>
                 </div>
-
               </form>
 
               <div className="mt-6 flex flex-wrap justify-center gap-2">
                 <button
                   type="button"
                   onClick={() => router.push('/stock/search')}
-                  className="rounded-full bg-muted/30 px-4 py-2 text-xs text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+                  className="rounded-full bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
                 >
                   Browse all
                 </button>
                 <button
                   type="button"
                   onClick={() => pushOrLogin('/stock/collections')}
-                  className="rounded-full bg-muted/30 px-4 py-2 text-xs text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+                  className="rounded-full bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
                 >
                   Collections
                 </button>
               </div>
 
+              {/* Trending */}
               <div className="mt-4 text-xs text-muted-foreground">
-                Trending: <button type="button" onClick={() => router.push(buildSearchHref('business'))} className="underline decoration-muted-foreground/30 underline-offset-4 hover:text-foreground">business</button>,{' '}
-                <button type="button" onClick={() => router.push(buildSearchHref('portrait'))} className="underline decoration-muted-foreground/30 underline-offset-4 hover:text-foreground">portrait</button>,{' '}
-                <button type="button" onClick={() => router.push(buildSearchHref('nature'))} className="underline decoration-muted-foreground/30 underline-offset-4 hover:text-foreground">nature</button>
+                Trending:{' '}
+                <button
+                  type="button"
+                  onClick={() => router.push(buildSearchHref('business'))}
+                  className="underline decoration-muted-foreground/30 underline-offset-4 hover:text-foreground"
+                >
+                  business
+                </button>
+                <span className="mx-2 text-muted-foreground/60">•</span>
+                <button
+                  type="button"
+                  onClick={() => router.push(buildSearchHref('portrait'))}
+                  className="underline decoration-muted-foreground/30 underline-offset-4 hover:text-foreground"
+                >
+                  portrait
+                </button>
+                <span className="mx-2 text-muted-foreground/60">•</span>
+                <button
+                  type="button"
+                  onClick={() => router.push(buildSearchHref('nature'))}
+                  className="underline decoration-muted-foreground/30 underline-offset-4 hover:text-foreground"
+                >
+                  nature
+                </button>
               </div>
 
               {/* Popular today */}
@@ -180,36 +205,43 @@ export default function StockPage() {
                   </button>
                 </div>
 
-                {/* Single-line strip (all breakpoints) */}
-                <div className="-mx-4 overflow-x-auto px-4">
-                  <div className="flex snap-x snap-mandatory gap-3 pr-6">
-                    {featured.slice(0, 12).map((a) => (
-                      <Link
-                        key={a.id}
-                        href={`/stock/assets/${a.id}`}
-                        className="group relative h-28 w-44 shrink-0 snap-start overflow-hidden rounded-xl bg-muted/20 transition hover:bg-muted/30 focus:outline-none focus:ring-2 focus:ring-foreground/20"
-                      >
-                        <div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
-                          <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
-                            <div className="line-clamp-1 text-xs font-medium text-white/95">{a.title}</div>
-                            <div className="ml-2 shrink-0 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-medium text-black">
-                              View
+                <div className="relative -mx-4">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-background/60 to-transparent" />
+                  <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-background/60 to-transparent" />
+                  <div className="overflow-x-auto px-4">
+                    <div className="flex snap-x snap-mandatory gap-3 pr-6">
+                      {featured.slice(0, 12).map((a) => (
+                        <Link
+                          key={a.id}
+                          href={`/stock/assets/${a.id}`}
+                          className="group relative h-28 w-44 shrink-0 snap-start overflow-hidden rounded-xl bg-muted/20 transition hover:bg-muted/30 focus:outline-none focus:ring-2 focus:ring-foreground/25"
+                        >
+                          <div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+                            <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
+                              <div className="line-clamp-1 text-xs font-medium text-white/95">
+                                {a.title}
+                              </div>
+                              <div className="ml-2 shrink-0 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-medium text-black">
+                                View
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        <Image
-                          src={getImage(a)}
-                          alt={a.title}
-                          fill
-                          sizes="176px"
-                          className="object-cover transition-transform duration-300 group-hover:scale-105"
-                        />
-                      </Link>
-                    ))}
+
+                          <Image
+                            src={getImage(a)}
+                            alt={a.title}
+                            fill
+                            sizes="176px"
+                            className="object-cover transition-transform duration-300 group-hover:scale-105"
+                          />
+                        </Link>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
+
             </div>
           </div>
         </div>
@@ -265,15 +297,21 @@ export default function StockPage() {
             <div className="grid grid-cols-1 gap-3">
               <div className="rounded-2xl bg-muted/10 p-5">
                 <div className="text-xs font-medium">Fast licensing</div>
-                <div className="mt-1 text-xs text-muted-foreground">Clear rights and instant download options.</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Clear rights and instant download options.
+                </div>
               </div>
               <div className="rounded-2xl bg-muted/10 p-5">
                 <div className="text-xs font-medium">Brand-safe search</div>
-                <div className="mt-1 text-xs text-muted-foreground">Find the right look with keywords and filters.</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Find the right look with keywords and filters.
+                </div>
               </div>
               <div className="rounded-2xl bg-muted/10 p-5">
                 <div className="text-xs font-medium">Team-ready</div>
-                <div className="mt-1 text-xs text-muted-foreground">Share, save, and reuse across projects.</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Share, save, and reuse across projects.
+                </div>
               </div>
             </div>
           </div>
@@ -322,8 +360,11 @@ export default function StockPage() {
                   </span>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1">
-                  {(a.keywords ?? []).slice(0, 3).map((k: string) => (
-                    <span key={k} className="rounded-full bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground">
+                  {(a.keywords ?? []).slice(0, 3).map((k) => (
+                    <span
+                      key={k}
+                      className="rounded-full bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground"
+                    >
                       {k}
                     </span>
                   ))}
@@ -353,16 +394,11 @@ export default function StockPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {[{
-            title: 'Winter campaign',
-            q: 'winter',
-          }, {
-            title: 'Food & lifestyle',
-            q: 'food',
-          }, {
-            title: 'Business portraits',
-            q: 'portrait',
-          }].map((c) => (
+          {[
+            { title: 'Winter campaign', q: 'winter' },
+            { title: 'Food & lifestyle', q: 'food' },
+            { title: 'Business portraits', q: 'portrait' },
+          ].map((c) => (
             <Link
               key={c.title}
               href={`/stock/search?q=${encodeURIComponent(c.q)}`}
@@ -370,7 +406,10 @@ export default function StockPage() {
             >
               <div className="relative aspect-[16/9] w-full overflow-hidden">
                 <Image
-                  src={getImage((ASSETS as Asset[]).find((a) => (a.keywords ?? []).includes(c.q)) ?? (featured[0] as Asset))}
+                  src={getImage(
+                    (ASSETS as Asset[]).find((a) => (a.keywords ?? []).includes(c.q)) ??
+                      (featured[0] as Asset)
+                  )}
                   alt={c.title}
                   fill
                   sizes="(min-width: 640px) 33vw, 100vw"
@@ -428,7 +467,7 @@ export default function StockPage() {
                     New
                   </span>
                 </div>
-                <div className="mt-2 text-xs text-muted-foreground line-clamp-2">
+                <div className="mt-2 line-clamp-2 text-xs text-muted-foreground">
                   {a.description ?? 'Ready to license and use across channels.'}
                 </div>
               </div>
@@ -436,7 +475,6 @@ export default function StockPage() {
           ))}
         </div>
       </div>
-
     </div>
   );
 }
