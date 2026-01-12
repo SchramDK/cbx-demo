@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, type ReactNode } from 'react';
+import { Suspense, useMemo, type ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -33,7 +33,7 @@ function Chip({ children }: { children: ReactNode }) {
   );
 }
 
-export default function StockSearchPage() {
+function StockSearchInner() {
   const searchParams = useSearchParams();
   const q = (searchParams.get('q') ?? '').trim().toLowerCase();
 
@@ -116,5 +116,13 @@ export default function StockSearchPage() {
           : `Showing ${Math.min(results.length, 40)} of ${results.length} assets`}
       </div>
     </div>
+  );
+}
+
+export default function StockSearchPage() {
+  return (
+    <Suspense fallback={<div className="w-full px-4 py-6 text-sm text-muted-foreground">Loading…</div>}>
+      <StockSearchInner />
+    </Suspense>
   );
 }
