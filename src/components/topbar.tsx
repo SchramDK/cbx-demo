@@ -16,6 +16,7 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { CartButton } from "@/components/cart-button";
+import { useCartUI } from '@/lib/cart/cart';
 import { Laptop2, Moon, Sun, Search } from "lucide-react";
 
 type TopbarProps = {
@@ -203,6 +204,7 @@ export function Topbar({
 }: TopbarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const { open: openCart } = useCartUI();
 
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => {
@@ -425,7 +427,15 @@ export function Topbar({
               </Button>
             ) : null}
             {shouldShowCart && mounted ? (
-              <CartButton count={resolvedCartCount} href={cartHref} label="Open cart" />
+              <CartButton
+                count={resolvedCartCount}
+                href={cartHref}
+                label="Open cart"
+                onClick={(e) => {
+                  e.preventDefault();
+                  openCart();
+                }}
+              />
             ) : null}
 
             {showThemeToggle && mounted ? <ThemeToggle /> : null}

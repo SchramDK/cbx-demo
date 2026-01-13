@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { ArrowLeft, ShoppingCart } from 'lucide-react';
-import { useCart } from '@/lib/cart/cart-context';
+import { useCart, useCartUI } from '@/lib/cart/cart';
 import { useProtoAuth } from '@/lib/proto-auth';
 
 type Asset = {
@@ -45,6 +45,7 @@ export default function StockAssetPage() {
   const { isReady, isLoggedIn } = useProtoAuth();
   const loggedIn = isReady && isLoggedIn;
   const { addItem } = useCart();
+  const { open: openCart } = useCartUI();
 
   const assets = useMemo(() => ASSETS as Asset[], []);
 
@@ -55,7 +56,7 @@ export default function StockAssetPage() {
     if (asset?.category) raw.push(asset.category);
     if (asset?.tags?.length) raw.push(...asset.tags);
     if (asset?.keywords?.length) raw.push(...asset.keywords);
-    return new Set(raw.filter(Boolean).map((t) => t.trim().toLowerCase()));
+    return new Set(raw.filter(Boolean).map(normalizeToken));
   }, [asset]);
 
   const relatedPicks = useMemo(() => {
@@ -72,7 +73,7 @@ export default function StockAssetPage() {
         const aTokens = new Set(
           [a.category, ...(a.tags ?? []), ...(a.keywords ?? [])]
             .filter(Boolean)
-            .map((t) => t.trim().toLowerCase())
+            .map(normalizeToken)
         );
 
         // category boost
@@ -121,7 +122,8 @@ export default function StockAssetPage() {
     const firstValid = assets.find((a) => Boolean(getAssetImage(a)));
     return firstValid ? getAssetImage(firstValid) : '/demo/stock/COLOURBOX69824938.jpg';
   }, [assets]);
-  const imageSrc = asset && getAssetImage(asset) ? getAssetImage(asset) : fallbackImage;
+  const assetPreview = asset ? getAssetImage(asset) : '';
+  const imageSrc = assetPreview ? assetPreview : fallbackImage;
   const title = asset?.title ?? 'Asset';
   const tags = pickTags(asset, 10);
   const displayTags = useMemo(() => {
@@ -292,10 +294,10 @@ export default function StockAssetPage() {
           <h1 className="text-xl font-semibold leading-tight sm:text-2xl">{title}</h1>
           <p className="mt-1 text-sm text-muted-foreground">by Colourbox / Demo Photographer</p>
           {asset?.description ? (
-  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-    {asset.description}
-  </p>
-) : null}
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              {asset.description}
+            </p>
+          ) : null}
 
           <div className="mt-2 flex flex-wrap gap-2">
             {asset?.category ? <Badge variant="outline">{asset.category}</Badge> : null}
@@ -371,7 +373,9 @@ export default function StockAssetPage() {
                 license: purchaseOption === 'single' ? 'single' : 'paygo10',
                 price,
                 image: imageSrc,
+                qty: 1,
               });
+              openCart();
               setAdded(true);
               window.setTimeout(() => setAdded(false), 2000);
             }}

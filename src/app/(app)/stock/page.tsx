@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCart, useCartUI } from '@/lib/cart/cart';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -20,14 +21,8 @@ type Asset = {
   url?: string;
 };
 
-const getAssetImage = (asset?: Asset) =>
-  asset?.preview ?? asset?.src ?? asset?.image ?? asset?.url ?? '';
-
-
-const getImage = (asset: Asset, fallback: string) => {
-  const src = getAssetImage(asset);
-  return src || fallback;
-};
+const getAssetImage = (asset?: Asset) => asset?.preview ?? asset?.src ?? asset?.image ?? asset?.url ?? '';
+const getImage = (asset: Asset, fallback: string) => getAssetImage(asset) || fallback;
 
 const isLocalDemoImage = (src: string) => src.startsWith('/demo/');
 
@@ -39,13 +34,128 @@ function Pill({ children }: { children: React.ReactNode }) {
   );
 }
 
+function AddToCartOverlayButton({ onClick }: { onClick: (e: React.MouseEvent) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="absolute right-2 top-2 z-10 inline-flex items-center rounded-full bg-background/90 px-3 py-1 text-[11px] font-medium text-foreground ring-1 ring-black/5 shadow-sm backdrop-blur transition hover:bg-background focus:outline-none focus:ring-2 focus:ring-foreground/25 dark:ring-white/10"
+      aria-label="Add to cart"
+    >
+      Add
+    </button>
+  );
+}
+
+type AssetCardVariant = 'compact' | 'grid';
+
+type AssetCardProps = {
+  asset: Asset;
+  href: string;
+  imageSrc: string;
+  variant?: AssetCardVariant;
+  badge?: string;
+  onAdd: () => void;
+};
+
+function AssetCard({ asset, href, imageSrc, variant = 'grid', badge, onAdd }: AssetCardProps) {
+  const frameClass =
+    variant === 'compact'
+      ? 'h-28 w-44'
+      : 'block';
+
+  const mediaClass = variant === 'compact' ? '' : 'relative';
+
+  const aspectClass =
+    variant === 'compact'
+      ? 'absolute inset-0'
+      : 'relative aspect-[4/3] w-full overflow-hidden';
+
+  const imageSizes = variant === 'compact' ? '176px' : '(min-width: 1024px) 220px, (min-width: 640px) 30vw, 45vw';
+
+  return (
+    <Link
+      href={href}
+      className={
+        variant === 'compact'
+          ? `group relative ${frameClass} shrink-0 snap-start overflow-hidden rounded-xl bg-muted/20 ring-1 ring-black/5 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-muted/30 hover:ring-black/10 focus:outline-none focus:ring-2 focus:ring-foreground/25 dark:ring-white/10 dark:hover:ring-white/20`
+          : `group relative ${frameClass} overflow-hidden rounded-xl bg-muted/10 transition hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-foreground/20`
+      }
+    >
+      <AddToCartOverlayButton
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onAdd();
+        }}
+      />
+
+      <div className={variant === 'compact' ? 'absolute inset-0' : ''}>
+        {variant === 'compact' ? (
+          <div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+            <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+            <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
+              <div className="line-clamp-1 text-xs font-medium text-white/95">{asset.title}</div>
+              <div className="ml-2 shrink-0 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-medium text-black">
+                View
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {variant === 'compact' ? null : (
+          <div className={aspectClass}>
+            <Image
+              src={imageSrc}
+              alt={asset.title}
+              fill
+              sizes={imageSizes}
+              unoptimized={isLocalDemoImage(imageSrc)}
+              className="object-cover transition-transform duration-300 group-hover:scale-105"
+            />
+          </div>
+        )}
+
+        {variant === 'compact' ? (
+          <Image
+            src={imageSrc}
+            alt={asset.title}
+            fill
+            sizes={imageSizes}
+            unoptimized={isLocalDemoImage(imageSrc)}
+            className="object-cover transition-transform duration-300 ease-out group-hover:scale-[1.06]"
+          />
+        ) : null}
+      </div>
+
+      {variant === 'grid' ? (
+        <div className="p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="line-clamp-1 text-sm font-medium">{asset.title}</div>
+            {badge ? (
+              <span className="shrink-0 rounded-md bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground">{badge}</span>
+            ) : null}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1">
+            {(asset.keywords ?? []).slice(0, 3).map((k) => (
+              <span key={k} className="rounded-full bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground">
+                {k}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </Link>
+  );
+}
+
 export default function StockPage() {
   const router = useRouter();
   const { isReady, isLoggedIn } = useProtoAuth();
   const loggedIn = isReady && isLoggedIn;
 
-  const [q, setQ] = useState('');
-  const [heroIndex, setHeroIndex] = useState(0);
+  const { addItem } = useCart();
+  const { open: openCart } = useCartUI();
 
   const assets = useMemo(() => ASSETS as Asset[], []);
 
@@ -53,6 +163,25 @@ export default function StockPage() {
     const first = assets[0];
     return getAssetImage(first) ?? '';
   }, [assets]);
+
+  const addToCart = useCallback(
+    (asset: Asset) => {
+      const img = getImage(asset, fallbackImage);
+      addItem({
+        id: asset.id,
+        title: asset.title,
+        license: 'single',
+        price: 7.99,
+        image: img,
+        qty: 1,
+      });
+      openCart();
+    },
+    [addItem, openCart, fallbackImage]
+  );
+
+  const [q, setQ] = useState('');
+  const [heroIndex, setHeroIndex] = useState(0);
 
   const featured = useMemo(() => {
     const byId = new Map(assets.map((a) => [a.id, a] as const));
@@ -67,6 +196,11 @@ export default function StockPage() {
     const list = featured.slice(0, 6).map((a) => getImage(a, fallbackImage));
     return list.length > 1 ? list : fallbackImage ? [fallbackImage, fallbackImage] : [];
   }, [featured, fallbackImage]);
+
+  const heroSources = useMemo(() => {
+    const fallback = featured.slice(0, 1).map((a) => getImage(a, fallbackImage));
+    return (heroImages.length ? heroImages : fallback).filter(Boolean);
+  }, [featured, fallbackImage, heroImages]);
 
   useEffect(() => {
     if (heroImages.length <= 1) return;
@@ -93,25 +227,20 @@ export default function StockPage() {
       {/* Hero */}
       <section className="relative mb-12 flex min-h-[72vh] items-center overflow-hidden">
         <div className="absolute inset-0">
-          {(heroImages.length
-            ? heroImages
-            : featured.slice(0, 1).map((a) => getImage(a, fallbackImage))
-          )
-            .filter(Boolean)
-            .map((src, idx) => (
-              <Image
-                key={`${src}-${idx}`}
-                src={src}
-                alt="Stock hero"
-                fill
-                sizes="100vw"
-                unoptimized={isLocalDemoImage(String(src))}
-                className={`object-cover transition-opacity duration-[1400ms] ease-out ${
-                  idx === heroIndex ? 'opacity-100' : 'opacity-0'
-                }`}
-                priority={idx === 0}
-              />
-            ))}
+          {heroSources.map((src, idx) => (
+            <Image
+              key={`${src}-${idx}`}
+              src={src}
+              alt="Stock hero"
+              fill
+              sizes="100vw"
+              unoptimized={isLocalDemoImage(String(src))}
+              className={`object-cover transition-opacity duration-[1400ms] ease-out ${
+                idx === heroIndex ? 'opacity-100' : 'opacity-0'
+              }`}
+              priority={idx === 0}
+            />
+          ))}
           <div className="absolute inset-0 bg-black/25" />
           <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-background" />
           <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/55 to-transparent" />
@@ -153,14 +282,18 @@ export default function StockPage() {
                   router.push(buildSearchHref(q));
                 }}
               >
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 !text-black dark:!text-white" />
+                <div className="relative rounded-full bg-background/95 shadow-sm ring-1 ring-border/25 backdrop-blur transition hover:ring-border/35 focus-within:ring-2 focus-within:ring-foreground/25 dark:bg-background/70 overflow-hidden">
+                  <div className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2">
+                    <div className="grid h-9 w-9 place-items-center rounded-full bg-muted/10 ring-1 ring-border/15">
+                      <Search className="h-5 w-5 text-foreground" />
+                    </div>
+                  </div>
 
                   <input
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
                     placeholder="Search images, people, places, concepts…"
-                    className="relative z-0 h-14 w-full rounded-full bg-background/90 pl-14 pr-28 text-sm outline-none backdrop-blur ring-1 ring-border/20 shadow-sm transition focus:ring-2 focus:ring-foreground/25"
+                    className="relative z-0 h-14 w-full bg-transparent pl-[3.25rem] pr-[7.25rem] text-sm text-foreground placeholder:text-muted-foreground/80 outline-none"
                     autoComplete="off"
                   />
 
@@ -168,7 +301,7 @@ export default function StockPage() {
                     <button
                       type="button"
                       onClick={() => setQ('')}
-                      className="absolute right-[5.25rem] top-1/2 z-10 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-muted/30 text-muted-foreground transition hover:bg-muted/40"
+                      className="absolute right-[5.5rem] top-1/2 z-10 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-muted/25 text-muted-foreground ring-1 ring-border/15 transition hover:bg-muted/40 hover:text-foreground"
                       aria-label="Clear search"
                     >
                       <X className="h-4 w-4" />
@@ -178,7 +311,7 @@ export default function StockPage() {
                   <button
                     type="submit"
                     disabled={!q.trim()}
-                    className="absolute right-2 top-1/2 z-10 h-10 -translate-y-1/2 rounded-full bg-foreground px-5 text-sm font-medium text-background shadow-sm transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="absolute right-2 top-1/2 z-10 h-10 -translate-y-1/2 rounded-full bg-foreground px-5 text-sm font-medium text-background shadow-sm transition hover:-translate-y-[calc(50%+1px)] hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Search
                   </button>
@@ -235,34 +368,19 @@ export default function StockPage() {
                   <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-background/60 to-transparent" />
                   <div className="overflow-x-auto px-4">
                     <div className="flex snap-x snap-mandatory gap-3 pr-6">
-                      {featured.slice(0, 12).map((a) => (
-                        <Link
-                          key={a.id}
-                          href={`/stock/assets/${a.id}`}
-                          className="group relative h-28 w-44 shrink-0 snap-start overflow-hidden rounded-xl bg-muted/20 ring-1 ring-black/5 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-muted/30 hover:ring-black/10 focus:outline-none focus:ring-2 focus:ring-foreground/25 dark:ring-white/10 dark:hover:ring-white/20"
-                        >
-                          <div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
-                            <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
-                              <div className="line-clamp-1 text-xs font-medium text-white/95">
-                                {a.title}
-                              </div>
-                              <div className="ml-2 shrink-0 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-medium text-black">
-                                View
-                              </div>
-                            </div>
-                          </div>
-
-                          <Image
-                            src={getImage(a, fallbackImage)}
-                            alt={a.title}
-                            fill
-                            sizes="176px"
-                            unoptimized={isLocalDemoImage(getImage(a, fallbackImage))}
-                            className="object-cover transition-transform duration-300 ease-out group-hover:scale-[1.06]"
+                      {featured.slice(0, 12).map((a) => {
+                        const img = getImage(a, fallbackImage);
+                        return (
+                          <AssetCard
+                            key={a.id}
+                            asset={a}
+                            href={`/stock/assets/${a.id}`}
+                            imageSrc={img}
+                            variant="compact"
+                            onAdd={() => addToCart(a)}
                           />
-                        </Link>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -437,42 +555,20 @@ export default function StockPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-          {featured.map((a) => (
-            <Link
-              key={a.id}
-              href={`/stock/assets/${a.id}`}
-              className="group block overflow-hidden rounded-xl bg-muted/10 transition hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-foreground/20"
-            >
-              <div className="relative aspect-[4/3] w-full overflow-hidden">
-                <Image
-                  src={getImage(a, fallbackImage)}
-                  alt={a.title}
-                  fill
-                  sizes="(min-width: 1024px) 220px, (min-width: 640px) 30vw, 45vw"
-                  unoptimized={isLocalDemoImage(getImage(a, fallbackImage))}
-                  className="object-cover transition-transform duration-300 group-hover:scale-105"
-                />
-              </div>
-              <div className="p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="line-clamp-1 text-sm font-medium">{a.title}</div>
-                  <span className="shrink-0 rounded-md bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground">
-                    Featured
-                  </span>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {(a.keywords ?? []).slice(0, 3).map((k) => (
-                    <span
-                      key={k}
-                      className="rounded-full bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground"
-                    >
-                      {k}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </Link>
-          ))}
+          {featured.map((a) => {
+            const img = getImage(a, fallbackImage);
+            return (
+              <AssetCard
+                key={a.id}
+                asset={a}
+                href={`/stock/assets/${a.id}`}
+                imageSrc={img}
+                variant="grid"
+                badge="Featured"
+                onAdd={() => addToCart(a)}
+              />
+            );
+          })}
         </div>
       </div>
 
@@ -499,37 +595,44 @@ export default function StockPage() {
             { title: 'Winter campaign', q: 'winter' },
             { title: 'Food & lifestyle', q: 'food' },
             { title: 'Business portraits', q: 'portrait' },
-          ].map((c) => (
-            <Link
-              key={c.title}
-              href={`/stock/search?q=${encodeURIComponent(c.q)}`}
-              className="group overflow-hidden rounded-xl bg-muted/10 transition hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-foreground/20"
-            >
-              <div className="relative aspect-[16/9] w-full overflow-hidden">
-                <Image
-                  src={getImage(
-                    assets.find((a) => (a.keywords ?? []).includes(c.q)) ?? featured[0],
-                    fallbackImage
-                  )}
-                  alt={c.title}
-                  fill
-                  sizes="(min-width: 640px) 33vw, 100vw"
-                  unoptimized={isLocalDemoImage(
-                    getImage(
-                      assets.find((a) => (a.keywords ?? []).includes(c.q)) ?? featured[0],
-                      fallbackImage
-                    )
-                  )}
-                  className="object-cover transition-transform duration-300 group-hover:scale-105"
+          ].map((c) => {
+            const pick = assets.find((a) => (a.keywords ?? []).includes(c.q)) ?? featured[0];
+            return (
+              <Link
+                key={c.title}
+                href={`/stock/search?q=${encodeURIComponent(c.q)}`}
+                className="group relative overflow-hidden rounded-xl bg-muted/10 transition hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-foreground/20"
+              >
+                <AddToCartOverlayButton
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    addToCart(pick);
+                  }}
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-background/70 via-background/10 to-transparent" />
-                <div className="absolute bottom-0 left-0 right-0 p-3">
-                  <div className="text-sm font-medium">{c.title}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">Explore →</div>
+                <div className="relative aspect-[16/9] w-full overflow-hidden">
+                  {(() => {
+                    const img = getImage(pick, fallbackImage);
+                    return (
+                      <Image
+                        src={img}
+                        alt={c.title}
+                        fill
+                        sizes="(min-width: 640px) 33vw, 100vw"
+                        unoptimized={isLocalDemoImage(img)}
+                        className="object-cover transition-transform duration-300 group-hover:scale-105"
+                      />
+                    );
+                  })()}
+                  <div className="absolute inset-0 bg-gradient-to-t from-background/70 via-background/10 to-transparent" />
+                  <div className="absolute bottom-0 left-0 right-0 p-3">
+                    <div className="text-sm font-medium">{c.title}</div>
+                    <div className="mt-1 text-xs text-muted-foreground">Explore →</div>
+                  </div>
                 </div>
-              </div>
-            </Link>
-          ))}
+              </Link>
+            );
+          })}
         </div>
       </div>
 
@@ -552,35 +655,45 @@ export default function StockPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-          {newest.map((a) => (
-            <Link
-              key={a.id}
-              href={`/stock/assets/${a.id}`}
-              className="group block overflow-hidden rounded-xl bg-muted/10 transition hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-foreground/20"
-            >
-              <div className="relative aspect-[16/10] w-full overflow-hidden">
-                <Image
-                  src={getImage(a, fallbackImage)}
-                  alt={a.title}
-                  fill
-                  sizes="(min-width: 1024px) 260px, (min-width: 768px) 33vw, 100vw"
-                  unoptimized={isLocalDemoImage(getImage(a, fallbackImage))}
-                  className="object-cover transition-transform duration-300 group-hover:scale-105"
+          {newest.map((a) => {
+            const img = getImage(a, fallbackImage);
+            return (
+              <Link
+                key={a.id}
+                href={`/stock/assets/${a.id}`}
+                className="group relative block overflow-hidden rounded-xl bg-muted/10 transition hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-foreground/20"
+              >
+                <AddToCartOverlayButton
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    addToCart(a);
+                  }}
                 />
-              </div>
-              <div className="p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="line-clamp-1 text-sm font-medium">{a.title}</div>
-                  <span className="shrink-0 rounded-md bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground">
-                    New
-                  </span>
+                <div className="relative aspect-[16/10] w-full overflow-hidden">
+                  <Image
+                    src={img}
+                    alt={a.title}
+                    fill
+                    sizes="(min-width: 1024px) 260px, (min-width: 768px) 33vw, 100vw"
+                    unoptimized={isLocalDemoImage(img)}
+                    className="object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
                 </div>
-                <div className="mt-2 line-clamp-2 text-xs text-muted-foreground">
-                  {a.description ?? 'Ready to license and use across channels.'}
+                <div className="p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="line-clamp-1 text-sm font-medium">{a.title}</div>
+                    <span className="shrink-0 rounded-md bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground">
+                      New
+                    </span>
+                  </div>
+                  <div className="mt-2 line-clamp-2 text-xs text-muted-foreground">
+                    {a.description ?? 'Ready to license and use across channels.'}
+                  </div>
                 </div>
-              </div>
-            </Link>
-          ))}
+              </Link>
+            );
+          })}
         </div>
       </div>
     </div>

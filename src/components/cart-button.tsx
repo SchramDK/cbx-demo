@@ -1,5 +1,7 @@
 'use client';
 
+import * as React from 'react';
+
 import Link from 'next/link';
 import { ShoppingCart } from 'lucide-react';
 
@@ -12,16 +14,19 @@ export type CartButtonProps = {
   href?: string;
   /** Accessible label. */
   label?: string;
+  /** Optional click handler (e.g. open cart drawer). */
+  onClick?: (e: React.MouseEvent<HTMLElement>) => void;
 };
 
 export function CartButton({
   count = 0,
   href = '/stock/cart',
   label = 'Open cart',
+  onClick,
 }: CartButtonProps) {
   return (
     <Button asChild type="button" variant="ghost" size="sm" className="relative h-10 w-10 p-0">
-      <Link href={href} aria-label={label}>
+      <Link href={href} aria-label={label} onClick={onClick}>
         <ShoppingCart className="h-5 w-5" />
         {count > 0 ? (
           <span

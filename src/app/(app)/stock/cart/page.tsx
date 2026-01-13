@@ -3,9 +3,9 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Trash2 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { useCart } from "@/lib/cart/cart-context";
+import { useCart } from "@/lib/cart/cart";
 import { STOCK_ASSETS as ASSETS } from "@/lib/demo/stock-assets";
 
 type Asset = {
@@ -19,18 +19,21 @@ type Asset = {
 
 const getAssetImage = (asset?: Asset) => asset?.preview ?? "";
 
+// Demo pricing (align with the asset page)
+const PRICE_SINGLE = 7.99;
+
 export default function CartPage() {
   const { items, count, total, updateQty, removeItem, clear, addItem } = useCart();
 
   useEffect(() => {
     for (const it of items) {
-      if (it.qty !== 1) {
+      if (it.qty > 1) {
         updateQty(it.id, 1, it.license);
       }
     }
   }, [items, updateQty]);
 
-  const related = (() => {
+  const related = useMemo(() => {
     const assets = ASSETS as Asset[];
     if (!items.length) return [] as Asset[];
 
@@ -60,7 +63,7 @@ export default function CartPage() {
     }
 
     return merged;
-  })();
+  }, [items]);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-6 pb-24 sm:py-10 lg:pb-6">
@@ -75,7 +78,9 @@ export default function CartPage() {
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">Cart</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {count === 0 ? "Your cart is empty." : `${count} item${count === 1 ? "" : "s"} in your cart.`}
+            {count === 0
+              ? "Your cart is empty."
+              : `${count} item${count === 1 ? "" : "s"} in your cart.`}
           </p>
         </div>
 
@@ -84,7 +89,11 @@ export default function CartPage() {
             <Button variant="outline">Continue shopping</Button>
           </Link>
           {items.length > 0 ? (
-            <Button variant="ghost" onClick={clear} className="text-muted-foreground hover:text-foreground">
+            <Button
+              variant="ghost"
+              onClick={clear}
+              className="text-muted-foreground hover:text-foreground"
+            >
               Clear cart
             </Button>
           ) : null}
@@ -113,7 +122,9 @@ export default function CartPage() {
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
             <div className="rounded-xl bg-muted/20 p-4 ring-1 ring-black/5 dark:ring-white/10">
               <div className="text-xs font-medium">Royalty‑free</div>
-              <div className="mt-1 text-xs text-muted-foreground">Use across channels in your projects.</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                Use across channels in your projects.
+              </div>
             </div>
             <div className="rounded-xl bg-muted/20 p-4 ring-1 ring-black/5 dark:ring-white/10">
               <div className="text-xs font-medium">Instant delivery</div>
@@ -121,7 +132,9 @@ export default function CartPage() {
             </div>
             <div className="rounded-xl bg-muted/20 p-4 ring-1 ring-black/5 dark:ring-white/10">
               <div className="text-xs font-medium">Clear licensing</div>
-              <div className="mt-1 text-xs text-muted-foreground">Standard vs Extended—simple and transparent.</div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                Single image or Pay &amp; Go—simple and transparent.
+              </div>
             </div>
           </div>
         </div>
@@ -132,13 +145,15 @@ export default function CartPage() {
               <div className="hidden rounded-2xl bg-background p-5 ring-1 ring-black/5 dark:ring-white/10 lg:block lg:sticky lg:top-24">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-medium">Order summary</div>
-                  <div className="text-xs text-muted-foreground tabular-nums">{count} item{count === 1 ? '' : 's'}</div>
+                  <div className="text-xs text-muted-foreground tabular-nums">
+                    {count} item{count === 1 ? "" : "s"}
+                  </div>
                 </div>
 
                 <div className="mt-4 space-y-2 text-sm">
                   <div className="flex items-center justify-between">
                     <div className="text-muted-foreground">Subtotal</div>
-                    <div className="font-medium tabular-nums">{formatMoney(total)}</div>
+                    <div className="font-medium tabular-nums">{formatMoneyEUR(total)}</div>
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="text-muted-foreground">Taxes</div>
@@ -148,7 +163,7 @@ export default function CartPage() {
 
                 <div className="mt-4 flex items-center justify-between border-t pt-4">
                   <div className="text-sm font-medium">Total</div>
-                  <div className="text-lg font-semibold tabular-nums">{formatMoney(total)}</div>
+                  <div className="text-lg font-semibold tabular-nums">{formatMoneyEUR(total)}</div>
                 </div>
 
                 <div className="mt-4 text-xs text-muted-foreground">
@@ -192,23 +207,23 @@ export default function CartPage() {
                             <div className="mt-2 flex flex-wrap items-center gap-2">
                               {it.license ? (
                                 <span className="inline-flex items-center rounded-full bg-muted/30 px-2 py-0.5 text-[11px] font-medium text-foreground/80 ring-1 ring-black/5 dark:ring-white/10">
-                                  {it.license === 'extended' ? 'Extended license' : 'Standard license'}
+                                  {it.license === "paygo10" ? "Pay & Go 10" : "Single image"}
                                 </span>
                               ) : null}
                               <span className="text-[11px] text-muted-foreground">
-                                Qty 1 · {formatMoney(it.price)}
+                                Qty {it.qty} · {formatMoneyEUR(it.price)}
                               </span>
                             </div>
                           </div>
 
                           <div className="text-sm font-medium tabular-nums sm:text-right">
-                            {formatMoney(it.price)}
+                            {formatMoneyEUR(it.price)}
                           </div>
                         </div>
 
                         <div className="mt-3 flex items-center justify-between gap-3">
                           <div className="inline-flex items-center rounded-full bg-muted/30 px-2 py-1 text-xs text-muted-foreground ring-1 ring-black/5 dark:ring-white/10">
-                            Quantity: 1
+                            Quantity: {it.qty}
                           </div>
 
                           <Button
@@ -234,9 +249,7 @@ export default function CartPage() {
               <div className="mb-3 flex items-end justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold">Related images</div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">
-                    Based on the content in your cart
-                  </div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">Based on the content in your cart</div>
                 </div>
                 <Link href="/stock" className="text-xs text-muted-foreground hover:text-foreground">
                   Browse more
@@ -270,19 +283,18 @@ export default function CartPage() {
                       <div className="p-3">
                         <div className="truncate text-xs font-medium">{a.title}</div>
                         <div className="mt-2 flex items-center justify-between gap-2">
-                          <div className="text-[11px] text-muted-foreground">From {formatMoney(9)}</div>
+                          <div className="text-[11px] text-muted-foreground">From {formatMoneyEUR(PRICE_SINGLE)}</div>
                           <Button
                             size="sm"
                             variant="outline"
                             onClick={() => {
-                              // qty is fixed to 1; if addItem isn't available, users can add from the asset page
-                              (addItem as any)?.({
+                              addItem({
                                 id: a.id,
                                 title: a.title,
-                                price: 9,
-                                qty: 1,
+                                price: PRICE_SINGLE,
                                 image: img,
-                                license: 'standard',
+                                license: "single",
+                                qty: 1,
                               });
                             }}
                           >
@@ -305,7 +317,7 @@ export default function CartPage() {
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-xs text-muted-foreground">Total</div>
-                <div className="truncate text-base font-semibold tabular-nums">{formatMoney(total)}</div>
+                <div className="truncate text-base font-semibold tabular-nums">{formatMoneyEUR(total)}</div>
               </div>
               <Button className="shrink-0" disabled>
                 Checkout (prototype)
@@ -318,6 +330,6 @@ export default function CartPage() {
   );
 }
 
-function formatMoney(v: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v || 0);
+function formatMoneyEUR(v: number) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "EUR" }).format(v || 0);
 }
