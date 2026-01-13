@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, X } from 'lucide-react';
+import { Search, Sparkles, X } from 'lucide-react';
 
 import { STOCK_ASSETS as ASSETS, STOCK_FEATURED_IDS } from '@/lib/demo/stock-assets';
 import { useProtoAuth } from '@/lib/proto-auth';
@@ -33,7 +33,7 @@ const isLocalDemoImage = (src: string) => src.startsWith('/demo/');
 
 function Pill({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex select-none items-center rounded-full bg-muted/30 px-3 py-1 text-xs text-muted-foreground transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20">
+    <span className="inline-flex select-none items-center rounded-full bg-muted/20 px-3 py-1 text-xs font-medium text-muted-foreground ring-1 ring-border/15 transition hover:bg-muted/35 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/25">
       {children}
     </span>
   );
@@ -91,7 +91,7 @@ export default function StockPage() {
   return (
     <div className="w-full">
       {/* Hero */}
-      <section className="relative mb-12 flex min-h-[70vh] items-center overflow-hidden">
+      <section className="relative mb-12 flex min-h-[72vh] items-center overflow-hidden">
         <div className="absolute inset-0">
           {(heroImages.length
             ? heroImages
@@ -106,20 +106,34 @@ export default function StockPage() {
                 fill
                 sizes="100vw"
                 unoptimized={isLocalDemoImage(String(src))}
-                className={`object-cover transition-opacity duration-1000 ${
+                className={`object-cover transition-opacity duration-[1400ms] ease-out ${
                   idx === heroIndex ? 'opacity-100' : 'opacity-0'
                 }`}
                 priority={idx === 0}
               />
             ))}
-          <div className="absolute inset-0 bg-black/15" />
-          <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/45 to-transparent" />
-          <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-background to-transparent" />
+          <div className="absolute inset-0 bg-black/25" />
+          <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-background" />
+          <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/55 to-transparent" />
+          <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-background via-background/60 to-transparent" />
         </div>
 
         <div className="relative w-full px-4 py-20 sm:px-6 sm:py-28 lg:px-10">
-          <div className="mx-auto max-w-3xl text-center">
-            <div className="mx-auto max-w-3xl rounded-3xl bg-background/55 p-5 backdrop-blur sm:p-7">
+          <div className="mx-auto max-w-4xl text-center">
+            <div className="mx-auto max-w-3xl rounded-3xl border border-border/20 bg-background/55 p-6 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.45)] backdrop-blur sm:p-8">
+              <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
+                <span className="inline-flex items-center gap-2 rounded-full border border-border/20 bg-background/60 px-3 py-1 text-xs font-medium text-foreground/80 backdrop-blur">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Curated stock library
+                </span>
+                <span className="inline-flex items-center rounded-full border border-border/20 bg-background/60 px-3 py-1 text-xs font-medium text-foreground/80 backdrop-blur">
+                  Royalty-free
+                </span>
+                <span className="inline-flex items-center rounded-full border border-border/20 bg-background/60 px-3 py-1 text-xs font-medium text-foreground/80 backdrop-blur">
+                  From €7.99
+                </span>
+              </div>
+
               <h1 className="text-4xl font-semibold tracking-tight sm:text-6xl">
                 Find the right visual
               </h1>
@@ -140,13 +154,13 @@ export default function StockPage() {
                 }}
               >
                 <div className="relative">
-                  <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
+                  <Search className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 !text-black dark:!text-white" />
 
                   <input
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
                     placeholder="Search images, people, places, concepts…"
-                    className="h-14 w-full rounded-full bg-background/85 pl-12 pr-28 text-sm outline-none backdrop-blur ring-1 ring-border/10 transition focus:ring-2 focus:ring-foreground/20"
+                    className="relative z-0 h-14 w-full rounded-full bg-background/90 pl-14 pr-28 text-sm outline-none backdrop-blur ring-1 ring-border/20 shadow-sm transition focus:ring-2 focus:ring-foreground/25"
                     autoComplete="off"
                   />
 
@@ -154,7 +168,7 @@ export default function StockPage() {
                     <button
                       type="button"
                       onClick={() => setQ('')}
-                      className="absolute right-[5.25rem] top-1/2 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-muted/30 text-muted-foreground transition hover:bg-muted/40"
+                      className="absolute right-[5.25rem] top-1/2 z-10 inline-flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-muted/30 text-muted-foreground transition hover:bg-muted/40"
                       aria-label="Clear search"
                     >
                       <X className="h-4 w-4" />
@@ -164,7 +178,7 @@ export default function StockPage() {
                   <button
                     type="submit"
                     disabled={!q.trim()}
-                    className="absolute right-2 top-1/2 h-10 -translate-y-1/2 rounded-full bg-foreground px-5 text-sm font-medium text-background transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="absolute right-2 top-1/2 z-10 h-10 -translate-y-1/2 rounded-full bg-foreground px-5 text-sm font-medium text-background shadow-sm transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     Search
                   </button>
@@ -175,45 +189,32 @@ export default function StockPage() {
                 <button
                   type="button"
                   onClick={() => router.push('/stock/search')}
-                  className="rounded-full bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+                  className="rounded-full bg-muted/25 px-4 py-2 text-xs font-medium text-muted-foreground ring-1 ring-border/15 transition hover:bg-muted/40 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-foreground/25"
                 >
                   Browse all
                 </button>
                 <button
                   type="button"
                   onClick={() => pushOrLogin('/stock/collections')}
-                  className="rounded-full bg-muted/30 px-4 py-2 text-xs font-medium text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+                  className="rounded-full bg-muted/25 px-4 py-2 text-xs font-medium text-muted-foreground ring-1 ring-border/15 transition hover:bg-muted/40 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-foreground/25"
                 >
                   Collections
                 </button>
               </div>
 
               {/* Trending */}
-              <div className="mt-4 text-xs text-muted-foreground">
-                Trending:{' '}
-                <button
-                  type="button"
-                  onClick={() => router.push(buildSearchHref('business'))}
-                  className="underline decoration-muted-foreground/30 underline-offset-4 hover:text-foreground"
-                >
-                  business
-                </button>
-                <span className="mx-2 text-muted-foreground/60">•</span>
-                <button
-                  type="button"
-                  onClick={() => router.push(buildSearchHref('portrait'))}
-                  className="underline decoration-muted-foreground/30 underline-offset-4 hover:text-foreground"
-                >
-                  portrait
-                </button>
-                <span className="mx-2 text-muted-foreground/60">•</span>
-                <button
-                  type="button"
-                  onClick={() => router.push(buildSearchHref('nature'))}
-                  className="underline decoration-muted-foreground/30 underline-offset-4 hover:text-foreground"
-                >
-                  nature
-                </button>
+              <div className="mt-5 flex flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground">
+                <span className="mr-1">Trending:</span>
+                {['business', 'portrait', 'nature'].map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => router.push(buildSearchHref(t))}
+                    className="rounded-full bg-muted/20 px-3 py-1 text-xs font-medium text-muted-foreground ring-1 ring-border/15 transition hover:bg-muted/35 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-foreground/25"
+                  >
+                    {t}
+                  </button>
+                ))}
               </div>
 
               {/* Popular today */}
@@ -238,7 +239,7 @@ export default function StockPage() {
                         <Link
                           key={a.id}
                           href={`/stock/assets/${a.id}`}
-                          className="group relative h-28 w-44 shrink-0 snap-start overflow-hidden rounded-xl bg-muted/20 transition hover:bg-muted/30 focus:outline-none focus:ring-2 focus:ring-foreground/25"
+                          className="group relative h-28 w-44 shrink-0 snap-start overflow-hidden rounded-xl bg-muted/20 ring-1 ring-black/5 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-muted/30 hover:ring-black/10 focus:outline-none focus:ring-2 focus:ring-foreground/25 dark:ring-white/10 dark:hover:ring-white/20"
                         >
                           <div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
                             <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
@@ -258,7 +259,7 @@ export default function StockPage() {
                             fill
                             sizes="176px"
                             unoptimized={isLocalDemoImage(getImage(a, fallbackImage))}
-                            className="object-cover transition-transform duration-300 group-hover:scale-105"
+                            className="object-cover transition-transform duration-300 ease-out group-hover:scale-[1.06]"
                           />
                         </Link>
                       ))}
