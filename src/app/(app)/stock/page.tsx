@@ -23,10 +23,13 @@ type Asset = {
 const getAssetImage = (asset?: Asset) =>
   asset?.preview ?? asset?.src ?? asset?.image ?? asset?.url ?? '';
 
+
 const getImage = (asset: Asset, fallback: string) => {
   const src = getAssetImage(asset);
   return src || fallback;
 };
+
+const isLocalDemoImage = (src: string) => src.startsWith('/demo/');
 
 function Pill({ children }: { children: React.ReactNode }) {
   return (
@@ -102,6 +105,7 @@ export default function StockPage() {
                 alt="Stock hero"
                 fill
                 sizes="100vw"
+                unoptimized={isLocalDemoImage(String(src))}
                 className={`object-cover transition-opacity duration-1000 ${
                   idx === heroIndex ? 'opacity-100' : 'opacity-0'
                 }`}
@@ -253,6 +257,7 @@ export default function StockPage() {
                             alt={a.title}
                             fill
                             sizes="176px"
+                            unoptimized={isLocalDemoImage(getImage(a, fallbackImage))}
                             className="object-cover transition-transform duration-300 group-hover:scale-105"
                           />
                         </Link>
@@ -443,6 +448,7 @@ export default function StockPage() {
                   alt={a.title}
                   fill
                   sizes="(min-width: 1024px) 220px, (min-width: 640px) 30vw, 45vw"
+                  unoptimized={isLocalDemoImage(getImage(a, fallbackImage))}
                   className="object-cover transition-transform duration-300 group-hover:scale-105"
                 />
               </div>
@@ -507,6 +513,12 @@ export default function StockPage() {
                   alt={c.title}
                   fill
                   sizes="(min-width: 640px) 33vw, 100vw"
+                  unoptimized={isLocalDemoImage(
+                    getImage(
+                      assets.find((a) => (a.keywords ?? []).includes(c.q)) ?? featured[0],
+                      fallbackImage
+                    )
+                  )}
                   className="object-cover transition-transform duration-300 group-hover:scale-105"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-background/70 via-background/10 to-transparent" />
@@ -551,6 +563,7 @@ export default function StockPage() {
                   alt={a.title}
                   fill
                   sizes="(min-width: 1024px) 260px, (min-width: 768px) 33vw, 100vw"
+                  unoptimized={isLocalDemoImage(getImage(a, fallbackImage))}
                   className="object-cover transition-transform duration-300 group-hover:scale-105"
                 />
               </div>

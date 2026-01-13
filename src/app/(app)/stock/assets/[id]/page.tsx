@@ -24,12 +24,19 @@ type Asset = {
 
 const getAssetImage = (asset?: Asset) => asset?.preview ?? '';
 
-const pickTags = (asset?: Asset) => {
+const normalizeToken = (s: string) => s.trim().toLowerCase();
+
+const pickTags = (asset?: Asset, limit = 10) => {
   const fromTags = asset?.tags ?? [];
   const fromKeywords = asset?.keywords ?? [];
-  const merged = [...fromTags, ...fromKeywords].filter(Boolean);
-  // unique
-  return Array.from(new Set(merged)).slice(0, 8);
+  const fromCategory = asset?.category ? [asset.category] : [];
+  const merged = [...fromTags, ...fromKeywords, ...fromCategory]
+    .filter(Boolean)
+    .map(normalizeToken);
+
+  const unique = Array.from(new Set(merged));
+  // keep original casing for display where possible later; for matching we use normalized tokens
+  return unique.slice(0, limit);
 };
 
 export default function StockAssetPage() {
@@ -43,20 +50,104 @@ export default function StockAssetPage() {
 
   const asset = useMemo(() => assets.find((a) => a.id === id), [assets, id]);
 
+  const assetTokens = useMemo(() => {
+    const raw: string[] = [];
+    if (asset?.category) raw.push(asset.category);
+    if (asset?.tags?.length) raw.push(...asset.tags);
+    if (asset?.keywords?.length) raw.push(...asset.keywords);
+    return new Set(raw.filter(Boolean).map((t) => t.trim().toLowerCase()));
+  }, [asset]);
+
+  const relatedPicks = useMemo(() => {
+    if (!assets.length) return [] as Asset[];
+
+    const current = assets.find((a) => a.id === (asset?.id ?? id));
+    const currentId = current?.id ?? (asset?.id ?? id);
+
+    // Score by shared tokens + category, then diversify a bit.
+    const scored = assets
+      .filter((a) => a.id !== currentId)
+      .map((a) => {
+        let score = 0;
+        const aTokens = new Set(
+          [a.category, ...(a.tags ?? []), ...(a.keywords ?? [])]
+            .filter(Boolean)
+            .map((t) => t.trim().toLowerCase())
+        );
+
+        // category boost
+        if (asset?.category && a.category && a.category === asset.category) score += 8;
+
+        // shared tags/keywords/category tokens
+        for (const tok of aTokens) {
+          if (assetTokens.has(tok)) score += 3;
+        }
+
+        // slight preference for assets with previews
+        if (getAssetImage(a)) score += 1;
+
+        return { a, score };
+      })
+      .sort((x, y) => y.score - x.score);
+
+    // Diversify by category: take top results but avoid all being same category.
+    const result: Asset[] = [];
+    const seenCats = new Set<string>();
+
+    for (const { a } of scored) {
+      if (result.length >= 8) break;
+      const cat = (a.category ?? '').trim();
+      if (cat && seenCats.has(cat) && result.length < 4) {
+        // first half: encourage diversity
+        continue;
+      }
+      if (cat) seenCats.add(cat);
+      result.push(a);
+    }
+
+    // If not enough due to diversity constraints, fill remaining
+    if (result.length < 8) {
+      for (const { a } of scored) {
+        if (result.length >= 8) break;
+        if (result.some((r) => r.id === a.id)) continue;
+        result.push(a);
+      }
+    }
+
+    return result;
+  }, [assets, asset, id, assetTokens]);
+
   const fallbackImage = useMemo(() => {
     const firstValid = assets.find((a) => Boolean(getAssetImage(a)));
     return firstValid ? getAssetImage(firstValid) : '/demo/stock/COLOURBOX69824938.jpg';
   }, [assets]);
   const imageSrc = asset && getAssetImage(asset) ? getAssetImage(asset) : fallbackImage;
   const title = asset?.title ?? 'Asset';
-  const tags = pickTags(asset);
+  const tags = pickTags(asset, 10);
+  const displayTags = useMemo(() => {
+    // Try to show original tag casing when available
+    const original = [
+      ...(asset?.tags ?? []),
+      ...(asset?.keywords ?? []),
+      ...(asset?.category ? [asset.category] : []),
+    ].filter(Boolean);
+
+    const map = new Map<string, string>();
+    for (const t of original) map.set(t.trim().toLowerCase(), t.trim());
+
+    return tags.map((t) => map.get(t) ?? t);
+  }, [asset, tags]);
 
   const assetId = asset?.id ?? id;
   const returnTo = `/stock/assets/${assetId}`;
 
-  const priceStandard = 9;
-  const priceExtended = 29;
-  const [license, setLicense] = useState<'standard' | 'extended'>('standard');
+  // Demo pricing (mirrors Colourbox example)
+  const priceSingle = 7.99;
+  const payGo10Price = 69.0;
+  const payGo10Was = 79.9;
+  const payGo10SavePct = 14;
+
+  const [purchaseOption, setPurchaseOption] = useState<'single' | 'paygo10'>('single');
   const [added, setAdded] = useState(false);
 
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -136,7 +227,7 @@ export default function StockAssetPage() {
     };
   }, [lightboxOpen, currentIndex, assets.length]);
 
-  const price = license === 'standard' ? priceStandard : priceExtended;
+  const price = purchaseOption === 'single' ? priceSingle : payGo10Price;
 
   const goLogin = () => router.push(`/login?returnTo=${encodeURIComponent(returnTo)}`);
 
@@ -193,10 +284,10 @@ export default function StockAssetPage() {
           </div>
         </button>
 
-        <Card className="p-4 lg:sticky lg:top-24 h-fit">
+        <Card className="h-fit p-4 lg:sticky lg:top-24">
           <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
             <span>Royalty-free · Instant download</span>
-            <span className="font-medium text-foreground/80">From €{priceStandard}</span>
+            <span className="font-medium text-foreground/80">From €{priceSingle.toFixed(2)}</span>
           </div>
           <h1 className="text-xl font-semibold leading-tight sm:text-2xl">{title}</h1>
           <p className="mt-1 text-sm text-muted-foreground">by Colourbox / Demo Photographer</p>
@@ -205,58 +296,68 @@ export default function StockAssetPage() {
     {asset.description}
   </p>
 ) : null}
-          {!loggedIn ? (
-            <div className="mt-3 rounded-lg border bg-muted/40 p-3 text-sm">
-              <div className="font-medium">Preview mode</div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                You can add items to your cart in preview mode. Log in when you want to download or checkout.
-              </div>
-              <Button className="mt-3 w-full" onClick={goLogin}>
-                Log in to continue
-              </Button>
-            </div>
-          ) : null}
 
-<div className="mt-3 flex flex-wrap gap-2">
-  {asset?.category ? <Badge variant="outline">{asset.category}</Badge> : null}
-  {tags.map((t) => (
-    <Badge key={t} variant="secondary">
-      {t}
-    </Badge>
-  ))}
-</div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {asset?.category ? <Badge variant="outline">{asset.category}</Badge> : null}
+            {displayTags
+              .filter((t) => t && t.toLowerCase() !== (asset?.category ?? '').toLowerCase())
+              .slice(0, 8)
+              .map((t) => (
+                <Badge key={t} variant="secondary" className="cursor-default">
+                  {t}
+                </Badge>
+              ))}
+            <button
+              type="button"
+              onClick={() => router.push('/stock/search')}
+              className="ml-auto inline-flex items-center gap-1 rounded-full border border-border bg-background px-3 py-1 text-[11px] font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            >
+              Explore
+              <span aria-hidden>→</span>
+            </button>
+          </div>
 
           <div className="mt-5 space-y-2">
             <button
               type="button"
-              onClick={() => setLicense('standard')}
+              onClick={() => setPurchaseOption('single')}
               className={`w-full rounded-lg border p-3 text-left transition ${
-                license === 'standard'
+                purchaseOption === 'single'
                   ? 'border-primary bg-primary/10 ring-1 ring-primary/30'
                   : 'border-border hover:bg-muted'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="font-medium">Standard license</span>
-                <span className="font-semibold">€{priceStandard}</span>
+                <span className="font-medium">€{priceSingle.toFixed(2)} for this image</span>
+                <span className="font-semibold">€{priceSingle.toFixed(2)}</span>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">Web, social, marketing</p>
+              <p className="mt-1 text-xs text-muted-foreground">One download · JPG · royalty-free</p>
             </button>
 
             <button
               type="button"
-              onClick={() => setLicense('extended')}
+              onClick={() => setPurchaseOption('paygo10')}
               className={`w-full rounded-lg border p-3 text-left transition ${
-                license === 'extended'
+                purchaseOption === 'paygo10'
                   ? 'border-primary bg-primary/10 ring-1 ring-primary/30'
                   : 'border-border hover:bg-muted'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="font-medium">Extended license</span>
-                <span className="font-semibold">€{priceExtended}</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">Pay &amp; Go 10</span>
+                  <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[11px] font-medium text-foreground/80">
+                    Save {payGo10SavePct}%
+                  </span>
+                </div>
+                <div className="text-right">
+                  <div className="font-semibold">€{payGo10Price.toFixed(2)}</div>
+                  <div className="text-[11px] text-muted-foreground line-through">€{payGo10Was.toFixed(2)}</div>
+                </div>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">Print, ads, large distribution</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                10 downloads incl. this one · 1 year to use · free re-downloads
+              </p>
             </button>
           </div>
 
@@ -267,7 +368,7 @@ export default function StockAssetPage() {
               addItem({
                 id: assetId,
                 title,
-                license,
+                license: purchaseOption === 'single' ? 'single' : 'paygo10',
                 price,
                 image: imageSrc,
               });
@@ -277,6 +378,20 @@ export default function StockAssetPage() {
           >
             <ShoppingCart className="h-4 w-4" /> {added ? 'Added to cart' : 'Add to cart'} · €{price}
           </Button>
+
+          {!loggedIn ? (
+            <div className="mt-2 rounded-lg border border-border bg-muted/30 p-2 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground/80">Log in</span> to download or checkout.
+              <button
+                type="button"
+                onClick={goLogin}
+                className="ml-2 inline-flex items-center gap-1 text-xs font-medium text-foreground hover:underline"
+              >
+                Continue
+                <span aria-hidden>→</span>
+              </button>
+            </div>
+          ) : null}
 
           <Link
             href="/stock/cart"
@@ -292,8 +407,13 @@ export default function StockAssetPage() {
       </div>
 
       <section className="mt-10">
-        <div className="mb-4 flex items-end justify-between">
-          <h2 className="text-sm font-semibold">Similar images</h2>
+        <div className="mb-4 flex items-end justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">Related images</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Picked by category and shared tags.
+            </p>
+          </div>
           <button
             type="button"
             onClick={() => router.push('/stock/search')}
@@ -302,31 +422,43 @@ export default function StockAssetPage() {
             Browse more
           </button>
         </div>
+
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {(() => {
-            const idx = currentIndex;
-            const picks: Asset[] = [];
-            for (let i = 1; i <= 4; i++) {
-              const a = assets[(idx + i) % assets.length];
-              if (a) picks.push(a);
-            }
-            return picks;
-          })().map((a) => (
-            <Link
-              key={a.id}
-              href={`/stock/assets/${a.id}`}
-              className="group relative overflow-hidden rounded-lg bg-muted/20 ring-1 ring-black/5 transition hover:ring-black/10 dark:ring-white/10 dark:hover:ring-white/20"
-            >
-              <Image
-                src={getAssetImage(a) || fallbackImage}
-                alt={a.title}
-                width={800}
-                height={800}
-                className="aspect-square w-full object-cover transition-transform duration-300 group-hover:scale-[1.05]"
-              />
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/15 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-            </Link>
-          ))}
+          {relatedPicks.slice(0, 8).map((a) => {
+            const aTags = pickTags(a, 6);
+            const overlap = aTags.filter((t) => assetTokens.has(t)).slice(0, 2);
+            const hint = overlap.length
+              ? overlap.join(' · ')
+              : a.category
+                ? a.category
+                : 'Related';
+
+            return (
+              <Link
+                key={a.id}
+                href={`/stock/assets/${a.id}`}
+                className="group relative overflow-hidden rounded-xl bg-muted/20 ring-1 ring-black/5 transition hover:-translate-y-0.5 hover:ring-black/10 dark:ring-white/10 dark:hover:ring-white/20"
+              >
+                <Image
+                  src={getAssetImage(a) || fallbackImage}
+                  alt={a.title}
+                  width={900}
+                  height={900}
+                  className="aspect-square w-full object-cover transition-transform duration-300 group-hover:scale-[1.05]"
+                />
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-black/5 to-transparent opacity-80" />
+
+                <div className="absolute inset-x-0 bottom-0 p-3">
+                  <div className="line-clamp-1 text-xs font-semibold text-white">
+                    {a.title}
+                  </div>
+                  <div className="mt-0.5 line-clamp-1 text-[11px] text-white/75">
+                    {hint}
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
         </div>
       </section>
 
