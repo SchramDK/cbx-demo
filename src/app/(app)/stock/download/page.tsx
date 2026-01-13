@@ -28,7 +28,7 @@ function getCookie(name: string): string | undefined {
 function FullscreenLoader({ hint }: { hint?: string }) {
   return (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-background text-foreground"
+      className="fixed inset-0 z-[2147483647] isolate flex items-center justify-center bg-background text-foreground"
       aria-busy="true"
       aria-live="polite"
     >
@@ -258,7 +258,7 @@ useEffect(() => {
       : undefined;
 
     return (
-      <main className="mx-auto w-full max-w-3xl bg-background px-4 py-10 text-foreground">
+      <main className="mx-auto w-full max-w-3xl bg-background px-4 pb-10 pt-24 text-foreground">
         {showAccountCreatedBanner ? (
           <div className="mb-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 dark:border-emerald-400/20 dark:bg-emerald-400/10">
             <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Account created</p>
@@ -268,6 +268,53 @@ useEffect(() => {
           </div>
         ) : null}
 
+        {isFirstTimeWelcome ? (
+          <section className="mb-6 overflow-hidden rounded-3xl border border-border bg-gradient-to-b from-primary/10 to-transparent p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Welcome to Colourbox + Drive</p>
+                <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Your account is ready 🎉</h2>
+                <p className="mt-2 max-w-xl text-sm text-muted-foreground">
+                  You’re signed in and ready to work. Upload your own files to Drive, or browse Stock to download your first images —
+                  everything stays organised and saved.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href="/drive"
+                  className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary/90"
+                >
+                  Open Drive
+                </Link>
+                <Link
+                  href="/stock"
+                  className="inline-flex items-center justify-center rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted/60"
+                >
+                  Browse Stock
+                </Link>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <p className="text-xs font-medium text-muted-foreground">Step 1</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">Upload to Drive</p>
+                <p className="mt-1 text-xs text-muted-foreground">Drag & drop your own files and keep everything in one place.</p>
+              </div>
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <p className="text-xs font-medium text-muted-foreground">Step 2</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">Find Stock images</p>
+                <p className="mt-1 text-xs text-muted-foreground">Search and download assets — they’re saved to Drive automatically.</p>
+              </div>
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <p className="text-xs font-medium text-muted-foreground">Step 3</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">Share & collaborate</p>
+                <p className="mt-1 text-xs text-muted-foreground">Send links, keep rights info, and stay organised.</p>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
         <header className="mb-8">
           <p className="text-xs font-medium text-muted-foreground">{isFirstTimeWelcome ? "Welcome" : "Download"}</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
@@ -275,7 +322,7 @@ useEffect(() => {
           </h1>
           <p className="mt-2 max-w-xl text-sm text-muted-foreground">
             {isFirstTimeWelcome
-              ? "Your account is ready. Start by uploading to Drive — or browse Stock to download your first files."
+              ? "Nice to have you here. Start in Drive to upload your own files — or head to Stock and download your first images. We’ll keep everything saved and organised for you."
               : "Download your images below. Everything is also saved in Drive, so you can access it later."}
           </p>
 
@@ -368,6 +415,13 @@ useEffect(() => {
                   Browse Stock
                 </Link>
               </div>
+              {isFirstTimeWelcome ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">✅ Files saved in Drive</span>
+                  <span className="rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">⚡ Fast downloads</span>
+                  <span className="rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">🔒 Rights info included</span>
+                </div>
+              ) : null}
             </div>
           )}
 
@@ -417,7 +471,7 @@ useEffect(() => {
   )}&format=${encodeURIComponent(format)}`;
 
   return (
-    <main className="mx-auto w-full max-w-3xl bg-background px-4 py-10 text-foreground">
+    <main className="mx-auto w-full max-w-3xl bg-background px-4 pb-10 pt-24 text-foreground">
       {showAccountCreatedBanner ? (
         <div className="mb-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 dark:border-emerald-400/20 dark:bg-emerald-400/10">
           <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Account created</p>

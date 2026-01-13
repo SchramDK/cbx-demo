@@ -443,7 +443,7 @@ export function Topbar({
   );
 
   return (
-    <div className="w-full">
+    <div className="w-full border-b border-border/70 bg-background/75 backdrop-blur-md supports-[backdrop-filter]:bg-background/60 shadow-sm">
       <div className="w-full px-4 sm:px-6">
         <div className="grid h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:h-16 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-3">
           {/* Left */}
