@@ -1,9 +1,9 @@
 "use client";
 
+import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Trash2 } from "lucide-react";
-import { useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/lib/cart/cart";
 import { STOCK_ASSETS as ASSETS } from "@/lib/demo/stock-assets";
@@ -27,7 +27,7 @@ export default function CartPage() {
 
   useEffect(() => {
     for (const it of items) {
-      if (it.qty > 1) {
+      if ((it?.qty ?? 1) > 1) {
         updateQty(it.id, 1, it.license);
       }
     }
@@ -89,13 +89,18 @@ export default function CartPage() {
             <Button variant="outline">Continue shopping</Button>
           </Link>
           {items.length > 0 ? (
-            <Button
-              variant="ghost"
-              onClick={clear}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              Clear cart
-            </Button>
+            <>
+              <Link href="/stock/checkout">
+                <Button>Go to checkout</Button>
+              </Link>
+              <Button
+                variant="ghost"
+                onClick={clear}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                Clear cart
+              </Button>
+            </>
           ) : null}
         </div>
       </div>
@@ -121,10 +126,8 @@ export default function CartPage() {
 
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
             <div className="rounded-xl bg-muted/20 p-4 ring-1 ring-black/5 dark:ring-white/10">
-              <div className="text-xs font-medium">Royalty‑free</div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                Use across channels in your projects.
-              </div>
+              <div className="text-xs font-medium">Royalty-free</div>
+              <div className="mt-1 text-xs text-muted-foreground">Use across channels in your projects.</div>
             </div>
             <div className="rounded-xl bg-muted/20 p-4 ring-1 ring-black/5 dark:ring-white/10">
               <div className="text-xs font-medium">Instant delivery</div>
@@ -132,50 +135,14 @@ export default function CartPage() {
             </div>
             <div className="rounded-xl bg-muted/20 p-4 ring-1 ring-black/5 dark:ring-white/10">
               <div className="text-xs font-medium">Clear licensing</div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                Single image or Pay &amp; Go—simple and transparent.
-              </div>
+              <div className="mt-1 text-xs text-muted-foreground">Single image or Pay &amp; Go—simple and transparent.</div>
             </div>
           </div>
         </div>
       ) : (
         <>
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-            <div className="order-1 lg:order-2 lg:col-span-4">
-              <div className="hidden rounded-2xl bg-background p-5 ring-1 ring-black/5 dark:ring-white/10 lg:block lg:sticky lg:top-24">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-medium">Order summary</div>
-                  <div className="text-xs text-muted-foreground tabular-nums">
-                    {count} item{count === 1 ? "" : "s"}
-                  </div>
-                </div>
-
-                <div className="mt-4 space-y-2 text-sm">
-                  <div className="flex items-center justify-between">
-                    <div className="text-muted-foreground">Subtotal</div>
-                    <div className="font-medium tabular-nums">{formatMoneyEUR(total)}</div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="text-muted-foreground">Taxes</div>
-                    <div className="text-muted-foreground">Calculated at checkout</div>
-                  </div>
-                </div>
-
-                <div className="mt-4 flex items-center justify-between border-t pt-4">
-                  <div className="text-sm font-medium">Total</div>
-                  <div className="text-lg font-semibold tabular-nums">{formatMoneyEUR(total)}</div>
-                </div>
-
-                <div className="mt-4 text-xs text-muted-foreground">
-                  Prototype checkout is disabled. In the real product, taxes and payment are handled at checkout.
-                </div>
-
-                <Button className="mt-5 w-full" disabled>
-                  Checkout (prototype)
-                </Button>
-              </div>
-            </div>
-
+            {/* Items */}
             <div className="order-2 lg:order-1 lg:col-span-8">
               <div className="rounded-2xl bg-background ring-1 ring-black/5 dark:ring-white/10">
                 <div className="divide-y divide-border/60">
@@ -242,87 +209,125 @@ export default function CartPage() {
                 </div>
               </div>
             </div>
-          </div>
 
-          {related.length ? (
-            <div className="mt-8">
-              <div className="mb-3 flex items-end justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold">Related images</div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">Based on the content in your cart</div>
+            {/* Summary */}
+            <div className="order-1 lg:order-2 lg:col-span-4">
+              <div className="rounded-2xl bg-background p-5 ring-1 ring-black/5 dark:ring-white/10 lg:sticky lg:top-24">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium">Order summary</div>
+                  <div className="text-xs text-muted-foreground tabular-nums">
+                    {count} item{count === 1 ? "" : "s"}
+                  </div>
                 </div>
-                <Link href="/stock" className="text-xs text-muted-foreground hover:text-foreground">
-                  Browse more
-                </Link>
-              </div>
 
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                {related.map((a) => {
-                  const img = getAssetImage(a);
-                  return (
-                    <div
-                      key={a.id}
-                      className="group overflow-hidden rounded-xl bg-background ring-1 ring-black/5 dark:ring-white/10"
-                    >
-                      <Link
-                        href={`/stock/assets/${a.id}`}
-                        className="relative block aspect-[4/3] w-full bg-muted"
-                        aria-label={`Open ${a.title}`}
-                      >
-                        {img ? (
-                          <Image
-                            src={img}
-                            alt={a.title}
-                            fill
-                            className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                          />
-                        ) : null}
-                        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/15 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-                      </Link>
+                <div className="mt-4 space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="text-muted-foreground">Subtotal</div>
+                    <div className="font-medium tabular-nums">{formatMoneyEUR(total)}</div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="text-muted-foreground">Taxes</div>
+                    <div className="text-muted-foreground">Calculated at checkout</div>
+                  </div>
+                </div>
 
-                      <div className="p-3">
-                        <div className="truncate text-xs font-medium">{a.title}</div>
-                        <div className="mt-2 flex items-center justify-between gap-2">
-                          <div className="text-[11px] text-muted-foreground">From {formatMoneyEUR(PRICE_SINGLE)}</div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              addItem({
-                                id: a.id,
-                                title: a.title,
-                                price: PRICE_SINGLE,
-                                image: img,
-                                license: "single",
-                                qty: 1,
-                              });
-                            }}
-                          >
-                            Add
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                <div className="mt-4 flex items-center justify-between border-t pt-4">
+                  <div className="text-sm font-medium">Total</div>
+                  <div className="text-lg font-semibold tabular-nums">{formatMoneyEUR(total)}</div>
+                </div>
+
+                <div className="mt-5 grid grid-cols-1 gap-2">
+                  <Link href="/stock/checkout">
+                    <Button className="w-full">Go to checkout</Button>
+                  </Link>
+                  <Link href="/stock">
+                    <Button variant="outline" className="w-full">
+                      Continue shopping
+                    </Button>
+                  </Link>
+                </div>
               </div>
             </div>
-          ) : null}
+          </div>
+
+          {/* Mobile bottom bar */}
+          <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/90 backdrop-blur-sm lg:hidden">
+            <div className="mx-auto w-full max-w-6xl px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-xs text-muted-foreground">Total</div>
+                  <div className="truncate text-base font-semibold tabular-nums">{formatMoneyEUR(total)}</div>
+                </div>
+                <Link href="/stock/checkout" className="shrink-0">
+                  <Button>Go to checkout</Button>
+                </Link>
+              </div>
+            </div>
+          </div>
         </>
       )}
 
-      {items.length > 0 ? (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/90 backdrop-blur-sm lg:hidden">
-          <div className="mx-auto w-full max-w-6xl px-4 py-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-xs text-muted-foreground">Total</div>
-                <div className="truncate text-base font-semibold tabular-nums">{formatMoneyEUR(total)}</div>
-              </div>
-              <Button className="shrink-0" disabled>
-                Checkout (prototype)
-              </Button>
+      {related.length ? (
+        <div className="mt-8">
+          <div className="mb-3 flex items-end justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold">Related images</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">Based on the content in your cart</div>
             </div>
+            <Link href="/stock" className="text-xs text-muted-foreground hover:text-foreground">
+              Browse more
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {related.map((a) => {
+              const img = getAssetImage(a);
+              return (
+                <div
+                  key={a.id}
+                  className="group overflow-hidden rounded-xl bg-background ring-1 ring-black/5 dark:ring-white/10"
+                >
+                  <Link
+                    href={`/stock/assets/${a.id}`}
+                    className="relative block aspect-[4/3] w-full bg-muted"
+                    aria-label={`Open ${a.title}`}
+                  >
+                    {img ? (
+                      <Image
+                        src={img}
+                        alt={a.title}
+                        fill
+                        className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                      />
+                    ) : null}
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/15 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                  </Link>
+
+                  <div className="p-3">
+                    <div className="truncate text-xs font-medium">{a.title}</div>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <div className="text-[11px] text-muted-foreground">From {formatMoneyEUR(PRICE_SINGLE)}</div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          addItem({
+                            id: a.id,
+                            title: a.title,
+                            price: PRICE_SINGLE,
+                            image: img,
+                            license: "single",
+                            qty: 1,
+                          });
+                        }}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : null}

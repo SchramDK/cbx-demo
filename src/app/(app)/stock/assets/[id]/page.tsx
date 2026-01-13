@@ -43,7 +43,7 @@ export default function StockAssetPage() {
   const router = useRouter();
   const { isReady, isLoggedIn } = useProtoAuth();
   const loggedIn = isReady && isLoggedIn;
-  const { addItem } = useCart();
+  const { addItem, items } = useCart();
   const { open: openCart } = useCartUI();
 
   const assets = useMemo(() => ASSETS as Asset[], []);
@@ -199,8 +199,11 @@ export default function StockAssetPage() {
   const heroRef = useRef<HTMLDivElement | null>(null);
   const infoRef = useRef<HTMLDivElement | null>(null);
   const keywordsRef = useRef<HTMLDivElement | null>(null);
+  const similarRef = useRef<HTMLElement | null>(null);
+  const shootRef = useRef<HTMLElement | null>(null);
   const relatedRef = useRef<HTMLElement | null>(null);
   const [showStickyMenu, setShowStickyMenu] = useState(false);
+  const [activeTab, setActiveTab] = useState<'info' | 'keywords' | 'similar' | 'shoot'>('info');
   const scrollTo = useCallback((ref: React.RefObject<HTMLElement | null>) => {
     const el = ref.current;
     if (!el) return;
@@ -220,6 +223,47 @@ export default function StockAssetPage() {
     );
 
     obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const infoEl = infoRef.current;
+    const keywordsEl = keywordsRef.current;
+    const similarEl = similarRef.current;
+    const shootEl = shootRef.current;
+
+    const targets: Array<{ key: 'info' | 'keywords' | 'similar' | 'shoot'; el: HTMLElement | null }> = [
+      { key: 'info', el: infoEl },
+      { key: 'keywords', el: keywordsEl },
+      { key: 'similar', el: similarEl },
+      { key: 'shoot', el: shootEl },
+    ];
+
+    const existing = targets.filter((t) => t.el) as Array<{ key: 'info' | 'keywords' | 'similar' | 'shoot'; el: HTMLElement }>;
+    if (!existing.length) return;
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        // Pick the entry closest to the top that is intersecting.
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => (a.boundingClientRect.top ?? 0) - (b.boundingClientRect.top ?? 0));
+
+        if (!visible.length) return;
+
+        const el = visible[0].target as HTMLElement;
+        const found = existing.find((t) => t.el === el);
+        if (found) setActiveTab(found.key);
+      },
+      {
+        root: null,
+        // Account for topbar + sticky menu height.
+        rootMargin: '-140px 0px -65% 0px',
+        threshold: 0.01,
+      }
+    );
+
+    for (const t of existing) obs.observe(t.el);
     return () => obs.disconnect();
   }, []);
 
@@ -297,20 +341,35 @@ export default function StockAssetPage() {
   }, [lightboxOpen, currentIndex, assets.length]);
 
   const price = purchaseOption === 'single' ? priceSingle : payGo10Price;
+  const selectedLicense = purchaseOption === 'single' ? 'single' : 'paygo10';
+  const isInCart = useMemo(() => {
+    const list = (items as any[]) ?? [];
+    return list.some((it) => it && it.id === assetId && (it.license ? it.license === selectedLicense : true));
+  }, [items, assetId, selectedLicense]);
+
+  useEffect(() => {
+    if (isInCart) setAdded(false);
+  }, [isInCart]);
 
   const handleAddToCart = useCallback(() => {
+    if (isInCart) {
+      openCart();
+      return;
+    }
+
     addItem({
       id: assetId,
       title,
-      license: purchaseOption === 'single' ? 'single' : 'paygo10',
+      license: selectedLicense,
       price,
       image: imageSrc,
       qty: 1,
     });
+
     openCart();
     setAdded(true);
     window.setTimeout(() => setAdded(false), 2000);
-  }, [addItem, assetId, title, purchaseOption, price, imageSrc, openCart]);
+  }, [addItem, assetId, title, selectedLicense, price, imageSrc, openCart, isInCart]);
 
   const goLogin = () => router.push(`/login?returnTo=${encodeURIComponent(returnTo)}`);
 
@@ -353,40 +412,75 @@ export default function StockAssetPage() {
         aria-hidden={!showStickyMenu}
       >
         <div className="border-b border-border bg-background/90 backdrop-blur">
-          <div className="mx-auto w-full px-4 py-2 sm:px-6 lg:px-8">
+          <div className="mx-auto w-full px-4 py-3 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => scrollTo(infoRef)}
-                  className="rounded-full px-3 py-1 text-xs font-medium text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+                  onClick={() => {
+                    setActiveTab('info');
+                    scrollTo(infoRef);
+                  }}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ring-1 ${
+                    activeTab === 'info'
+                      ? 'bg-muted/50 text-foreground ring-black/10 dark:ring-white/20'
+                      : 'text-muted-foreground ring-transparent hover:bg-muted/40 hover:text-foreground'
+                  }`}
                 >
                   Info
                 </button>
                 <button
                   type="button"
-                  onClick={() => scrollTo(keywordsRef)}
-                  className="rounded-full px-3 py-1 text-xs font-medium text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+                  onClick={() => {
+                    setActiveTab('keywords');
+                    scrollTo(keywordsRef);
+                  }}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ring-1 ${
+                    activeTab === 'keywords'
+                      ? 'bg-muted/50 text-foreground ring-black/10 dark:ring-white/20'
+                      : 'text-muted-foreground ring-transparent hover:bg-muted/40 hover:text-foreground'
+                  }`}
                 >
                   Keywords
                 </button>
                 <button
                   type="button"
-                  onClick={() => scrollTo(relatedRef)}
-                  className="rounded-full px-3 py-1 text-xs font-medium text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+                  onClick={() => {
+                    setActiveTab('similar');
+                    scrollTo(similarRef);
+                  }}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ring-1 ${
+                    activeTab === 'similar'
+                      ? 'bg-muted/50 text-foreground ring-black/10 dark:ring-white/20'
+                      : 'text-muted-foreground ring-transparent hover:bg-muted/40 hover:text-foreground'
+                  }`}
                 >
-                  Related
+                  Similar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('shoot');
+                    scrollTo(shootRef);
+                  }}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ring-1 ${
+                    activeTab === 'shoot'
+                      ? 'bg-muted/50 text-foreground ring-black/10 dark:ring-white/20'
+                      : 'text-muted-foreground ring-transparent hover:bg-muted/40 hover:text-foreground'
+                  }`}
+                >
+                  Shoot
                 </button>
               </div>
 
               <div className="flex items-center gap-3">
                 <div className="hidden items-center gap-2 sm:flex">
-                  <div className="relative h-9 w-9 overflow-hidden rounded-lg ring-1 ring-black/5 dark:ring-white/10">
-                    <Image src={imageSrc} alt={title} fill sizes="36px" className="object-cover" />
+                  <div className="relative h-10 w-10 overflow-hidden rounded-lg ring-1 ring-black/5 dark:ring-white/10">
+                    <Image src={imageSrc} alt={title} fill sizes="40px" className="object-cover" />
                   </div>
                   <div className="max-w-[200px]">
-                    <div className="line-clamp-1 text-xs font-semibold">{title}</div>
-                    <div className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">
+                    <div className="line-clamp-1 text-sm font-semibold">{title}</div>
+                    <div className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
                       Image #{assetId}
                     </div>
                   </div>
@@ -394,9 +488,14 @@ export default function StockAssetPage() {
 
                 <div className="hidden h-6 w-px bg-border sm:block" aria-hidden />
 
-                <Button size="sm" className="gap-2" onClick={handleAddToCart}>
+                <Button
+                  size="default"
+                  variant={isInCart ? 'secondary' : 'default'}
+                  className="gap-2"
+                  onClick={handleAddToCart}
+                >
                   <ShoppingCart className="h-4 w-4" />
-                  {added ? 'Added' : `Add to cart · €${price}`}
+                  {isInCart ? 'Show cart' : added ? 'Added' : `Add to cart · €${price}`}
                 </Button>
               </div>
             </div>
@@ -557,10 +656,11 @@ export default function StockAssetPage() {
 
           <Button
             className="mt-4 w-full gap-2"
-            variant={added ? 'secondary' : 'default'}
+            variant={isInCart || added ? 'secondary' : 'default'}
             onClick={handleAddToCart}
           >
-            <ShoppingCart className="h-4 w-4" /> {added ? 'Added to cart' : 'Add to cart'} · €{price}
+            <ShoppingCart className="h-4 w-4" />
+            {isInCart ? 'Show cart' : added ? 'Added to cart' : `Add to cart · €${price}`}
           </Button>
 
           {!loggedIn ? (
@@ -579,7 +679,7 @@ export default function StockAssetPage() {
 
           <Link
             href="/stock/cart"
-            className="mt-2 inline-flex w-full items-center justify-center rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted"
+            className="mt-2 inline-flex w-full items-center justify-center rounded-lg bg-muted/20 px-4 py-2 text-sm font-medium text-foreground ring-1 ring-black/5 transition hover:bg-muted/30 dark:ring-white/10"
           >
             View cart
           </Link>
@@ -589,6 +689,98 @@ export default function StockAssetPage() {
           </p>
         </Card>
       </div>
+
+      <section ref={shootRef} id="shoot" className="scroll-mt-28 mt-10">
+        <div className="mb-4 flex items-end justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">From the same shoot</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              More from the same series — based on category and keyword overlap.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => router.push('/stock/search')}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            Browse more
+          </button>
+        </div>
+
+        <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+          {(sameShootPicks.length ? sameShootPicks : relatedPicks)
+            .slice(0, 12)
+            .map((a) => (
+              <Link
+                key={`shoot-${a.id}`}
+                href={`/stock/assets/${a.id}`}
+                className="group relative h-40 w-56 shrink-0 overflow-hidden rounded-xl bg-muted/10 ring-1 ring-black/5 transition hover:-translate-y-0.5 hover:bg-muted/20 hover:ring-black/10 dark:ring-white/10 dark:hover:ring-white/20"
+              >
+                <Image
+                  src={getAssetImage(a) || fallbackImage}
+                  alt={a.title}
+                  fill
+                  sizes="224px"
+                  className="object-cover transition-transform duration-300 group-hover:scale-[1.05]"
+                />
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-black/5 to-transparent opacity-80" />
+                <div className="absolute inset-x-0 bottom-0 p-3">
+                  <div className="line-clamp-1 text-xs font-semibold text-white">{a.title}</div>
+                  <div className="mt-0.5 line-clamp-1 text-[11px] text-white/75">
+                    {asset?.category ?? 'Shoot'}
+                  </div>
+                </div>
+              </Link>
+            ))}
+        </div>
+      </section>
+
+      <section ref={similarRef} id="similar" className="scroll-mt-28 mt-10">
+        <div className="mb-4 flex items-end justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold">Similar images</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Same vibe, subject or style — based on tags and keywords.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => scrollTo(relatedRef)}
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
+            See related
+          </button>
+        </div>
+
+        <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+          {similarPicks.slice(0, 12).map((a) => {
+            const aTags = pickTags(a, 6);
+            const overlap = aTags.filter((t) => assetTokens.has(t)).slice(0, 2);
+            const hint = overlap.length ? overlap.join(' · ') : a.category ?? 'Similar';
+
+            return (
+              <Link
+                key={`similar-${a.id}`}
+                href={`/stock/assets/${a.id}`}
+                className="group relative h-40 w-56 shrink-0 overflow-hidden rounded-xl bg-muted/10 ring-1 ring-black/5 transition hover:-translate-y-0.5 hover:bg-muted/20 hover:ring-black/10 dark:ring-white/10 dark:hover:ring-white/20"
+              >
+                <Image
+                  src={getAssetImage(a) || fallbackImage}
+                  alt={a.title}
+                  fill
+                  sizes="224px"
+                  className="object-cover transition-transform duration-300 group-hover:scale-[1.05]"
+                />
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-black/5 to-transparent opacity-80" />
+                <div className="absolute inset-x-0 bottom-0 p-3">
+                  <div className="line-clamp-1 text-xs font-semibold text-white">{a.title}</div>
+                  <div className="mt-0.5 line-clamp-1 text-[11px] text-white/75">{hint}</div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      </section>
 
       <section ref={relatedRef} id="related" className="scroll-mt-28 mt-10">
         <div className="mb-4 flex items-end justify-between gap-3">
