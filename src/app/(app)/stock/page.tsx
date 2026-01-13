@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Search, X } from 'lucide-react';
 
-import { ASSETS } from '@/lib/demo/assets';
+import { STOCK_ASSETS as ASSETS } from '@/lib/demo/stock-assets';
 import { useProtoAuth } from '@/lib/proto-auth';
 
 type Asset = {
@@ -20,9 +20,13 @@ type Asset = {
   url?: string;
 };
 
-const getAssetImage = (asset?: Asset) => asset?.preview ?? asset?.src ?? asset?.image ?? asset?.url;
+const getAssetImage = (asset?: Asset) =>
+  asset?.preview ?? asset?.src ?? asset?.image ?? asset?.url ?? '';
 
-const getImage = (asset: Asset, fallback: string) => getAssetImage(asset) ?? fallback;
+const getImage = (asset: Asset, fallback: string) => {
+  const src = getAssetImage(asset);
+  return src || fallback;
+};
 
 function Pill({ children }: { children: React.ReactNode }) {
   return (
@@ -83,19 +87,21 @@ export default function StockPage() {
           {(heroImages.length
             ? heroImages
             : featured.slice(0, 1).map((a) => getImage(a, fallbackImage))
-          ).map((src, idx) => (
-            <Image
-              key={`${src}-${idx}`}
-              src={src}
-              alt="Stock hero"
-              fill
-              sizes="100vw"
-              className={`object-cover transition-opacity duration-1000 ${
-                idx === heroIndex ? 'opacity-100' : 'opacity-0'
-              }`}
-              priority={idx === 0}
-            />
-          ))}
+          )
+            .filter(Boolean)
+            .map((src, idx) => (
+              <Image
+                key={`${src}-${idx}`}
+                src={src}
+                alt="Stock hero"
+                fill
+                sizes="100vw"
+                className={`object-cover transition-opacity duration-1000 ${
+                  idx === heroIndex ? 'opacity-100' : 'opacity-0'
+                }`}
+                priority={idx === 0}
+              />
+            ))}
           <div className="absolute inset-0 bg-black/15" />
           <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/45 to-transparent" />
           <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-background to-transparent" />
@@ -254,6 +260,80 @@ export default function StockPage() {
           </div>
         </div>
       </section>
+
+      {/* Promo (logged out) */}
+      {!loggedIn ? (
+        <section className="mb-12 px-4 sm:px-6 lg:px-10">
+          <Link
+            href="/drive/landing"
+            className="group relative block overflow-hidden rounded-3xl border border-black/5 bg-muted/10 p-6 transition hover:bg-muted/15 focus:outline-none focus:ring-2 focus:ring-foreground/20 dark:border-white/10 sm:p-8"
+          >
+            <div className="absolute inset-0 pointer-events-none">
+              <div className="absolute -right-24 -top-24 h-64 w-64 rounded-full bg-foreground/5 blur-3xl" />
+              <div className="absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-foreground/5 blur-3xl" />
+            </div>
+
+            <div className="relative grid gap-6 sm:grid-cols-[1.2fr_0.8fr] sm:items-center">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full bg-background/60 px-3 py-1 text-xs text-muted-foreground ring-1 ring-border/10 backdrop-blur">
+                  <span className="h-1.5 w-1.5 rounded-full bg-foreground/60" />
+                  New: Colourbox Share
+                </div>
+
+                <h2 className="mt-4 text-xl font-semibold tracking-tight sm:text-2xl">
+                  Collect files from anyone — without the mess
+                </h2>
+
+                <p className="mt-2 max-w-xl text-sm text-muted-foreground">
+                  Create a share link, let people upload in seconds, and keep everything organized in one place.
+                  Perfect for campaigns, events, and agencies working with many contributors.
+                </p>
+
+                <div className="mt-5 flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center rounded-full bg-muted/30 px-3 py-1 text-xs text-muted-foreground">
+                    Upload links
+                  </span>
+                  <span className="inline-flex items-center rounded-full bg-muted/30 px-3 py-1 text-xs text-muted-foreground">
+                    Folders & structure
+                  </span>
+                  <span className="inline-flex items-center rounded-full bg-muted/30 px-3 py-1 text-xs text-muted-foreground">
+                    Brand-safe sharing
+                  </span>
+                </div>
+
+                <div className="mt-6 inline-flex items-center gap-2 text-sm font-medium">
+                  Explore Share
+                  <span className="transition-transform group-hover:translate-x-0.5">→</span>
+                </div>
+              </div>
+
+              <div className="relative overflow-hidden rounded-2xl bg-background/60 ring-1 ring-border/10 backdrop-blur">
+                <div className="p-4">
+                  <div className="text-xs font-medium text-muted-foreground">What you get</div>
+                  <ul className="mt-3 space-y-2 text-sm">
+                    <li className="flex items-start gap-2">
+                      <span className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-foreground/60" />
+                      <span>One link for uploads — no accounts needed</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-foreground/60" />
+                      <span>Files land in folders, ready for your workflow</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-foreground/60" />
+                      <span>Share safely with clear visibility & control</span>
+                    </li>
+                  </ul>
+                </div>
+
+                <div className="border-t border-black/5 p-4 text-xs text-muted-foreground dark:border-white/10">
+                  Click to see the Share landing page
+                </div>
+              </div>
+            </div>
+          </Link>
+        </section>
+      ) : null}
 
       {/* Browse helpers */}
       <section className="mb-12 px-4 sm:px-6 lg:px-10">
