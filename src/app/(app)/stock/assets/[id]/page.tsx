@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { STOCK_ASSETS as ASSETS } from '@/lib/demo/stock-assets';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -35,7 +35,6 @@ const pickTags = (asset?: Asset, limit = 10) => {
     .map(normalizeToken);
 
   const unique = Array.from(new Set(merged));
-  // keep original casing for display where possible later; for matching we use normalized tokens
   return unique.slice(0, limit);
 };
 
@@ -62,8 +61,7 @@ export default function StockAssetPage() {
   const relatedPicks = useMemo(() => {
     if (!assets.length) return [] as Asset[];
 
-    const current = assets.find((a) => a.id === (asset?.id ?? id));
-    const currentId = current?.id ?? (asset?.id ?? id);
+    const currentId = asset?.id ?? id;
 
     // Score by shared tokens + category, then diversify a bit.
     const scored = assets
@@ -118,9 +116,52 @@ export default function StockAssetPage() {
     return result;
   }, [assets, asset, id, assetTokens]);
 
+  const sameShootPicks = useMemo(() => {
+    if (!assets.length) return [] as Asset[];
+    const currentId = asset?.id ?? id;
+
+    return assets
+      .filter((a) => a.id !== currentId && a.category === asset?.category)
+      .map((a) => {
+        const tokens = new Set(
+          [a.category, ...(a.tags ?? []), ...(a.keywords ?? [])]
+            .filter(Boolean)
+            .map(normalizeToken)
+        );
+        let overlap = 0;
+        for (const t of tokens) if (assetTokens.has(t)) overlap += 1;
+        return { a, score: overlap + (getAssetImage(a) ? 0.5 : 0) };
+      })
+      .sort((x, y) => y.score - x.score)
+      .slice(0, 12)
+      .map((x) => x.a);
+  }, [assets, asset, id, assetTokens]);
+
+  const similarPicks = useMemo(() => {
+    if (!assets.length) return [] as Asset[];
+    const currentId = asset?.id ?? id;
+
+    return assets
+      .filter((a) => a.id !== currentId)
+      .map((a) => {
+        const tokens = new Set(
+          [a.category, ...(a.tags ?? []), ...(a.keywords ?? [])]
+            .filter(Boolean)
+            .map(normalizeToken)
+        );
+        let overlap = 0;
+        for (const t of tokens) if (assetTokens.has(t)) overlap += 1;
+        return { a, score: overlap + (getAssetImage(a) ? 0.5 : 0) };
+      })
+      .sort((x, y) => y.score - x.score)
+      .slice(0, 12)
+      .map((x) => x.a);
+  }, [assets, asset, id, assetTokens]);
+
   const fallbackImage = useMemo(() => {
     const firstValid = assets.find((a) => Boolean(getAssetImage(a)));
-    return firstValid ? getAssetImage(firstValid) : '/demo/stock/COLOURBOX69824938.jpg';
+    const src = firstValid ? getAssetImage(firstValid) : '';
+    return src || '/demo/stock/COLOURBOX69824938.jpg';
   }, [assets]);
   const assetPreview = asset ? getAssetImage(asset) : '';
   const imageSrc = assetPreview ? assetPreview : fallbackImage;
@@ -155,6 +196,32 @@ export default function StockAssetPage() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const touchStart = useRef<{ x: number; y: number; t: number } | null>(null);
+  const heroRef = useRef<HTMLDivElement | null>(null);
+  const infoRef = useRef<HTMLDivElement | null>(null);
+  const keywordsRef = useRef<HTMLDivElement | null>(null);
+  const relatedRef = useRef<HTMLElement | null>(null);
+  const [showStickyMenu, setShowStickyMenu] = useState(false);
+  const scrollTo = useCallback((ref: React.RefObject<HTMLElement | null>) => {
+    const el = ref.current;
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
+  useEffect(() => {
+    const el = heroRef.current;
+    if (!el) return;
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        setShowStickyMenu(!entry.isIntersecting);
+      },
+      { root: null, threshold: 0.1 }
+    );
+
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
 
   const onTouchStart = (e: React.TouchEvent) => {
     const p = e.touches[0];
@@ -231,6 +298,20 @@ export default function StockAssetPage() {
 
   const price = purchaseOption === 'single' ? priceSingle : payGo10Price;
 
+  const handleAddToCart = useCallback(() => {
+    addItem({
+      id: assetId,
+      title,
+      license: purchaseOption === 'single' ? 'single' : 'paygo10',
+      price,
+      image: imageSrc,
+      qty: 1,
+    });
+    openCart();
+    setAdded(true);
+    window.setTimeout(() => setAdded(false), 2000);
+  }, [addItem, assetId, title, purchaseOption, price, imageSrc, openCart]);
+
   const goLogin = () => router.push(`/login?returnTo=${encodeURIComponent(returnTo)}`);
 
   if (!assets.length) {
@@ -263,47 +344,144 @@ export default function StockAssetPage() {
         </Button>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-        <button
-          type="button"
-          onClick={openLightbox}
-          className="group relative max-h-[calc(100vh-180px)] w-full overflow-hidden rounded-2xl border border-border bg-muted/20 text-left"
-          aria-label="Open image preview"
-        >
-          <Image
-            src={imageSrc}
-            alt={title}
-            width={2000}
-            height={1400}
-            priority
-            className="h-full w-full object-contain motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-300"
-          />
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-black/10" />
-          <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-black/5 dark:ring-white/10" />
-          <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-background/70 px-2 py-1 text-[11px] text-foreground/80 backdrop-blur-sm ring-1 ring-black/5 dark:ring-white/10">
-            <span className="sm:hidden">Tap to zoom</span>
-            <span className="hidden sm:inline">Click to zoom · Esc to close</span>
-          </div>
-        </button>
+      <div
+        className={`fixed inset-x-0 top-16 z-40 transition-all duration-200 ${
+          showStickyMenu
+            ? 'opacity-100 translate-y-0'
+            : 'pointer-events-none opacity-0 -translate-y-2'
+        }`}
+        aria-hidden={!showStickyMenu}
+      >
+        <div className="border-b border-border bg-background/90 backdrop-blur">
+          <div className="mx-auto w-full px-4 py-2 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => scrollTo(infoRef)}
+                  className="rounded-full px-3 py-1 text-xs font-medium text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+                >
+                  Info
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollTo(keywordsRef)}
+                  className="rounded-full px-3 py-1 text-xs font-medium text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+                >
+                  Keywords
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollTo(relatedRef)}
+                  className="rounded-full px-3 py-1 text-xs font-medium text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+                >
+                  Related
+                </button>
+              </div>
 
-        <Card className="h-fit p-4 lg:sticky lg:top-24">
-          <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-            <span>Royalty-free · Instant download</span>
-            <span className="font-medium text-foreground/80">From €{priceSingle.toFixed(2)}</span>
-          </div>
-          <h1 className="text-xl font-semibold leading-tight sm:text-2xl">{title}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">by Colourbox / Demo Photographer</p>
-          {asset?.description ? (
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              {asset.description}
-            </p>
-          ) : null}
+              <div className="flex items-center gap-3">
+                <div className="hidden items-center gap-2 sm:flex">
+                  <div className="relative h-9 w-9 overflow-hidden rounded-lg ring-1 ring-black/5 dark:ring-white/10">
+                    <Image src={imageSrc} alt={title} fill sizes="36px" className="object-cover" />
+                  </div>
+                  <div className="max-w-[200px]">
+                    <div className="line-clamp-1 text-xs font-semibold">{title}</div>
+                    <div className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">
+                      Image #{assetId}
+                    </div>
+                  </div>
+                </div>
 
-          <div className="mt-2 flex flex-wrap gap-2">
-            {asset?.category ? <Badge variant="outline">{asset.category}</Badge> : null}
+                <div className="hidden h-6 w-px bg-border sm:block" aria-hidden />
+
+                <Button size="sm" className="gap-2" onClick={handleAddToCart}>
+                  <ShoppingCart className="h-4 w-4" />
+                  {added ? 'Added' : `Add to cart · €${price}`}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[1fr_360px] pt-2">
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={openLightbox}
+            className="group relative w-full rounded-2xl bg-muted/20 text-left"
+            aria-label="Open image preview"
+          >
+            <div
+              ref={heroRef}
+              id="asset-preview"
+              className="relative h-[calc(100vh-260px)] min-h-[320px] w-full overflow-hidden rounded-2xl ring-1 ring-black/5 dark:ring-white/10"
+            >
+              <Image
+                src={imageSrc}
+                alt={title}
+                fill
+                priority
+                sizes="(min-width: 1024px) calc(100vw - 420px), 100vw"
+                className="object-contain motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-300"
+              />
+            </div>
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-black/10" />
+            {/* ring overlay removed */}
+            <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-background/70 px-2 py-1 text-[11px] text-foreground/80 backdrop-blur-sm ring-1 ring-black/5 dark:ring-white/10">
+              <span className="sm:hidden">Tap to zoom</span>
+              <span className="hidden sm:inline">Click to zoom · Esc to close</span>
+            </div>
+          </button>
+
+          <div
+            ref={infoRef}
+            id="info"
+            className="scroll-mt-28 rounded-2xl bg-background p-4 ring-1 ring-black/5 dark:ring-white/10"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h1 className="text-xl font-semibold leading-tight sm:text-2xl">{title}</h1>
+                <p className="mt-1 text-sm text-muted-foreground">by Colourbox / Demo Photographer</p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary" className="cursor-default">Royalty-free</Badge>
+                <Badge variant="secondary" className="cursor-default">Instant download</Badge>
+              </div>
+            </div>
+
+            {asset?.description ? (
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{asset.description}</p>
+            ) : (
+              <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                High-quality stock image ready to license and use across channels.
+              </p>
+            )}
+
+            <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
+              <div className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2 ring-1 ring-black/5 dark:ring-white/10">
+                <span>Image ID</span>
+                <span className="font-medium text-foreground/80">#{assetId}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2 ring-1 ring-black/5 dark:ring-white/10">
+                <span>Starting at</span>
+                <span className="font-medium text-foreground/80">€{priceSingle.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div
+            ref={keywordsRef}
+            id="keywords"
+            className="scroll-mt-28 flex flex-wrap items-center gap-2 px-1"
+          >
+            {asset?.category ? (
+              <Badge variant="secondary" className="cursor-default">{asset.category}</Badge>
+            ) : null}
             {displayTags
               .filter((t) => t && t.toLowerCase() !== (asset?.category ?? '').toLowerCase())
-              .slice(0, 8)
+              .slice(0, 10)
               .map((t) => (
                 <Badge key={t} variant="secondary" className="cursor-default">
                   {t}
@@ -312,21 +490,33 @@ export default function StockAssetPage() {
             <button
               type="button"
               onClick={() => router.push('/stock/search')}
-              className="ml-auto inline-flex items-center gap-1 rounded-full border border-border bg-background px-3 py-1 text-[11px] font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              className="ml-auto inline-flex items-center gap-1 rounded-full bg-muted/30 px-3 py-1 text-[11px] font-medium text-muted-foreground ring-1 ring-black/5 transition hover:bg-muted/50 hover:text-foreground dark:ring-white/10"
             >
               Explore
               <span aria-hidden>→</span>
             </button>
+          </div>
+        </div>
+
+        <Card className="h-fit p-4 lg:sticky lg:top-24 ring-1 ring-black/5 dark:ring-white/10">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <div className="text-sm font-semibold">Buy license</div>
+              <div className="mt-0.5 text-xs text-muted-foreground">Choose an option below</div>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              From <span className="font-medium text-foreground/80">€{priceSingle.toFixed(2)}</span>
+            </div>
           </div>
 
           <div className="mt-5 space-y-2">
             <button
               type="button"
               onClick={() => setPurchaseOption('single')}
-              className={`w-full rounded-lg border p-3 text-left transition ${
+              className={`w-full rounded-lg p-3 text-left transition ring-1 ${
                 purchaseOption === 'single'
-                  ? 'border-primary bg-primary/10 ring-1 ring-primary/30'
-                  : 'border-border hover:bg-muted'
+                  ? 'bg-primary/10 ring-primary/40'
+                  : 'bg-background ring-black/5 hover:bg-muted/40 dark:ring-white/10'
               }`}
             >
               <div className="flex items-center justify-between">
@@ -339,10 +529,10 @@ export default function StockAssetPage() {
             <button
               type="button"
               onClick={() => setPurchaseOption('paygo10')}
-              className={`w-full rounded-lg border p-3 text-left transition ${
+              className={`w-full rounded-lg p-3 text-left transition ring-1 ${
                 purchaseOption === 'paygo10'
-                  ? 'border-primary bg-primary/10 ring-1 ring-primary/30'
-                  : 'border-border hover:bg-muted'
+                  ? 'bg-primary/10 ring-primary/40'
+                  : 'bg-background ring-black/5 hover:bg-muted/40 dark:ring-white/10'
               }`}
             >
               <div className="flex items-center justify-between">
@@ -354,7 +544,9 @@ export default function StockAssetPage() {
                 </div>
                 <div className="text-right">
                   <div className="font-semibold">€{payGo10Price.toFixed(2)}</div>
-                  <div className="text-[11px] text-muted-foreground line-through">€{payGo10Was.toFixed(2)}</div>
+                  <div className="text-[11px] text-muted-foreground line-through">
+                    €{payGo10Was.toFixed(2)}
+                  </div>
                 </div>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">
@@ -366,19 +558,7 @@ export default function StockAssetPage() {
           <Button
             className="mt-4 w-full gap-2"
             variant={added ? 'secondary' : 'default'}
-            onClick={() => {
-              addItem({
-                id: assetId,
-                title,
-                license: purchaseOption === 'single' ? 'single' : 'paygo10',
-                price,
-                image: imageSrc,
-                qty: 1,
-              });
-              openCart();
-              setAdded(true);
-              window.setTimeout(() => setAdded(false), 2000);
-            }}
+            onClick={handleAddToCart}
           >
             <ShoppingCart className="h-4 w-4" /> {added ? 'Added to cart' : 'Add to cart'} · €{price}
           </Button>
@@ -410,7 +590,7 @@ export default function StockAssetPage() {
         </Card>
       </div>
 
-      <section className="mt-10">
+      <section ref={relatedRef} id="related" className="scroll-mt-28 mt-10">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">Related images</h2>
@@ -441,7 +621,7 @@ export default function StockAssetPage() {
               <Link
                 key={a.id}
                 href={`/stock/assets/${a.id}`}
-                className="group relative overflow-hidden rounded-xl bg-muted/20 ring-1 ring-black/5 transition hover:-translate-y-0.5 hover:ring-black/10 dark:ring-white/10 dark:hover:ring-white/20"
+                className="group relative overflow-hidden rounded-xl bg-muted/10 ring-1 ring-black/5 transition hover:-translate-y-0.5 hover:bg-muted/20 hover:ring-black/10 dark:ring-white/10 dark:hover:ring-white/20"
               >
                 <Image
                   src={getAssetImage(a) || fallbackImage}
