@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Search, X } from 'lucide-react';
 
-import { STOCK_ASSETS as ASSETS } from '@/lib/demo/stock-assets';
+import { STOCK_ASSETS as ASSETS, STOCK_FEATURED_IDS } from '@/lib/demo/stock-assets';
 import { useProtoAuth } from '@/lib/proto-auth';
 
 type Asset = {
@@ -51,7 +51,13 @@ export default function StockPage() {
     return getAssetImage(first) ?? '';
   }, [assets]);
 
-  const featured = useMemo(() => assets.slice(0, 10), [assets]);
+  const featured = useMemo(() => {
+    const byId = new Map(assets.map((a) => [a.id, a] as const));
+    const picked = STOCK_FEATURED_IDS.map((id) => byId.get(id)).filter(Boolean) as Asset[];
+
+    const rest = assets.filter((a) => !(STOCK_FEATURED_IDS as readonly string[]).includes(a.id));
+    return [...picked, ...rest].slice(0, 10);
+  }, [assets]);
   const newest = useMemo(() => assets.slice(0, 12), [assets]);
 
   const heroImages = useMemo(() => {
