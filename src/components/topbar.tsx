@@ -16,7 +16,7 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { CartButton } from "@/components/cart-button";
-import { useCartUI } from '@/lib/cart/cart';
+import { useCart, useCartUI } from '@/lib/cart/cart';
 import { Laptop2, Moon, Sun, Search } from "lucide-react";
 
 type TopbarProps = {
@@ -205,11 +205,10 @@ export function Topbar({
   const pathname = usePathname();
   const router = useRouter();
   const { open: openCart } = useCartUI();
+  const { count: liveCartCount } = useCart();
 
   const [mounted, setMounted] = React.useState(false);
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
+  React.useEffect(() => setMounted(true), []);
 
   const [demoLoggedIn, setDemoLoggedIn] = React.useState(false);
   React.useEffect(() => {
@@ -224,10 +223,10 @@ export function Topbar({
     }
   }, [mounted]);
 
-
   const loggedIn = typeof isLoggedIn === "boolean" ? isLoggedIn : demoLoggedIn;
 
-  const derivedActiveProduct: 'drive' | 'stock' = (activeProduct ?? (pathname?.startsWith('/stock') ? 'stock' : 'drive'));
+  const derivedActiveProduct: 'drive' | 'stock' =
+    activeProduct ?? (pathname?.startsWith('/stock') ? 'stock' : 'drive');
   const userInitials = React.useMemo(() => initials(user?.name ?? ""), [user?.name]);
 
   const [internalQuery, setInternalQuery] = React.useState(initialSearchQuery ?? "");
@@ -273,11 +272,8 @@ export function Topbar({
   const shouldShowSearch = enableSearch || Boolean(onSearchChange);
   const shouldShowLogo = showLogo && !loggedIn;
   const shouldShowSwitcher = Boolean(showProductSwitcher) && !loggedIn;
-  const resolvedCartCount = typeof cartCount === "number" ? cartCount : 0;
+  const resolvedCartCount = typeof cartCount === "number" ? cartCount : liveCartCount;
   const isBuiltInSearch = !centerSlot && shouldShowSearch;
-  const hasRightCluster = Boolean(
-    (shouldShowCart && mounted) || (showThemeToggle && mounted) || rightSlot
-  );
 
   // Mobile: show the search bar as a full-width second row
   const showMobileSearchRow = Boolean(isBuiltInSearch);
@@ -433,6 +429,7 @@ export function Topbar({
                 label="Open cart"
                 onClick={(e) => {
                   e.preventDefault();
+                  e.stopPropagation();
                   openCart();
                 }}
               />
@@ -442,7 +439,7 @@ export function Topbar({
 
             {rightSlot ? <div className="flex items-center gap-2">{rightSlot}</div> : null}
 
-            {(shouldShowCart || (showThemeToggle) || rightSlot) ? (
+            {shouldShowCart || showThemeToggle || rightSlot ? (
               <div className="mx-1 h-7 w-px bg-border/70" />
             ) : null}
 
