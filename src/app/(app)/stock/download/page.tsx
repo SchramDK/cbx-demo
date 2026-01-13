@@ -25,15 +25,21 @@ function getCookie(name: string): string | undefined {
   return decodeURIComponent(hit.slice(prefix.length));
 }
 
-function FullscreenLoader() {
+function FullscreenLoader({ hint }: { hint?: string }) {
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-background text-foreground" aria-busy="true" aria-live="polite">
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-background text-foreground"
+      aria-busy="true"
+      aria-live="polite"
+    >
       <div className="flex flex-col items-center gap-4 px-6">
         <div className="flex items-center gap-3">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-border border-t-transparent" />
           <p className="text-sm font-medium">Loading…</p>
         </div>
-        <p className="max-w-md text-center text-xs text-muted-foreground">Preparing your account and downloads.</p>
+        <p className="max-w-md text-center text-xs text-muted-foreground">
+          {hint ?? "Preparing your account and downloads."}
+        </p>
       </div>
     </div>
   );
@@ -41,7 +47,7 @@ function FullscreenLoader() {
 
 export default function StockDownloadPage() {
   return (
-    <Suspense fallback={<FullscreenLoader />}>
+    <Suspense fallback={<FullscreenLoader hint="Loading download page…" />}>
       <StockDownloadInner />
     </Suspense>
   );
@@ -54,12 +60,13 @@ function StockDownloadInner() {
   const meFetchInFlightRef = useRef<Promise<void> | null>(null);
   const didRefetchAfterDelayRef = useRef(false);
 
-  const notifyAuthChanged = () => {
+  const syncAuthUI = useCallback(() => {
+    // Notify menus/layout listeners that auth state may have changed, then refresh server components.
     try {
       const ev = new CustomEvent("cbx:auth-changed");
       window.dispatchEvent(ev);
       document.dispatchEvent(ev);
-  
+
       // Repeat shortly after to avoid timing issues with listeners mounting.
       window.setTimeout(() => {
         try {
@@ -73,7 +80,9 @@ function StockDownloadInner() {
     } catch {
       // ignore
     }
-  };
+
+    router.refresh();
+  }, [router]);
 
   const fetchDemoMe = useCallback(async (signal?: AbortSignal) => {
     if (meFetchInFlightRef.current) {
@@ -84,14 +93,24 @@ function StockDownloadInner() {
     const p = (async () => {
       try {
         const res = await fetch("/api/demo-auth/me", { cache: "no-store", signal });
-        const json = await res.json().catch(() => null);
-        if (signal?.aborted) return;
+        if (!res.ok) {
+          // If the endpoint errors, treat as signed-out.
+          throw new Error(`ME_FETCH_${res.status}`);
+        }
+        const text = await res.text().catch(() => "");
+        const json = (() => {
+          try {
+            return text ? JSON.parse(text) : null;
+          } catch {
+            return null;
+          }
+        })();
         setDemoUser(json?.user ?? null);
       } catch {
-        if (signal?.aborted) return;
         setDemoUser(null);
       } finally {
-        if (!signal?.aborted) setMeLoaded(true);
+        // Always allow the UI to continue; abort/unmount should not leave a permanent loader.
+        setMeLoaded(true);
       }
     })();
 
@@ -105,50 +124,53 @@ function StockDownloadInner() {
 
   const [demoUser, setDemoUser] = useState<DemoUser | null>(null);
   const [meLoaded, setMeLoaded] = useState(false);
-  const [cookiesReady, setCookiesReady] = useState(false);
-  const [minDelayDone, setMinDelayDone] = useState(false);
   const [didAutoReload, setDidAutoReload] = useState(false);
+  const [minDelayDone, setMinDelayDone] = useState(false);
 
-  // Load current demo user (client-side)
-  useEffect(() => {
+// Load current demo user (client-side)
+useEffect(() => {
     const ac = new AbortController();
-
+  
     void (async () => {
       await fetchDemoMe(ac.signal);
-
-      // Let menus/layout listeners know auth state may have changed
-      notifyAuthChanged();
-      // Force App Router to re-render server components/layouts that read auth cookies
-      router.refresh();
     })();
-
+  
     return () => {
       ac.abort();
     };
-  }, [router, fetchDemoMe]);
+  }, [fetchDemoMe]);
 
-  // Mark cookies as readable after mount, ensure loader is visible for 5s, and optionally reload ONCE to pick up late-set cookies after checkout
+  // Keep the fullscreen loader visible for at least 2 seconds for a smoother experience.
   useEffect(() => {
-    setCookiesReady(true);
+    const t = window.setTimeout(() => {
+      setMinDelayDone(true);
+    }, 2000);
 
-    // Ensure the fullscreen loader is visible for at least 5 seconds.
+    return () => {
+      window.clearTimeout(t);
+    };
+  }, []);
+
+  // Mark cookies as readable after mount, then do a short delayed refresh to pick up late-set cookies after checkout.
+  // (Avoid a second full 5s loader delay — Suspense already covers the first paint.)
+  useEffect(() => {
     const t = window.setTimeout(() => {
       void (async () => {
-        setMinDelayDone(true);
+        let didRefetch = false;
 
-        // Cookies can be set slightly late after checkout; re-fetch /me once after the delay
-        if (!didRefetchAfterDelayRef.current) {
+        // Cookies can be set slightly late after checkout; re-fetch /me once shortly after mount
+        // Only do this if the initial fetch finished and we still have no user.
+        if (meLoaded && !demoUser && !didRefetchAfterDelayRef.current) {
           didRefetchAfterDelayRef.current = true;
           try {
             await fetchDemoMe();
+            didRefetch = true;
           } catch {
             // ignore
           }
         }
-
-        // When loader finishes, refresh app shell so top/left menus update
-        notifyAuthChanged();
-        router.refresh();
+        
+        let willReload = false;
 
         // Some redirects set cookies slightly late; reload once to ensure state is up-to-date.
         try {
@@ -163,20 +185,21 @@ function StockDownloadInner() {
 
             // Only reload when we are on the order-download overview and orderId is missing.
             if (!hasOrderId && !hasAssetId) {
-              setDidAutoReload(true);
-              window.location.reload();
-            }
+                willReload = true;
+                setDidAutoReload(true);
+                window.location.reload();
+              }
           }
         } catch {
           // ignore
         }
       })();
-    }, 5000);
+    }, 500);
 
     return () => {
       window.clearTimeout(t);
     };
-  }, [router, fetchDemoMe]);
+  }, [fetchDemoMe, syncAuthUI, meLoaded, demoUser]);
 
   const assetId = (sp.get("assetId") ?? sp.get("id") ?? "").trim() || undefined;
   const title = (sp.get("title") ?? sp.get("name") ?? "").trim() || undefined;
@@ -189,19 +212,17 @@ function StockDownloadInner() {
 
   const resolvedOrderId = useMemo(() => {
     if (orderId) return orderId;
-    if (!cookiesReady) return undefined;
     const c = getCookie("cbx_demo_last_order_id");
     return c || undefined;
-  }, [orderId, cookiesReady]);
+  }, [orderId]);
 
   const showAccountCreatedBanner = useMemo(() => {
-    if (!cookiesReady) return false;
     if (!demoUser) return false;
     const tsRaw = getCookie("cbx_demo_last_order_ts");
     const ts = tsRaw ? Number(tsRaw) : NaN;
     if (!Number.isFinite(ts)) return false;
     return Date.now() - ts < 2 * 60 * 1000;
-  }, [cookiesReady, demoUser]);
+  }, [demoUser]);
 
   const purchased = useMemo(() => {
     if (!resolvedOrderId) return [] as any[];
@@ -217,21 +238,15 @@ function StockDownloadInner() {
     return !!demoUser && !resolvedOrderId && purchased.length === 0;
   }, [demoUser, resolvedOrderId, purchased.length]);
 
-  const isBootstrapping = !cookiesReady || !meLoaded || !minDelayDone || didAutoReload;
+  const isBootstrapping = !meLoaded || !minDelayDone || didAutoReload;
 
   useEffect(() => {
     if (isBootstrapping) return;
     if (didNotifyReadyRef.current) return;
     didNotifyReadyRef.current = true;
 
-    if (!demoUser && !didRefetchAfterDelayRef.current) {
-      didRefetchAfterDelayRef.current = true;
-      void fetchDemoMe();
-    }
-
-    notifyAuthChanged();
-    router.refresh();
-  }, [isBootstrapping, router, demoUser, fetchDemoMe]);
+    syncAuthUI();
+  }, [isBootstrapping, demoUser, syncAuthUI]);
   if (isBootstrapping) {
     return <FullscreenLoader />;
   }
