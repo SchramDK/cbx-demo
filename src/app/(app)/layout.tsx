@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { Trash2, X } from 'lucide-react';
@@ -31,21 +31,24 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   }, [isReady, isLoggedIn, pathname, router]);
 
   const showLeftNavigation = isReady && isLoggedIn;
-  const withLeftNav = showLeftNavigation ? 'md:pl-20' : '';
+  const withLeftNav = showLeftNavigation ? 'md:pl-[88px]' : '';
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(async () => {
     try {
-      window.localStorage.removeItem('CBX_AUTH_V1');
-      window.sessionStorage.removeItem('CBX_AUTH_V1');
-    } catch {}
-    logout();
-  };
+      await logout();
+    } catch {
+      // ignore
+    }
+
+    router.replace('/drive/landing');
+    router.refresh();
+  }, [logout, router]);
 
   const title = useMemo(() => {
     if (!pathname) return 'CBX';
     if (pathname.startsWith('/home')) return 'Home';
     if (pathname.startsWith('/stock')) return 'Stock';
-    if (pathname.startsWith('/drive')) return 'Share';
+    if (pathname.startsWith('/drive')) return 'Drive';
     return 'CBX';
   }, [pathname]);
 
@@ -56,7 +59,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <CartDrawerMount />
           {/* App shell header (Topbar). Section-level heroes live inside pages, not here. */}
           <header
-            className={`sticky top-0 z-30 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm ${withLeftNav}`}
+            className={`sticky top-0 z-30 border-b border-border/60 bg-background/70 backdrop-blur supports-[backdrop-filter]:bg-background/50 ${withLeftNav}`}
           >
             {mounted ? (
               <Topbar
@@ -80,7 +83,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           {/* Content */}
           <div className={`w-full ${withLeftNav}`}>
             <main className="min-w-0 w-full">
-              <div className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-1 motion-safe:duration-300">
+              <div className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
                 {children}
               </div>
             </main>

@@ -58,7 +58,7 @@ type TopbarProps = {
   searchPlaceholder?: string;
   onProfile?: () => void;
   onSettings?: () => void;
-  onLogout?: () => void;
+  onLogout?: () => void | Promise<void>;
   /** Show CBX logo on the left */
   showLogo?: boolean;
   /** Enable the built-in search in the center (uses internal state and routes on submit) */
@@ -82,6 +82,26 @@ function initials(name: string) {
 
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ');
+}
+
+function emitAuthChanged() {
+  try {
+    const ev = new CustomEvent('cbx:auth-changed');
+    window.dispatchEvent(ev);
+    if (typeof document !== 'undefined') document.dispatchEvent(ev);
+
+    window.setTimeout(() => {
+      try {
+        const ev2 = new CustomEvent('cbx:auth-changed');
+        window.dispatchEvent(ev2);
+        if (typeof document !== 'undefined') document.dispatchEvent(ev2);
+      } catch {
+        // ignore
+      }
+    }, 250);
+  } catch {
+    // ignore
+  }
 }
 
 type ThemeMode = "system" | "light" | "dark";
@@ -213,34 +233,89 @@ export function Topbar({
   React.useEffect(() => setMounted(true), []);
 
   const [me, setMe] = React.useState<null | { name: string; email?: string; org?: string; role?: string; imageUrl?: string }>(null);
-  const [meLoaded, setMeLoaded] = React.useState(false);
+  const meFetchInFlightRef = React.useRef<Promise<void> | null>(null);
+  const lastMeFetchAtRef = React.useRef<number>(0);
+
+  const refreshMe = React.useCallback(
+    async (reason?: 'init' | 'auth-changed' | 'focus') => {
+      if (!mounted) return;
+
+      const now = Date.now();
+      // Small throttle to avoid bursts
+      if (now - lastMeFetchAtRef.current < 250 && reason !== 'init') return;
+      lastMeFetchAtRef.current = now;
+
+      if (meFetchInFlightRef.current) {
+        await meFetchInFlightRef.current;
+        return;
+      }
+
+      const ac = new AbortController();
+      const p = (async () => {
+        try {
+          const res = await fetch("/api/demo-auth/me", { cache: "no-store", signal: ac.signal });
+          const json = await res.json().catch(() => null);
+          setMe(json?.user ?? null);
+        } catch {
+          setMe(null);
+        }
+      })();
+
+      meFetchInFlightRef.current = p.then(() => undefined);
+      try {
+        await meFetchInFlightRef.current;
+      } finally {
+        meFetchInFlightRef.current = null;
+      }
+
+      return () => ac.abort();
+    },
+    [mounted]
+  );
 
   React.useEffect(() => {
     if (!mounted) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/demo-auth/me", { cache: "no-store" });
-        const json = await res.json().catch(() => null);
-        if (cancelled) return;
-        setMe(json?.user ?? null);
-      } catch {
-        if (!cancelled) setMe(null);
-      } finally {
-        if (!cancelled) setMeLoaded(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [mounted]);
 
-  const loggedIn = typeof isLoggedIn === "boolean" ? isLoggedIn : Boolean(me);
+    const onAuthChanged = () => {
+      void refreshMe('auth-changed');
+    };
+
+    const onFocus = () => {
+      void refreshMe('focus');
+    };
+
+    void refreshMe('init');
+
+    window.addEventListener('cbx:auth-changed', onAuthChanged as EventListener);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('cbx:auth-changed', onAuthChanged as EventListener);
+    }
+    window.addEventListener('focus', onFocus);
+
+    return () => {
+      window.removeEventListener('cbx:auth-changed', onAuthChanged as EventListener);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('cbx:auth-changed', onAuthChanged as EventListener);
+      }
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [mounted, refreshMe]);
+
+  const resolvedUser = (user ?? me) as {
+    name: string;
+    email?: string;
+    imageUrl?: string;
+    org?: string;
+    role?: string;
+  } | null;
+
+  // Never let a stale boolean prop keep the UI "logged in" when user data is gone.
+  const loggedIn = Boolean(resolvedUser) && (typeof isLoggedIn === "boolean" ? isLoggedIn : true);
 
   const derivedActiveProduct: 'drive' | 'stock' =
     activeProduct ?? (pathname?.startsWith('/stock') ? 'stock' : 'drive');
 
-  const displayUser = (user ?? me ?? { name: "Account" }) as {
+  const displayUser = (resolvedUser ?? { name: "Account" }) as {
     name: string;
     email?: string;
     imageUrl?: string;
@@ -273,24 +348,52 @@ export function Topbar({
     router.push(href);
   }, [router, searchTargetBase, internalQuery, onSearchChange, searchValue]);
 
-  const handleLogout = React.useCallback(() => {
+  const handleLogout = React.useCallback(async () => {
+    // Prefer app-provided logout (usually proto-auth). It may be async.
     if (onLogout) {
-      onLogout();
+      try {
+        await Promise.resolve(onLogout());
+      } catch {
+        // ignore
+      }
+
+      // Ensure our local `/me` mirror is cleared quickly
+      setMe(null);
+      try {
+        await refreshMe('auth-changed');
+      } catch {
+        // ignore
+      }
+      emitAuthChanged();
       return;
     }
 
-    // Default demo logout
+    // Default demo logout (cookie switch)
     try {
-      fetch("/api/demo-auth/switch", {
+      await fetch("/api/demo-auth/switch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: null }),
-      }).catch(() => {});
-    } catch {}
+      });
+    } catch {
+      // ignore
+    }
 
+    // Optimistically update UI
     setMe(null);
+
+    // Re-sync from server cookies (in case switch failed or was delayed)
+    try {
+      await refreshMe('auth-changed');
+    } catch {
+      // ignore
+    }
+
+    emitAuthChanged();
+
     router.replace("/drive/landing");
-  }, [onLogout, router]);
+    router.refresh();
+  }, [onLogout, router, refreshMe]);
 
   const shouldShowCart = showCart ?? true;
   const shouldShowSearch = enableSearch || Boolean(onSearchChange);
@@ -340,7 +443,7 @@ export function Topbar({
   );
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-sm sm:shadow">
+    <div className="w-full">
       <div className="w-full px-4 sm:px-6">
         <div className="grid h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:h-16 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-3">
           {/* Left */}
@@ -518,7 +621,7 @@ export function Topbar({
                       className="text-destructive"
                       onSelect={(e) => {
                         e.preventDefault();
-                        handleLogout();
+                        void handleLogout();
                       }}
                     >
                       Log out
@@ -549,6 +652,6 @@ export function Topbar({
           </div>
         ) : null}
       </div>
-    </header>
+    </div>
   );
 }

@@ -42,6 +42,9 @@ export default function CheckoutPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: DEFAULT_DEMO_USER_ID }),
       });
+      
+      // evt. lille safety
+      await new Promise(r => setTimeout(r, 50));
     } catch {
       // If demo-auth fails, we still proceed with the order in this prototype.
     }

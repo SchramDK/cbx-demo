@@ -118,14 +118,14 @@ export function CartDrawer() {
 
           <div className="mt-3 grid gap-2">
             <Button asChild disabled={items.length === 0}>
-              <Link href="/stock/cart">View cart</Link>
+              <Link href="/stock/cart" onClick={close}>View cart</Link>
             </Button>
-            <Button variant="secondary" disabled>
-              Checkout (prototype)
+            <Button asChild variant="secondary" disabled={items.length === 0}>
+              <Link href="/stock/checkout" onClick={close}>Checkout</Link>
             </Button>
           </div>
           <div className="mt-2 text-xs text-muted-foreground">
-            Prototype checkout is disabled. Use “View cart” for the full cart page.
+            Review your cart and complete checkout.
           </div>
         </div>
       </SheetContent>

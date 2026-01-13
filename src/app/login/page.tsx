@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useProtoAuth } from "@/lib/proto-auth";
+import { DEFAULT_DEMO_USER_ID } from "@/lib/demo-auth/demo-users";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -43,8 +44,7 @@ function LoginInner() {
   const searchParams = useSearchParams();
   const { login } = useProtoAuth();
 
-  const rawReturnTo = searchParams.get("returnTo") || "/home";
-  const returnTo = rawReturnTo.startsWith("/") ? rawReturnTo : "/home";
+  const returnTo = "/home";
 
   const images = useMemo(
     () => [
@@ -112,18 +112,18 @@ function LoginInner() {
   }, [activeImage]);
 
 
-  const handleLogin = () => {
-    login({ name: "Nicki Larsen", email: "nicki@colourbox.com" });
-
-    // Demo auth flag used by gated pages (e.g. /drive)
+  const handleLogin = async () => {
     try {
-      window.localStorage.setItem("CBX_AUTH_V1", "1");
-      window.sessionStorage.setItem("CBX_AUTH_V1", "1");
+      await login({
+        id: DEFAULT_DEMO_USER_ID,
+        name: "Nicki Larsen",
+        email: "nicki@colourbox.com",
+      } as any);
     } catch {
       // ignore
     }
 
-    router.replace("/home");
+    router.replace(returnTo);
   };
 
   return (
@@ -169,7 +169,7 @@ function LoginInner() {
                     variant="outline"
                     type="button"
                     className="w-full justify-center gap-2"
-                    onClick={handleLogin}
+                    onClick={() => void handleLogin()}
                   >
                     <GoogleIcon />
                     Continue with Google
@@ -179,7 +179,7 @@ function LoginInner() {
                     variant="outline"
                     type="button"
                     className="w-full justify-center gap-2"
-                    onClick={handleLogin}
+                    onClick={() => void handleLogin()}
                   >
                     <AppleIcon />
                     Continue with Apple
@@ -196,7 +196,7 @@ function LoginInner() {
                   className="space-y-4"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    handleLogin();
+                    void handleLogin();
                   }}
                 >
                   <div className="space-y-2">
@@ -230,15 +230,6 @@ function LoginInner() {
                   <div className="flex flex-col gap-3 pt-2">
                     <Button type="submit" className="w-full">
                       Continue with email
-                    </Button>
-
-                    <Button
-                      variant="secondary"
-                      type="button"
-                      className="w-full"
-                      onClick={handleLogin}
-                    >
-                      Continue as guest
                     </Button>
                   </div>
 
