@@ -34,6 +34,8 @@ type TopbarProps = {
     name: string;
     email?: string;
     imageUrl?: string;
+    org?: string;
+    role?: string;
   };
   /** Show name/email next to the avatar on >=sm screens */
   showUserText?: boolean;
@@ -180,7 +182,7 @@ export function Topbar({
   showLogo = true,
   showProductSwitcher = false,
   activeProduct,
-  user = { name: "Nicki Larsen", email: "nicki@cbx.demo" },
+  user,
   showUserText = false,
   centerSlot,
   leftSlot,
@@ -210,24 +212,43 @@ export function Topbar({
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => setMounted(true), []);
 
-  const [demoLoggedIn, setDemoLoggedIn] = React.useState(false);
+  const [me, setMe] = React.useState<null | { name: string; email?: string; org?: string; role?: string; imageUrl?: string }>(null);
+  const [meLoaded, setMeLoaded] = React.useState(false);
+
   React.useEffect(() => {
     if (!mounted) return;
-    try {
-      const v =
-        window.localStorage.getItem("CBX_AUTH_V1") ||
-        window.sessionStorage.getItem("CBX_AUTH_V1");
-      setDemoLoggedIn(v === "1" || v === "true" || v === "yes" || v === "in");
-    } catch {
-      setDemoLoggedIn(false);
-    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/demo-auth/me", { cache: "no-store" });
+        const json = await res.json().catch(() => null);
+        if (cancelled) return;
+        setMe(json?.user ?? null);
+      } catch {
+        if (!cancelled) setMe(null);
+      } finally {
+        if (!cancelled) setMeLoaded(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [mounted]);
 
-  const loggedIn = typeof isLoggedIn === "boolean" ? isLoggedIn : demoLoggedIn;
+  const loggedIn = typeof isLoggedIn === "boolean" ? isLoggedIn : Boolean(me);
 
   const derivedActiveProduct: 'drive' | 'stock' =
     activeProduct ?? (pathname?.startsWith('/stock') ? 'stock' : 'drive');
-  const userInitials = React.useMemo(() => initials(user?.name ?? ""), [user?.name]);
+
+  const displayUser = (user ?? me ?? { name: "Account" }) as {
+    name: string;
+    email?: string;
+    imageUrl?: string;
+    org?: string;
+    role?: string;
+  };
+
+  const userInitials = React.useMemo(() => initials(displayUser?.name ?? ""), [displayUser?.name]);
 
   const [internalQuery, setInternalQuery] = React.useState(initialSearchQuery ?? "");
 
@@ -260,11 +281,14 @@ export function Topbar({
 
     // Default demo logout
     try {
-      window.localStorage.removeItem("CBX_AUTH_V1");
-      window.sessionStorage.removeItem("CBX_AUTH_V1");
+      fetch("/api/demo-auth/switch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: null }),
+      }).catch(() => {});
     } catch {}
 
-    setDemoLoggedIn(false);
+    setMe(null);
     router.replace("/drive/landing");
   }, [onLogout, router]);
 
@@ -454,16 +478,16 @@ export function Topbar({
                       aria-haspopup="menu"
                     >
                       <Avatar className="h-8 w-8">
-                        {user?.imageUrl ? (
-                          <AvatarImage src={user.imageUrl} alt={user?.name ?? 'User'} />
+                        {displayUser?.imageUrl ? (
+                          <AvatarImage src={displayUser.imageUrl} alt={displayUser?.name ?? 'User'} />
                         ) : null}
                         <AvatarFallback>{userInitials}</AvatarFallback>
                       </Avatar>
                       {showUserText ? (
                         <div className="ml-2 hidden text-left sm:block">
-                          <div className="text-sm font-medium leading-none">{user?.name}</div>
-                          {user?.email ? (
-                            <div className="text-xs text-muted-foreground">{user.email}</div>
+                          <div className="text-sm font-medium leading-none">{displayUser?.name}</div>
+                          {displayUser?.email ? (
+                            <div className="text-xs text-muted-foreground">{displayUser.email}</div>
                           ) : null}
                         </div>
                       ) : null}

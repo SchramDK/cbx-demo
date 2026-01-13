@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Trash2 } from "lucide-react";
@@ -66,7 +66,7 @@ export default function CartPage() {
   }, [items]);
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-6 pb-24 sm:py-10 lg:pb-6">
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 pb-24 sm:py-10 lg:pb-36">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="text-xs text-muted-foreground">
@@ -266,6 +266,7 @@ export default function CartPage() {
           </div>
         </>
       )}
+
 
       {related.length ? (
         <div className="mt-8">

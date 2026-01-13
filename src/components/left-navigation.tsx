@@ -1,17 +1,40 @@
 'use client';
 
+import * as React from 'react';
+
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Home, Folder, Image } from 'lucide-react';
-import { useProtoAuth } from '@/lib/proto-auth';
 import ImageNext from 'next/image';
 
 export function LeftNavigation() {
-  const { isLoggedIn, isReady } = useProtoAuth();
   const pathname = usePathname();
 
+  const [meLoaded, setMeLoaded] = React.useState(false);
+  const [isLoggedIn, setIsLoggedIn] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/demo-auth/me', { cache: 'no-store' });
+        const json = await res.json().catch(() => null);
+        if (cancelled) return;
+        setIsLoggedIn(Boolean(json?.user));
+      } catch {
+        if (!cancelled) setIsLoggedIn(false);
+      } finally {
+        if (!cancelled) setMeLoaded(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Avoid flicker before auth is ready
-  if (!isReady || !isLoggedIn) return null;
+  if (!meLoaded || !isLoggedIn) return null;
 
   const productItems = [
     { href: '/home', label: 'Home', icon: Home },

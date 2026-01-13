@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 
 import { useCart } from "@/lib/cart/cart";
 import { createOrderFromCart, saveOrder } from '@/lib/stock/commerce';
+import { DEFAULT_DEMO_USER_ID } from '@/lib/demo-auth/demo-users';
 
 const fallbackImage = '/default-preview.png';
 
@@ -31,16 +32,38 @@ export default function CheckoutPage() {
     return null;
   }
 
-  const handleCompletePurchase = () => {
+  const handleCompletePurchase = async () => {
     setIsCompleting(true);
+
+    // DEMO: always use the single first-time user after purchase
+    try {
+      await fetch('/api/demo-auth/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: DEFAULT_DEMO_USER_ID }),
+      });
+    } catch {
+      // If demo-auth fails, we still proceed with the order in this prototype.
+    }
+
     const order = createOrderFromCart(cartItems);
     saveOrder(order);
+
+    // DEMO: remember latest order without putting it in the URL
+    try {
+      const now = Date.now();
+      document.cookie = `cbx_demo_last_order_id=${encodeURIComponent(order.id)}; Path=/; SameSite=Lax`;
+      document.cookie = `cbx_demo_last_order_ts=${encodeURIComponent(String(now))}; Path=/; SameSite=Lax`;
+    } catch {
+      // ignore
+    }
+
     router.push('/stock/download');
     clear();
   };
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 py-8 sm:py-10">
+    <main className="mx-auto w-full max-w-5xl px-4 py-10">
       {/* Stepper */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
@@ -201,8 +224,8 @@ export default function CheckoutPage() {
             <span className="text-lg font-semibold tabular-nums">€{total.toFixed(2)}</span>
           </div>
 
-          <Button onClick={handleCompletePurchase} className="mt-5 w-full">
-            Confirm &amp; get download
+          <Button onClick={handleCompletePurchase} className="mt-5 w-full" disabled={isCompleting}>
+            {isCompleting ? 'Confirming…' : 'Confirm & get download'}
           </Button>
 
           <p className="mt-3 text-xs text-muted-foreground">
