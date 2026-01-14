@@ -806,7 +806,7 @@ export function FolderSidebar({
   return (
     <aside
       className={cn(
-        "h-full w-64 shrink-0 border-r border-border bg-background",
+        "h-full w-64 shrink-0 border-r border-border bg-background overflow-y-auto",
         className
       )}
     >

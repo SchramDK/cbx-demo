@@ -180,6 +180,52 @@ export const STOCK_ASSETS: StockAsset[] = [
     tags: ["city", "lifestyle", "transport", "sustainability"],
     preview: "/demo/stock/COLOURBOX34454367.jpg",
   }),
+  defineStockAsset({
+    id: "s-014",
+    title: "Seeds of a dandelion",
+    category: "nature",
+    description: "Close-up of delicate dandelion seeds ready to disperse in the wind. Minimalistic macro image symbolizing fragility, freedom, nature, and new beginnings. Ideal for concepts around growth, sustainability, spring, and calm nature aesthetics.",
+    keywords: ['dandelion', 'dandelion seeds', 'seed', 'macro', 'close-up', 'nature', 'plant', 'spring', 'fragility', 'freedom', 'minimal', 'botany'],
+    tags: ["nature", "plant", "macro", "minimal"],
+    preview: "/demo/stock/COLOURBOX1916822.jpg",
+  }),
+  defineStockAsset({
+    id: "s-015",
+    title: "Cute deer outdoors",
+    category: "wildlife",
+    description: "Cute deer standing outdoors in a natural environment. Peaceful wildlife scene capturing innocence, nature, and animal behavior in the wild. Ideal for concepts around wildlife, nature conservation, countryside, and outdoor life.",
+    keywords: ['deer', 'cute deer', 'wildlife', 'animal', 'nature', 'outdoors', 'forest', 'countryside', 'wild', 'fauna'],
+    tags: ["wildlife", "animal", "nature", "outdoors"],
+    preview: "/demo/stock/COLOURBOX2617267.jpg",
+  }),
+  defineStockAsset({
+    id: "s-016",
+    title: "Girl with curly hair in autumn field",
+    category: "lifestyle",
+    description: "Young girl with curly hair wearing a straw hat and polka dot dress, lifting her hands in an autumn field. Warm lifestyle scene capturing freedom, childhood joy, harvest season, and natural happiness. Ideal for concepts around autumn, freedom, childhood, and outdoor lifestyle.",
+    keywords: ['girl', 'curly hair', 'straw hat', 'polka dot dress', 'autumn', 'field', 'childhood', 'freedom', 'harvest', 'outdoors', 'lifestyle'],
+    tags: ["lifestyle", "autumn", "childhood", "outdoors"],
+    preview: "/demo/stock/COLOURBOX41216629.jpg",
+  }),
+  defineStockAsset({
+    id: "s-017",
+    title: "Long exposure waterfall and lake",
+    category: "nature",
+    description: "Long exposure photography of a waterfall flowing into a calm lake. Blurry, silky water creates a peaceful and atmospheric natural scene. Ideal for nature backgrounds, wallpapers, relaxation, mindfulness, and landscape concepts.",
+    keywords: ['waterfall', 'long exposure', 'lake', 'water', 'nature', 'landscape', 'blurred water', 'silky water', 'calm', 'background', 'wallpaper'],
+    tags: ["nature", "water", "landscape", "background"],
+    preview: "/demo/stock/COLOURBOX58649389.jpg",
+}),
+defineStockAsset({
+    id: "s-018",
+    title: "Seasonal fruits and vegetables prepared for cooking",
+    category: "lifestyle",
+    description: "Seasonal fruits and vegetables prepared for cooking on a rustic surface. Fresh ingredients arranged for a healthy meal, capturing home cooking, seasonal food, nutrition, and natural lifestyle concepts.",
+    keywords: ['seasonal food', 'fruits', 'vegetables', 'cooking', 'ingredients', 'healthy food', 'nutrition', 'home cooking', 'fresh', 'organic', 'lifestyle'],
+    tags: ["lifestyle", "food", "cooking", "healthy"],
+    preview: "/demo/stock/COLOURBOX67429604.jpg",
+}),
+  
   
   // ... flere
 ];

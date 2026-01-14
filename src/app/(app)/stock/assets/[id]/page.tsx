@@ -196,7 +196,7 @@ export default function StockAssetPage() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [isSmUp, setIsSmUp] = useState(false);
   const topbarOffset = isSmUp ? 64 : 56;
-  const stickyMenuOffset = 56; // overlay menu height (approx)
+  const stickyMenuOffset = 48; // overlay menu height (compact)
 
   const touchStart = useRef<{ x: number; y: number; t: number } | null>(null);
   const heroRef = useRef<HTMLDivElement | null>(null);
@@ -463,7 +463,7 @@ export default function StockAssetPage() {
       </div>
 
       <div
-        className={`fixed top-[var(--cbx-topbar)] sm:top-[var(--cbx-topbar-sm)] left-0 right-0 md:left-[var(--app-left-rail,0px)] z-30 transition-all duration-200 ${
+        className={`fixed top-[var(--cbx-topbar)] sm:top-[var(--cbx-topbar-sm)] left-0 right-0 md:left-[var(--app-left-rail)] z-30 transition-all duration-200 ${
           showStickyMenu
             ? 'opacity-100 translate-y-0'
             : 'pointer-events-none opacity-0 -translate-y-2'
@@ -471,7 +471,7 @@ export default function StockAssetPage() {
         aria-hidden={!showStickyMenu}
       >
         <div className="border-b border-border bg-background/90 backdrop-blur">
-          <div className="w-full px-4 py-3 sm:px-6 lg:px-8">
+          <div className="w-full px-4 py-2 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-1">
                 <button
@@ -481,7 +481,7 @@ export default function StockAssetPage() {
                     activeTabRef.current = 'info';
                     scrollTo(infoRef);
                   }}
-                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ring-1 ${
+                  className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ring-1 ${
                     activeTab === 'info'
                       ? 'bg-muted/50 text-foreground ring-black/10 dark:ring-white/20'
                       : 'text-muted-foreground ring-transparent hover:bg-muted/40 hover:text-foreground'
@@ -496,7 +496,7 @@ export default function StockAssetPage() {
                     activeTabRef.current = 'keywords';
                     scrollTo(keywordsRef);
                   }}
-                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ring-1 ${
+                  className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ring-1 ${
                     activeTab === 'keywords'
                       ? 'bg-muted/50 text-foreground ring-black/10 dark:ring-white/20'
                       : 'text-muted-foreground ring-transparent hover:bg-muted/40 hover:text-foreground'
@@ -511,7 +511,7 @@ export default function StockAssetPage() {
                     activeTabRef.current = 'similar';
                     scrollTo(similarRef);
                   }}
-                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ring-1 ${
+                  className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ring-1 ${
                     activeTab === 'similar'
                       ? 'bg-muted/50 text-foreground ring-black/10 dark:ring-white/20'
                       : 'text-muted-foreground ring-transparent hover:bg-muted/40 hover:text-foreground'
@@ -526,7 +526,7 @@ export default function StockAssetPage() {
                     activeTabRef.current = 'shoot';
                     scrollTo(shootRef);
                   }}
-                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ring-1 ${
+                  className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ring-1 ${
                     activeTab === 'shoot'
                       ? 'bg-muted/50 text-foreground ring-black/10 dark:ring-white/20'
                       : 'text-muted-foreground ring-transparent hover:bg-muted/40 hover:text-foreground'
@@ -538,8 +538,8 @@ export default function StockAssetPage() {
 
               <div className="flex items-center gap-3">
                 <div className="hidden items-center gap-2 sm:flex">
-                  <div className="relative h-10 w-10 overflow-hidden rounded-lg ring-1 ring-black/5 dark:ring-white/10">
-                    <Image src={imageSrc} alt={title} fill sizes="40px" className="object-cover" />
+                  <div className="relative h-9 w-9 overflow-hidden rounded-lg ring-1 ring-black/5 dark:ring-white/10">
+                    <Image src={imageSrc} alt={title} fill sizes="36px" className="object-cover" />
                   </div>
                   <div className="max-w-[200px]">
                     <div className="line-clamp-1 text-sm font-semibold">{title}</div>
@@ -599,7 +599,7 @@ export default function StockAssetPage() {
           <div
             ref={infoRef}
             id="info"
-            className="scroll-mt-[calc(var(--cbx-topbar)+96px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+96px)] rounded-2xl bg-background p-4 ring-1 ring-black/5 dark:ring-white/10"
+            className="scroll-mt-[calc(var(--cbx-topbar)+88px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+88px)] rounded-2xl bg-background p-4 ring-1 ring-black/5 dark:ring-white/10"
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
@@ -636,7 +636,7 @@ export default function StockAssetPage() {
           <div
             ref={keywordsRef}
             id="keywords"
-            className="scroll-mt-[calc(var(--cbx-topbar)+96px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+96px)] flex flex-wrap items-center gap-2 px-1"
+            className="scroll-mt-[calc(var(--cbx-topbar)+88px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+88px)] flex flex-wrap items-center gap-2 px-1"
           >
             {asset?.category ? (
               <Badge variant="secondary" className="cursor-default">{asset.category}</Badge>
@@ -660,7 +660,7 @@ export default function StockAssetPage() {
           </div>
         </div>
 
-        <Card className="h-fit p-4 lg:sticky lg:top-[calc(var(--cbx-topbar)+96px)] sm:lg:top-[calc(var(--cbx-topbar-sm)+96px)] ring-1 ring-black/5 dark:ring-white/10">
+        <Card className="h-fit p-4 lg:sticky lg:top-[calc(var(--cbx-topbar)+88px)] sm:lg:top-[calc(var(--cbx-topbar-sm)+88px)] ring-1 ring-black/5 dark:ring-white/10">
           <div className="mb-3 flex items-center justify-between">
             <div>
               <div className="text-sm font-semibold">Buy license</div>
@@ -753,7 +753,7 @@ export default function StockAssetPage() {
         </Card>
       </div>
 
-      <section ref={shootRef} id="shoot" className="scroll-mt-[calc(var(--cbx-topbar)+96px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+96px)] mt-10">
+      <section ref={shootRef} id="shoot" className="scroll-mt-[calc(var(--cbx-topbar)+88px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+88px)] mt-10">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">From the same shoot</h2>
@@ -798,7 +798,7 @@ export default function StockAssetPage() {
         </div>
       </section>
 
-      <section ref={similarRef} id="similar" className="scroll-mt-[calc(var(--cbx-topbar)+96px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+96px)] mt-10">
+      <section ref={similarRef} id="similar" className="scroll-mt-[calc(var(--cbx-topbar)+88px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+88px)] mt-10">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">Similar images</h2>
@@ -845,7 +845,7 @@ export default function StockAssetPage() {
         </div>
       </section>
 
-      <section ref={relatedRef} id="related" className="scroll-mt-[calc(var(--cbx-topbar)+96px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+96px)] mt-10">
+      <section ref={relatedRef} id="related" className="scroll-mt-[calc(var(--cbx-topbar)+88px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+88px)] mt-10">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">Related images</h2>
