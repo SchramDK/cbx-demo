@@ -5,7 +5,7 @@ import { useCart, useCartUI } from '@/lib/cart/cart';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, Sparkles, X } from 'lucide-react';
+import { Clock, Search, Sparkles, X } from 'lucide-react';
 
 import { STOCK_ASSETS as ASSETS, STOCK_FEATURED_IDS } from '@/lib/demo/stock-assets';
 import { useProtoAuth } from '@/lib/proto-auth';
@@ -20,6 +20,28 @@ type Asset = {
   image?: string;
   url?: string;
 };
+
+type LastSeenItem = { id: string; title: string; img: string; ts: number };
+const LAST_SEEN_KEY = 'CBX_STOCK_LAST_SEEN_V1';
+
+function safeParseLastSeen(raw: string | null): LastSeenItem[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    if (!Array.isArray(v)) return [];
+    return v
+      .map((x) => ({
+        id: String(x?.id ?? ''),
+        title: String(x?.title ?? ''),
+        img: String(x?.img ?? ''),
+        ts: Number(x?.ts ?? 0),
+      }))
+      .filter((x) => x.id && x.img)
+      .sort((a, b) => b.ts - a.ts);
+  } catch {
+    return [];
+  }
+}
 
 const getAssetImage = (asset?: Asset) => asset?.preview ?? asset?.src ?? asset?.image ?? asset?.url ?? '';
 const getImage = (asset: Asset, fallback: string) => getAssetImage(asset) || fallback;
@@ -182,6 +204,7 @@ export default function StockPage() {
 
   const [q, setQ] = useState('');
   const [heroIndex, setHeroIndex] = useState(0);
+  const [lastSeen, setLastSeen] = useState<LastSeenItem[]>([]);
 
   const featured = useMemo(() => {
     const byId = new Map(assets.map((a) => [a.id, a] as const));
@@ -210,6 +233,19 @@ export default function StockPage() {
     return () => window.clearInterval(id);
   }, [heroImages.length]);
 
+  useEffect(() => {
+    if (!loggedIn) {
+      setLastSeen([]);
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem(LAST_SEEN_KEY);
+      setLastSeen(safeParseLastSeen(raw).slice(0, 10));
+    } catch {
+      setLastSeen([]);
+    }
+  }, [loggedIn]);
+
   const pushOrLogin = useCallback(
     (href: string) => {
       router.push(loggedIn ? href : `/login?returnTo=${encodeURIComponent(href)}`);
@@ -225,7 +261,7 @@ export default function StockPage() {
   return (
     <div className="w-full">
       {/* Hero */}
-      <section className="relative mb-12 flex min-h-[72vh] items-center overflow-hidden">
+      <section className="relative mb-10 flex min-h-[60vh] items-center overflow-hidden">
         <div className="absolute inset-0">
           {heroSources.map((src, idx) => (
             <Image
@@ -247,7 +283,7 @@ export default function StockPage() {
           <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-background via-background/60 to-transparent" />
         </div>
 
-        <div className="relative w-full px-4 py-20 sm:px-6 sm:py-28 lg:px-10">
+        <div className="relative w-full px-4 py-16 sm:px-6 sm:py-20 lg:px-10">
           <div className="mx-auto max-w-4xl text-center">
             <div className="mx-auto max-w-3xl rounded-3xl border border-border/20 bg-background/55 p-6 shadow-[0_20px_60px_-30px_rgba(0,0,0,0.45)] backdrop-blur sm:p-8">
               <div className="mb-4 flex flex-wrap items-center justify-center gap-2">
@@ -391,6 +427,68 @@ export default function StockPage() {
         </div>
       </section>
 
+      {/* Continue browsing (logged in) */}
+      {loggedIn && lastSeen.length > 0 ? (
+        <section className="mb-10 px-4 sm:px-6 lg:px-10">
+          <div className="rounded-2xl bg-muted/10 p-5 sm:p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <div className="grid h-9 w-9 place-items-center rounded-full bg-muted/20 ring-1 ring-border/15">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold">Continue browsing</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">Your last viewed assets</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    window.localStorage.removeItem(LAST_SEEN_KEY);
+                  } catch {}
+                  setLastSeen([]);
+                }}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Clear
+              </button>
+            </div>
+
+            <div className="relative mt-4 -mx-4 sm:-mx-6">
+              <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-10 bg-gradient-to-r from-background/70 to-transparent" />
+              <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 bg-gradient-to-l from-background/70 to-transparent" />
+              <div className="overflow-x-auto px-4 sm:px-6">
+                <div className="flex snap-x snap-mandatory gap-3 pr-6">
+                  {lastSeen.map((it) => (
+                    <Link
+                      key={it.id}
+                      href={`/stock/assets/${it.id}`}
+                      className="group relative h-28 w-44 shrink-0 snap-start overflow-hidden rounded-xl bg-muted/20 ring-1 ring-black/5 transition-transform duration-200 hover:-translate-y-0.5 hover:bg-muted/30 hover:ring-black/10 focus:outline-none focus:ring-2 focus:ring-foreground/25 dark:ring-white/10"
+                    >
+                      <div className="absolute inset-0">
+                        <Image
+                          src={it.img}
+                          alt={it.title}
+                          fill
+                          sizes="176px"
+                          unoptimized={isLocalDemoImage(it.img)}
+                          className="object-cover transition-transform duration-300 ease-out group-hover:scale-[1.06]"
+                        />
+                      </div>
+                      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+                      <div className="absolute bottom-2 left-2 right-2">
+                        <div className="line-clamp-1 text-xs font-medium text-white/95">{it.title}</div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       {/* Promo (logged out) */}
       {!loggedIn ? (
         <section className="mb-12 px-4 sm:px-6 lg:px-10">
@@ -511,28 +609,30 @@ export default function StockPage() {
             </div>
           </div>
 
-          <div className="lg:col-span-4">
-            <div className="grid grid-cols-1 gap-3">
-              <div className="rounded-2xl bg-muted/10 p-5">
-                <div className="text-xs font-medium">Fast licensing</div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Clear rights and instant download options.
+          {!loggedIn ? (
+            <div className="lg:col-span-4">
+              <div className="grid grid-cols-1 gap-3">
+                <div className="rounded-2xl bg-muted/10 p-5">
+                  <div className="text-xs font-medium">Fast licensing</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    Clear rights and instant download options.
+                  </div>
                 </div>
-              </div>
-              <div className="rounded-2xl bg-muted/10 p-5">
-                <div className="text-xs font-medium">Brand-safe search</div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Find the right look with keywords and filters.
+                <div className="rounded-2xl bg-muted/10 p-5">
+                  <div className="text-xs font-medium">Brand-safe search</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    Find the right look with keywords and filters.
+                  </div>
                 </div>
-              </div>
-              <div className="rounded-2xl bg-muted/10 p-5">
-                <div className="text-xs font-medium">Team-ready</div>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  Share, save, and reuse across projects.
+                <div className="rounded-2xl bg-muted/10 p-5">
+                  <div className="text-xs font-medium">Team-ready</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    Share, save, and reuse across projects.
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          ) : null}
         </div>
       </section>
 
