@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useProtoAuth } from "@/lib/proto-auth";
 import { Menu, LayoutGrid, List, Upload, Share2, Trash2, Search, X } from "lucide-react";
@@ -86,17 +86,8 @@ const LS_KEYS = {
   favorites: "CBX_ASSET_FAVORITES_V1",
   folderCovers: "CBX_FOLDER_COVERS_V1",
   assetFolders: "CBX_ASSET_FOLDERS_V1",
-  auth: "CBX_AUTH_V1",
 } as const;
 
-function safeJsonParse<T>(raw: string | null, fallback: T): T {
-  try {
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
 
 function readLSString(key: string): string | null {
   try {
@@ -121,18 +112,6 @@ function readLSNumber(key: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function writeLSJson(key: string, value: unknown) {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // ignore
-  }
-}
-
-function readLSJson<T>(key: string, fallback: T): T {
-  const raw = readLSString(key);
-  return safeJsonParse(raw, fallback);
-}
 
 const demoImages = demoAssets.map((a, idx) => ({
   id: Number(a.id) || idx + 1,
@@ -148,6 +127,14 @@ const demoById = new Map<number, (typeof demoImages)[number]>(
 );
 
 export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <DrivePageInner />
+    </Suspense>
+  );
+}
+
+function DrivePageInner() {
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     setMounted(true);
@@ -173,12 +160,11 @@ export default function Page() {
     if (!mounted) return;
     if (urlQ === query.trim()) return;
     setQuery(urlQ);
-  }, [mounted, urlQ]);
+  }, [mounted, urlQ, query]);
 
   const [selectedFolder, setSelectedFolder] = useState<string>("all");
 
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
-
 
   const shareFolder = useCallback(async () => {
     if (!mounted) return;
@@ -512,7 +498,6 @@ export default function Page() {
       .slice(0, 3);
   }, [selectedIds]);
 
-
   const crumbNodes = useMemo(() => {
     return getFolderPathById(selectedFolder, folderTree);
   }, [selectedFolder, folderTree]);
@@ -660,42 +645,106 @@ export default function Page() {
           <header className="sticky top-14 z-20 border-b bg-background/70 px-0 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="md:hidden transition-transform duration-150 active:scale-[0.98]"
-                aria-label="Open folders"
-                onClick={() => setFoldersOpen(true)}
-              >
-                <Menu className="h-4 w-4" />
-              </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="md:hidden transition-transform duration-150 active:scale-[0.98]"
+                  aria-label="Open folders"
+                  onClick={() => setFoldersOpen(true)}
+                >
+                  <Menu className="h-4 w-4" />
+                </Button>
 
-              <div className="min-w-0 flex-1">
-                {query.trim().length > 0 ? (
-                  <div className="flex items-center gap-2">
-                    <span className="max-w-[520px] truncate rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
-                      <span className="inline-flex items-center gap-1">
-                        <Search className="h-3.5 w-3.5" />
-                        <span className="text-foreground">{query.trim()}</span>
+                <div className="min-w-0 flex-1">
+                  {query.trim().length > 0 ? (
+                    <div className="flex items-center gap-2">
+                      <span className="max-w-[520px] truncate rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
+                        <span className="inline-flex items-center gap-1">
+                          <Search className="h-3.5 w-3.5" />
+                          <span className="text-foreground">{query.trim()}</span>
+                        </span>
                       </span>
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9"
-                      aria-label="Clear search"
-                      onClick={() => setQuery("")}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ) : (
-                  <span className="text-xs text-muted-foreground">Search in the top bar</span>
-                )}
-              </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-9 w-9"
+                        aria-label="Clear search"
+                        onClick={() => setQuery("")}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Search in the top bar</span>
+                  )}
+                </div>
 
+                {/* Breadcrumb in sticky header, only on lg+ screens */}
+                <div className="hidden lg:block min-w-0 flex-1">
+                  <Breadcrumb>
+                    <BreadcrumbList className="flex-nowrap overflow-x-auto">
+                      <BreadcrumbItem>
+                        {selectedFolder === "all" ? (
+                          <BreadcrumbPage>All files</BreadcrumbPage>
+                        ) : (
+                          <BreadcrumbLink asChild>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedFolder("all")}
+                              className="text-left"
+                            >
+                              All files
+                            </button>
+                          </BreadcrumbLink>
+                        )}
+                      </BreadcrumbItem>
 
+                      {isFavoritesView && (
+                        <span className="flex items-center">
+                          <BreadcrumbSeparator />
+                          <BreadcrumbItem>
+                            <BreadcrumbPage>Favorites</BreadcrumbPage>
+                          </BreadcrumbItem>
+                        </span>
+                      )}
+                      {isTrashView && (
+                        <span className="flex items-center">
+                          <BreadcrumbSeparator />
+                          <BreadcrumbItem>
+                            <BreadcrumbPage>Trash</BreadcrumbPage>
+                          </BreadcrumbItem>
+                        </span>
+                      )}
+
+                      {!isFavoritesView &&
+                        !isTrashView &&
+                        crumbNodes.map((n, idx) => {
+                          const isLast = idx === crumbNodes.length - 1;
+                          return (
+                            <span key={n.id} className="flex items-center">
+                              <BreadcrumbSeparator />
+                              <BreadcrumbItem>
+                                {isLast ? (
+                                  <BreadcrumbPage>{n.name}</BreadcrumbPage>
+                                ) : (
+                                  <BreadcrumbLink asChild>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedFolder(n.id)}
+                                      className="text-left"
+                                    >
+                                      {n.name}
+                                    </button>
+                                  </BreadcrumbLink>
+                                )}
+                              </BreadcrumbItem>
+                            </span>
+                          );
+                        })}
+                    </BreadcrumbList>
+                  </Breadcrumb>
+                </div>
               </div>
 
               {/* Row 2: Controls */}
@@ -795,15 +844,6 @@ export default function Page() {
                         : "All files"}
                 </h1>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
-                    {isFavoritesView
-                      ? 'Favorites'
-                      : isTrashView
-                      ? 'Trash'
-                      : isFolderView
-                      ? 'Folder'
-                      : 'All'}
-                  </span>
                   {isRealFolderView ? (
                     <span className="rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
                       {folderAssets.length} assets
@@ -814,69 +854,6 @@ export default function Page() {
                       {subfolderItems.length} subfolders
                     </span>
                   ) : null}
-                </div>
-                <div className="mt-1">
-                  <Breadcrumb>
-                    <BreadcrumbList className="flex-nowrap overflow-x-auto">
-                      <BreadcrumbItem>
-                        {selectedFolder === "all" ? (
-                          <BreadcrumbPage>All files</BreadcrumbPage>
-                        ) : (
-                          <BreadcrumbLink asChild>
-                            <button
-                              type="button"
-                              onClick={() => setSelectedFolder("all")}
-                              className="text-left"
-                            >
-                              All files
-                            </button>
-                          </BreadcrumbLink>
-                        )}
-                      </BreadcrumbItem>
-
-                      {isFavoritesView && (
-                        <span className="flex items-center">
-                          <BreadcrumbSeparator />
-                          <BreadcrumbItem>
-                            <BreadcrumbPage>Favorites</BreadcrumbPage>
-                          </BreadcrumbItem>
-                        </span>
-                      )}
-                      {isTrashView && (
-                        <span className="flex items-center">
-                          <BreadcrumbSeparator />
-                          <BreadcrumbItem>
-                            <BreadcrumbPage>Trash</BreadcrumbPage>
-                          </BreadcrumbItem>
-                        </span>
-                      )}
-
-                      {!isFavoritesView && !isTrashView &&
-                        crumbNodes.map((n, idx) => {
-                          const isLast = idx === crumbNodes.length - 1;
-                          return (
-                            <span key={n.id} className="flex items-center">
-                              <BreadcrumbSeparator />
-                              <BreadcrumbItem>
-                                {isLast ? (
-                                  <BreadcrumbPage>{n.name}</BreadcrumbPage>
-                                ) : (
-                                  <BreadcrumbLink asChild>
-                                    <button
-                                      type="button"
-                                      onClick={() => setSelectedFolder(n.id)}
-                                      className="text-left"
-                                    >
-                                      {n.name}
-                                    </button>
-                                  </BreadcrumbLink>
-                                )}
-                              </BreadcrumbItem>
-                            </span>
-                          );
-                        })}
-                    </BreadcrumbList>
-                  </Breadcrumb>
                 </div>
               </div>
 
@@ -1088,13 +1065,15 @@ export default function Page() {
                 }
               }}
             />
-            <div className="mt-6 mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span className="rounded border bg-muted px-2 py-1">Esc</span>
-              <span>closes panels / clears selection</span>
-              <span className="mx-2 hidden sm:inline">•</span>
-              <span className="rounded border bg-muted px-2 py-1">Shift</span>
-              <span>multi-select</span>
-            </div>
+            {selectedIds.size === 0 ? (
+              <div className="mt-6 mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span className="rounded border bg-muted px-2 py-1">Esc</span>
+                <span>closes panels / clears selection</span>
+                <span className="mx-2 hidden sm:inline">•</span>
+                <span className="rounded border bg-muted px-2 py-1">Shift</span>
+                <span>multi-select</span>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
