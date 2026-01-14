@@ -438,14 +438,13 @@ export function Topbar({
   return (
     <div
       className={cn(
-        "w-full border-b border-border/70 bg-background/75 backdrop-blur-md supports-[backdrop-filter]:bg-background/60 shadow-sm",
-        loggedIn ? "md:pl-[88px]" : ""
+        "w-full border-b border-border/70 bg-background/75 backdrop-blur-md supports-[backdrop-filter]:bg-background/60 shadow-sm"
       )}
     >
       <div className="w-full px-4 sm:px-6">
-        <div className="grid h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:h-16 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-3">
+        <div className="relative flex h-14 items-center gap-2 sm:h-16 sm:gap-3">
           {/* Left */}
-          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+          <div className="relative z-10 flex min-w-0 items-center gap-3 sm:gap-4">
             {leftSlot ? <div className="flex h-10 items-center">{leftSlot}</div> : null}
 
             {shouldShowLogo ? (
@@ -512,9 +511,9 @@ export function Topbar({
             )}
           </div>
 
-          {/* Center (desktop) */}
-          <div className="hidden min-w-0 items-center justify-center sm:flex sm:px-2 md:px-3">
-            <div className="w-full max-w-xl md:max-w-2xl">
+          {/* Center (desktop) — always centered in the bar */}
+          <div className="pointer-events-none absolute left-1/2 top-1/2 hidden w-full -translate-x-1/2 -translate-y-1/2 items-center justify-center sm:flex sm:px-2 md:px-3">
+            <div className="pointer-events-auto w-full max-w-xl md:max-w-2xl">
               <div className="flex h-10 min-w-0 items-center">
                 {isBuiltInSearch ? (
                   <form
@@ -534,7 +533,7 @@ export function Topbar({
           </div>
 
           {/* Right */}
-          <div className="flex h-10 shrink-0 items-center justify-end gap-1.5 whitespace-nowrap sm:gap-3">
+          <div className="relative z-10 ml-auto flex h-10 shrink-0 items-center justify-end gap-1.5 whitespace-nowrap sm:gap-3">
             {shouldShowCart && mounted ? (
               <CartButton
                 count={resolvedCartCount}

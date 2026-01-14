@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
@@ -31,7 +31,12 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   }, [isReady, isLoggedIn, pathname, router]);
 
   const showLeftNavigation = mounted && isReady && isLoggedIn;
-  const withLeftNav = showLeftNavigation ? 'md:pl-[88px]' : '';
+
+  // Left rail width (use rem so it scales with root font-size)
+  const leftRailWidth = '4.5rem'; // ~72px
+  const shellStyle = (showLeftNavigation
+    ? ({ ['--app-left-rail' as any]: leftRailWidth } as CSSProperties)
+    : undefined);
 
   const handleLogout = useCallback(async () => {
     try {
@@ -54,39 +59,54 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   return (
     <CartProvider>
       <CartUIProvider>
-        <div className="min-h-screen bg-background text-foreground">
+        <div className="min-h-screen bg-background text-foreground" style={shellStyle}>
           <CartDrawerMount />
-          {/* App shell header (Topbar). Section-level heroes live inside pages, not here. */}
-          <header
-            className="sticky top-0 z-30 border-b border-border/60 bg-background/70 backdrop-blur supports-[backdrop-filter]:bg-background/50"
-          >
-            {mounted ? (
-              <Topbar
-                title={title}
-                showProductSwitcher
-                isLoggedIn={isLoggedIn}
-                user={user ?? undefined}
-                onLogin={() =>
-                  router.push(`/login?returnTo=${encodeURIComponent(pathname ?? '/home')}`)
-                }
-                onLogout={handleLogout}
-              />
-            ) : (
-              <div className="h-14" aria-hidden="true" />
-            )}
-          </header>
 
-          {/* Fixed left rail (md+ & logged in) */}
-          {mounted && showLeftNavigation ? <LeftNavigation /> : null}
+          <div className="md:flex md:min-h-screen">
+            {/* Left rail */}
+            {mounted && showLeftNavigation ? (
+              <aside className="cbx-left-rail hidden md:block w-[var(--app-left-rail)] shrink-0 bg-background">
+                <div className="sticky top-0 h-screen overflow-y-auto">
+                  <LeftNavigation />
+                </div>
+              </aside>
+            ) : null}
 
-          {/* Content */}
-          <div className={`w-full ${withLeftNav}`}>
-            <main className="min-w-0 w-full">
-              <div className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
-                {children}
-              </div>
-            </main>
+            {/* Right column: Topbar + content */}
+            <div className="min-w-0 flex-1 bg-background">
+              {/* App shell header (Topbar). Section-level heroes live inside pages, not here. */}
+              <header className="sticky top-0 z-30 border-b border-border/60 bg-background/70 backdrop-blur supports-[backdrop-filter]:bg-background/50">
+                {mounted ? (
+                  <Topbar
+                    title={title}
+                    showProductSwitcher
+                    isLoggedIn={isLoggedIn}
+                    user={user ?? undefined}
+                    onLogin={() =>
+                      router.push(`/login?returnTo=${encodeURIComponent(pathname ?? '/home')}`)
+                    }
+                    onLogout={handleLogout}
+                  />
+                ) : (
+                  <div className="h-14" aria-hidden="true" />
+                )}
+              </header>
+
+              <main className="min-w-0 w-full">
+                <div className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
+                  {children}
+                </div>
+              </main>
+            </div>
           </div>
+
+          <style jsx global>{`
+            /* Ensure LeftNavigation can live in normal flow so it pushes the right column */
+            .cbx-left-rail > * > * {
+              position: static !important;
+              inset: auto !important;
+            }
+          `}</style>
         </div>
       </CartUIProvider>
     </CartProvider>

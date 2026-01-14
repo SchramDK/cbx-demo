@@ -194,6 +194,9 @@ export default function StockAssetPage() {
   const [added, setAdded] = useState(false);
 
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [isSmUp, setIsSmUp] = useState(false);
+  const topbarOffset = isSmUp ? 64 : 56;
+  const stickyMenuOffset = 56; // overlay menu height (approx)
 
   const touchStart = useRef<{ x: number; y: number; t: number } | null>(null);
   const heroRef = useRef<HTMLDivElement | null>(null);
@@ -204,10 +207,37 @@ export default function StockAssetPage() {
   const relatedRef = useRef<HTMLElement | null>(null);
   const [showStickyMenu, setShowStickyMenu] = useState(false);
   const [activeTab, setActiveTab] = useState<'info' | 'keywords' | 'similar' | 'shoot'>('info');
-  const scrollTo = useCallback((ref: React.RefObject<HTMLElement | null>) => {
-    const el = ref.current;
-    if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const showStickyMenuRef = useRef(false);
+  const stickyRafRef = useRef<number | null>(null);
+  const activeTabRef = useRef<'info' | 'keywords' | 'similar' | 'shoot'>('info');
+  const tabRafRef = useRef<number | null>(null);
+  const scrollTo = useCallback(
+    (ref: React.RefObject<HTMLElement | null>) => {
+      const el = ref.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const targetLine = topbarOffset + stickyMenuOffset + 8;
+      // If we are already close to the target line, don't restart a smooth scroll (feels like a hitch).
+      if (Math.abs(rect.top - targetLine) < 12) {
+        el.scrollIntoView({ behavior: 'auto', block: 'start' });
+        return;
+      }
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+    [topbarOffset]
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 640px)');
+    const onChange = () => setIsSmUp(mq.matches);
+    onChange();
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else mq.addListener(onChange);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener('change', onChange);
+      else mq.removeListener(onChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -217,14 +247,32 @@ export default function StockAssetPage() {
     const obs = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
-        setShowStickyMenu(!entry.isIntersecting);
+        if (!entry) return;
+
+        // Stable trigger: show sticky menu when the hero has scrolled past the topbar line.
+        const next = entry.boundingClientRect.bottom <= topbarOffset + 8;
+
+        if (stickyRafRef.current !== null) cancelAnimationFrame(stickyRafRef.current);
+        stickyRafRef.current = requestAnimationFrame(() => {
+          if (showStickyMenuRef.current === next) return;
+          showStickyMenuRef.current = next;
+          setShowStickyMenu(next);
+        });
       },
-      { root: null, threshold: 0.1 }
+      {
+        root: null,
+        // Trigger updates around the topbar line to avoid oscillation.
+        rootMargin: `-${topbarOffset + 8}px 0px 0px 0px`,
+        threshold: 0,
+      }
     );
 
     obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
+    return () => {
+      if (stickyRafRef.current !== null) cancelAnimationFrame(stickyRafRef.current);
+      obs.disconnect();
+    };
+  }, [topbarOffset]);
 
   useEffect(() => {
     const infoEl = infoRef.current;
@@ -253,19 +301,30 @@ export default function StockAssetPage() {
 
         const el = visible[0].target as HTMLElement;
         const found = existing.find((t) => t.el === el);
-        if (found) setActiveTab(found.key);
+        if (!found) return;
+
+        const nextKey = found.key;
+        if (tabRafRef.current !== null) cancelAnimationFrame(tabRafRef.current);
+        tabRafRef.current = requestAnimationFrame(() => {
+          if (activeTabRef.current === nextKey) return;
+          activeTabRef.current = nextKey;
+          setActiveTab(nextKey);
+        });
       },
       {
         root: null,
         // Account for topbar + sticky menu height.
-        rootMargin: '-140px 0px -65% 0px',
+        rootMargin: `-${topbarOffset + stickyMenuOffset + 24}px 0px -65% 0px`,
         threshold: 0.01,
       }
     );
 
     for (const t of existing) obs.observe(t.el);
-    return () => obs.disconnect();
-  }, []);
+    return () => {
+      if (tabRafRef.current !== null) cancelAnimationFrame(tabRafRef.current);
+      obs.disconnect();
+    };
+  }, [topbarOffset]);
 
   const onTouchStart = (e: React.TouchEvent) => {
     const p = e.touches[0];
@@ -384,7 +443,7 @@ export default function StockAssetPage() {
   }
 
   return (
-    <main className="w-full px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
+    <main className="w-full px-4 py-5 sm:px-6 sm:py-6 lg:px-8 [--cbx-topbar:56px] sm:[--cbx-topbar-sm:64px]">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <button
@@ -404,7 +463,7 @@ export default function StockAssetPage() {
       </div>
 
       <div
-        className={`fixed inset-x-0 top-16 z-40 transition-all duration-200 ${
+        className={`fixed top-[var(--cbx-topbar)] sm:top-[var(--cbx-topbar-sm)] left-0 right-0 md:left-[var(--app-left-rail,0px)] z-30 transition-all duration-200 ${
           showStickyMenu
             ? 'opacity-100 translate-y-0'
             : 'pointer-events-none opacity-0 -translate-y-2'
@@ -412,13 +471,14 @@ export default function StockAssetPage() {
         aria-hidden={!showStickyMenu}
       >
         <div className="border-b border-border bg-background/90 backdrop-blur">
-          <div className="mx-auto w-full px-4 py-3 sm:px-6 lg:px-8">
+          <div className="w-full px-4 py-3 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => {
                     setActiveTab('info');
+                    activeTabRef.current = 'info';
                     scrollTo(infoRef);
                   }}
                   className={`rounded-full px-4 py-2 text-sm font-semibold transition ring-1 ${
@@ -433,6 +493,7 @@ export default function StockAssetPage() {
                   type="button"
                   onClick={() => {
                     setActiveTab('keywords');
+                    activeTabRef.current = 'keywords';
                     scrollTo(keywordsRef);
                   }}
                   className={`rounded-full px-4 py-2 text-sm font-semibold transition ring-1 ${
@@ -447,6 +508,7 @@ export default function StockAssetPage() {
                   type="button"
                   onClick={() => {
                     setActiveTab('similar');
+                    activeTabRef.current = 'similar';
                     scrollTo(similarRef);
                   }}
                   className={`rounded-full px-4 py-2 text-sm font-semibold transition ring-1 ${
@@ -461,6 +523,7 @@ export default function StockAssetPage() {
                   type="button"
                   onClick={() => {
                     setActiveTab('shoot');
+                    activeTabRef.current = 'shoot';
                     scrollTo(shootRef);
                   }}
                   className={`rounded-full px-4 py-2 text-sm font-semibold transition ring-1 ${
@@ -536,7 +599,7 @@ export default function StockAssetPage() {
           <div
             ref={infoRef}
             id="info"
-            className="scroll-mt-28 rounded-2xl bg-background p-4 ring-1 ring-black/5 dark:ring-white/10"
+            className="scroll-mt-[calc(var(--cbx-topbar)+96px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+96px)] rounded-2xl bg-background p-4 ring-1 ring-black/5 dark:ring-white/10"
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
@@ -573,7 +636,7 @@ export default function StockAssetPage() {
           <div
             ref={keywordsRef}
             id="keywords"
-            className="scroll-mt-28 flex flex-wrap items-center gap-2 px-1"
+            className="scroll-mt-[calc(var(--cbx-topbar)+96px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+96px)] flex flex-wrap items-center gap-2 px-1"
           >
             {asset?.category ? (
               <Badge variant="secondary" className="cursor-default">{asset.category}</Badge>
@@ -597,7 +660,7 @@ export default function StockAssetPage() {
           </div>
         </div>
 
-        <Card className="h-fit p-4 lg:sticky lg:top-24 ring-1 ring-black/5 dark:ring-white/10">
+        <Card className="h-fit p-4 lg:sticky lg:top-[calc(var(--cbx-topbar)+96px)] sm:lg:top-[calc(var(--cbx-topbar-sm)+96px)] ring-1 ring-black/5 dark:ring-white/10">
           <div className="mb-3 flex items-center justify-between">
             <div>
               <div className="text-sm font-semibold">Buy license</div>
@@ -690,7 +753,7 @@ export default function StockAssetPage() {
         </Card>
       </div>
 
-      <section ref={shootRef} id="shoot" className="scroll-mt-28 mt-10">
+      <section ref={shootRef} id="shoot" className="scroll-mt-[calc(var(--cbx-topbar)+96px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+96px)] mt-10">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">From the same shoot</h2>
@@ -735,7 +798,7 @@ export default function StockAssetPage() {
         </div>
       </section>
 
-      <section ref={similarRef} id="similar" className="scroll-mt-28 mt-10">
+      <section ref={similarRef} id="similar" className="scroll-mt-[calc(var(--cbx-topbar)+96px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+96px)] mt-10">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">Similar images</h2>
@@ -782,7 +845,7 @@ export default function StockAssetPage() {
         </div>
       </section>
 
-      <section ref={relatedRef} id="related" className="scroll-mt-28 mt-10">
+      <section ref={relatedRef} id="related" className="scroll-mt-[calc(var(--cbx-topbar)+96px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+96px)] mt-10">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">Related images</h2>

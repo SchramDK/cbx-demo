@@ -137,6 +137,11 @@ function DrivePageInner() {
     searchParamsRef.current = searchParams;
   }, [searchParams]);
 
+  // Prevent URL -> state sync from overwriting local typing.
+  // Whenever this page itself updates the URL `q`, we store the value here.
+  // Then the URL-sync effect will ignore that next `urlQ` update.
+  const suppressNextUrlQuerySyncRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!isReady) return;
     if (!isLoggedIn) {
@@ -149,6 +154,7 @@ function DrivePageInner() {
     searchParams.get("search") ??
     ""
   ).trim();
+  const urlFolder = (searchParams.get("folder") ?? "").trim();
 
   const [query, setQuery] = useState(urlQ);
 
@@ -156,6 +162,17 @@ function DrivePageInner() {
   useEffect(() => {
     if (!mounted) return;
     const next = urlQ.trim();
+
+    // If this page just wrote the same value to the URL, don't re-apply it back into state.
+    if (suppressNextUrlQuerySyncRef.current !== null) {
+      const suppressed = suppressNextUrlQuerySyncRef.current;
+      if (suppressed.trim() === next) {
+        suppressNextUrlQuerySyncRef.current = null;
+        return;
+      }
+      // If URL differs, clear suppression and allow sync (external change)
+      suppressNextUrlQuerySyncRef.current = null;
+    }
 
     setQuery((prev) => {
       if (prev.trim() === next) return prev;
@@ -169,14 +186,42 @@ function DrivePageInner() {
     });
   }, [mounted, urlQ]);
 
-  const [selectedFolder, setSelectedFolder] = useState<string>("all");
+  const [selectedFolder, setSelectedFolder] = useState<string>(() =>
+    urlFolder ? urlFolder : "all"
+  );
+
+  const navigateToFolder = useCallback(
+    (folderId: string) => {
+      setSelectedFolder(folderId);
+      // Folder navigation should exit search context
+      setQuery("");
+      suppressNextUrlQuerySyncRef.current = "";
+
+      try {
+        const params = new URLSearchParams(Array.from(searchParamsRef.current.entries()));
+        // Clear any search params
+        params.delete("q");
+        params.delete("query");
+        params.delete("search");
+
+        // Set folder param (omit for "all")
+        if (folderId && folderId !== "all") params.set("folder", folderId);
+        else params.delete("folder");
+
+        routerRef.current.replace(`/drive${params.toString() ? `?${params.toString()}` : ""}`);
+      } catch {
+        // ignore
+      }
+    },
+    []
+  );
 
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const shareFolder = useCallback(async () => {
     if (!mounted) return;
 
-    const url = `${window.location.origin}?folder=${encodeURIComponent(selectedFolder)}`;
+    const url = `${window.location.origin}/drive?folder=${encodeURIComponent(selectedFolder)}`;
 
     try {
       await navigator.clipboard.writeText(url);
@@ -208,7 +253,11 @@ function DrivePageInner() {
       setSelectedFolder("all");
       try {
         const params = new URLSearchParams(Array.from(searchParamsRef.current.entries()));
-        if (next.trim()) params.set("q", next.trim());
+        const trimmed = next.trim();
+        // Mark as local URL write so URL-sync effect won't overwrite typing.
+        suppressNextUrlQuerySyncRef.current = trimmed;
+
+        if (trimmed) params.set("q", trimmed);
         else params.delete("q");
         params.delete("query");
         params.delete("search");
@@ -336,13 +385,14 @@ function DrivePageInner() {
 
   useEffect(() => {
     if (!mounted) return;
-
-    // If we have an active search from the URL, keep Drive in "All files"
+  
+    // If we have an active search OR an explicit folder from the URL, don't override from localStorage
     if (urlQ.trim().length > 0) return;
-
+    if (urlFolder.trim().length > 0) return;
+  
     const raw = readLSString(LS_KEYS.selectedFolder);
     if (typeof raw === "string" && raw.length > 0) setSelectedFolder(raw);
-  }, [mounted, urlQ]);
+  }, [mounted, urlQ, urlFolder]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -373,6 +423,15 @@ function DrivePageInner() {
     walk(folderTree);
     return map;
   }, [folderTree]);
+  useEffect(() => {
+    if (!mounted) return;
+    const f = urlFolder.trim();
+    if (!f) return;
+    if (!folderIndex.has(f)) return;
+  
+    setSelectedFolder(f);
+    setQuery("");
+  }, [mounted, urlFolder, folderIndex]);
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
 
@@ -548,13 +607,6 @@ function DrivePageInner() {
     ? crumbNodes[crumbNodes.length - 1]?.name ?? "Folder"
     : "";
 
-  const folderAssets = useMemo(() => {
-    if (!isRealFolderView) return [];
-    return demoImages
-      .filter((img) => (assetFolderOverrides[img.id] ?? img.folderId) === selectedFolder)
-      .map((img) => ({ id: img.id, title: img.title, src: img.src }));
-  }, [isRealFolderView, selectedFolder, assetFolderOverrides]);
-
   const folderCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const img of demoImages) {
@@ -563,6 +615,20 @@ function DrivePageInner() {
     }
     return counts;
   }, [assetFolderOverrides]);
+
+  const assetsByFolder = useMemo(() => {
+    const map: Record<string, { id: number; title: string; src: string }[]> = {};
+    for (const img of demoImages) {
+      const fid = assetFolderOverrides[img.id] ?? img.folderId ?? "all";
+      (map[fid] ??= []).push({ id: img.id, title: img.title, src: img.src });
+    }
+    return map;
+  }, [assetFolderOverrides]);
+
+  const folderAssets = useMemo(() => {
+    if (!isRealFolderView) return [];
+    return assetsByFolder[selectedFolder] ?? [];
+  }, [isRealFolderView, selectedFolder, assetsByFolder]);
 
   const subfolders = useMemo<FolderNode[]>(() => {
     if (!isRealFolderView) return [];
@@ -599,12 +665,12 @@ function DrivePageInner() {
     <div className="min-h-screen">
       <div className="flex min-h-screen">
         {/* Desktop folders */}
-        <div className="hidden md:block sticky top-0 h-screen overflow-y-auto pr-4">
+        <div className="hidden md:block sticky top-14 h-[calc(100vh-56px)] overflow-y-auto pr-4 pt-2">
           <FolderSidebar
             folders={folderTree}
             onFoldersChangeAction={setFolderTree}
             selectedId={selectedFolder}
-            onSelectAction={setSelectedFolder}
+            onSelectAction={navigateToFolder}
             onDropAssetAction={moveAssetToFolder}
           />
         </div>
@@ -621,7 +687,7 @@ function DrivePageInner() {
                 onFoldersChangeAction={setFolderTree}
                 selectedId={selectedFolder}
                 onSelectAction={(id) => {
-                  setSelectedFolder(id);
+                  navigateToFolder(id);
                   setFoldersOpen(false);
                 }}
                 onDropAssetAction={moveAssetToFolder}
@@ -714,9 +780,13 @@ function DrivePageInner() {
                           setSelectedFolder("all");
                           try {
                             const params = new URLSearchParams(Array.from(searchParamsRef.current.entries()));
+                            // Mark as local URL write
+                            suppressNextUrlQuerySyncRef.current = "";
+
                             params.delete("q");
                             params.delete("query");
                             params.delete("search");
+                            params.delete("folder");
                             routerRef.current.replace(`/drive${params.toString() ? `?${params.toString()}` : ""}`);
                           } catch {
                             // ignore
@@ -742,7 +812,7 @@ function DrivePageInner() {
                           <BreadcrumbLink asChild>
                             <button
                               type="button"
-                              onClick={() => setSelectedFolder("all")}
+                              onClick={() => navigateToFolder("all")}
                               className="text-left"
                             >
                               All files
@@ -782,7 +852,7 @@ function DrivePageInner() {
                                   <BreadcrumbLink asChild>
                                     <button
                                       type="button"
-                                      onClick={() => setSelectedFolder(n.id)}
+                                      onClick={() => navigateToFolder(n.id)}
                                       className="text-left"
                                     >
                                       {n.name}
@@ -956,7 +1026,7 @@ function DrivePageInner() {
             {isRealFolderView && subfolderItems.length > 0 ? (
               <SubfolderStrip
                 items={subfolderItems}
-                onOpenFolder={setSelectedFolder}
+                onOpenFolder={navigateToFolder}
                 onDropAssets={(ids, folderId) => {
                   // If one of the dragged ids is already selected, move the whole selection.
                   const toMove = new Set<number>();
@@ -996,7 +1066,7 @@ function DrivePageInner() {
                       </p>
 
                       <div className="mt-5 flex flex-wrap gap-2">
-                        <Button type="button" onClick={() => setSelectedFolder("all")}>
+                        <Button type="button" onClick={() => navigateToFolder("all")}>
                           Go to All files
                         </Button>
                         <Button
@@ -1035,7 +1105,29 @@ function DrivePageInner() {
                 onToggleFavorite={toggleAssetFavorite}
                 colors={filters.colors}
                 filters={filters}
-                onRequestSetQuery={(next) => setQuery(next)}
+                onRequestSetQuery={(next) => {
+                  const trimmed = (next ?? "").trim();
+                  setQuery(trimmed);
+                  setSelectedFolder("all");
+
+                  try {
+                    const params = new URLSearchParams(
+                      Array.from(searchParamsRef.current.entries())
+                    );
+                    // Mark as local URL write so URL-sync effect won't fight the user's typing.
+                    suppressNextUrlQuerySyncRef.current = trimmed;
+
+                    if (trimmed) params.set("q", trimmed);
+                    else params.delete("q");
+                    params.delete("query");
+                    params.delete("search");
+                    routerRef.current.replace(
+                      `/drive${params.toString() ? `?${params.toString()}` : ""}`
+                    );
+                  } catch {
+                    // ignore
+                  }
+                }}
                 onRequestClearFilters={clearAllFilters}
                 thumbSize={effectiveThumbSize}
               />

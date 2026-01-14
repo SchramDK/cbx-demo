@@ -117,26 +117,34 @@
   body {
     min-height: 100%;
     overflow-x: hidden;
-    @apply bg-background text-foreground antialiased;
+    background-color: var(--background);
+    @apply text-foreground antialiased;
   }
 
   body::before {
     content: "";
     position: fixed;
-    inset: -20% -10% auto -10%;
-    height: 60vh;
+    inset: -30% -20% auto -20%;
+    height: 70vh;
     pointer-events: none;
     background:
       radial-gradient(70% 45% at 15% 10%, color-mix(in oklch, var(--primary) 14%, transparent), transparent 62%),
       radial-gradient(45% 35% at 85% 0%, color-mix(in oklch, var(--logo) 12%, transparent), transparent 62%),
       radial-gradient(55% 40% at 55% 18%, color-mix(in oklch, var(--accent) 10%, transparent), transparent 65%);
-    opacity: 0.55;
-    z-index: 0;
+    opacity: 0.5;
+    z-index: -1; /* always behind app chrome */
   }
 
-  main, header, section {
+  main, header, section, aside {
     position: relative;
     z-index: 1;
+  }
+
+  #__next,
+  [data-app-shell] {
+    position: relative;
+    z-index: 1;
+    isolation: isolate; /* prevents blending seams between columns */
   }
 
   a {

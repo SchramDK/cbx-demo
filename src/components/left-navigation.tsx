@@ -43,7 +43,7 @@ export function LeftNavigation() {
   ];
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-50 hidden w-20 border-r bg-background md:block">
+    <aside className="relative hidden h-full w-full border-r bg-background md:block">
       <nav className="flex h-full flex-col items-center gap-4 px-2 pt-6 pb-4 overflow-hidden">
         {/* Box logo */}
         <Link href="/home" className="mb-2 flex items-center justify-center rounded-md hover:bg-muted/60">
