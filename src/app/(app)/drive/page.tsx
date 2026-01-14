@@ -142,6 +142,17 @@ function DrivePageInner() {
 
   const router = useRouter();
   const { isReady, isLoggedIn } = useProtoAuth();
+  const searchParams = useSearchParams();
+
+  const routerRef = useRef(router);
+  useEffect(() => {
+    routerRef.current = router;
+  }, [router]);
+
+  const searchParamsRef = useRef(searchParams);
+  useEffect(() => {
+    searchParamsRef.current = searchParams;
+  }, [searchParams]);
 
   useEffect(() => {
     if (!isReady) return;
@@ -149,9 +160,12 @@ function DrivePageInner() {
       router.replace("/drive/landing");
     }
   }, [isReady, isLoggedIn, router]);
-
-  const searchParams = useSearchParams();
-  const urlQ = (searchParams.get("q") ?? "").trim();
+  const urlQ = (
+    searchParams.get("q") ??
+    searchParams.get("query") ??
+    searchParams.get("search") ??
+    ""
+  ).trim();
 
   const [query, setQuery] = useState(urlQ);
 
@@ -198,6 +212,17 @@ function DrivePageInner() {
       const ce = e as CustomEvent<string>;
       const next = typeof ce.detail === "string" ? ce.detail : "";
       setQuery(next);
+      setSelectedFolder("all");
+      try {
+        const params = new URLSearchParams(Array.from(searchParamsRef.current.entries()));
+        if (next.trim()) params.set("q", next.trim());
+        else params.delete("q");
+        params.delete("query");
+        params.delete("search");
+        routerRef.current.replace(`/drive${params.toString() ? `?${params.toString()}` : ""}`);
+      } catch {
+        // ignore
+      }
     };
 
     const onFiltersClear = () => {
@@ -670,7 +695,18 @@ function DrivePageInner() {
                         size="icon"
                         className="h-9 w-9"
                         aria-label="Clear search"
-                        onClick={() => setQuery("")}
+                        onClick={() => {
+                          setQuery("");
+                          try {
+                            const params = new URLSearchParams(Array.from(searchParams.entries()));
+                            params.delete("q");
+                            params.delete("query");
+                            params.delete("search");
+                            router.replace(`/drive${params.toString() ? `?${params.toString()}` : ""}`);
+                          } catch {
+                            // ignore
+                          }
+                        }}
                       >
                         <X className="h-4 w-4" />
                       </Button>

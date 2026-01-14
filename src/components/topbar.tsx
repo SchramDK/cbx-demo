@@ -1,4 +1,5 @@
-"use client";
+ "use client";
+
 
 import * as React from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -17,7 +18,98 @@ import Link from "next/link";
 import Image from "next/image";
 import { CartButton } from "@/components/cart-button";
 import { useCart, useCartUI } from '@/lib/cart/cart';
-import { Laptop2, Moon, Sun, Search } from "lucide-react";
+import ThemeToggle from "@/components/theme/ThemeToggle";
+import { getTopbarSuggestions } from "@/lib/search/topbarSuggestions";
+import { cn } from "@/lib/utils";
+
+function useDemoMe(mounted: boolean) {
+  const [me, setMe] = React.useState<null | {
+    name: string;
+    email?: string;
+    org?: string;
+    role?: string;
+    imageUrl?: string;
+  }>(null);
+
+  const meFetchInFlightRef = React.useRef<Promise<void> | null>(null);
+  const lastMeFetchAtRef = React.useRef<number>(0);
+  const meAbortRef = React.useRef<AbortController | null>(null);
+
+  const refreshMe = React.useCallback(
+    async (reason?: "init" | "auth-changed" | "focus") => {
+      if (!mounted) return;
+
+      const now = Date.now();
+      // Small throttle to avoid bursts
+      if (now - lastMeFetchAtRef.current < 250 && reason !== "init") return;
+      lastMeFetchAtRef.current = now;
+
+      if (meFetchInFlightRef.current) {
+        await meFetchInFlightRef.current;
+        return;
+      }
+
+      // Abort any previous in-flight request
+      try {
+        meAbortRef.current?.abort();
+      } catch {}
+
+      const ac = new AbortController();
+      meAbortRef.current = ac;
+
+      const p = (async () => {
+        try {
+          const res = await fetch("/api/demo-auth/me", {
+            cache: "no-store",
+            signal: ac.signal,
+          });
+          const json = await res.json().catch(() => null);
+          setMe(json?.user ?? null);
+        } catch (err) {
+          // Ignore abort errors; clear user on real errors
+          if ((err as any)?.name === "AbortError") return;
+          setMe(null);
+        }
+      })();
+
+      meFetchInFlightRef.current = p.then(() => undefined);
+      try {
+        await meFetchInFlightRef.current;
+      } finally {
+        meFetchInFlightRef.current = null;
+      }
+    },
+    [mounted]
+  );
+
+  React.useEffect(() => {
+    if (!mounted) return;
+
+    const onAuthChanged = () => {
+      void refreshMe("auth-changed");
+    };
+
+    const onFocus = () => {
+      void refreshMe("focus");
+    };
+
+    void refreshMe("init");
+
+    window.addEventListener("cbx:auth-changed", onAuthChanged as EventListener);
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      window.removeEventListener("cbx:auth-changed", onAuthChanged as EventListener);
+      window.removeEventListener("focus", onFocus);
+      try {
+        meAbortRef.current?.abort();
+      } catch {}
+      meAbortRef.current = null;
+    };
+  }, [mounted, refreshMe]);
+
+  return { me, setMe, refreshMe };
+}
 
 type TopbarProps = {
   /** Controls whether the topbar should render the logged-in account UI */
@@ -45,7 +137,7 @@ type TopbarProps = {
   leftSlot?: React.ReactNode;
   /** Optional content shown on the right before the account menu (e.g. cart button) */
   rightSlot?: React.ReactNode;
-  /** Show cart button in the topbar (defaults to true on Stock when logged in) */
+  /** Show cart button in the topbar (defaults to true) */
   showCart?: boolean;
   /** Optional cart count badge */
   cartCount?: number;
@@ -80,21 +172,16 @@ function initials(name: string) {
   return value || "?";
 }
 
-function cx(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(' ');
-}
 
 function emitAuthChanged() {
   try {
     const ev = new CustomEvent('cbx:auth-changed');
     window.dispatchEvent(ev);
-    if (typeof document !== 'undefined') document.dispatchEvent(ev);
 
     window.setTimeout(() => {
       try {
         const ev2 = new CustomEvent('cbx:auth-changed');
         window.dispatchEvent(ev2);
-        if (typeof document !== 'undefined') document.dispatchEvent(ev2);
       } catch {
         // ignore
       }
@@ -104,98 +191,6 @@ function emitAuthChanged() {
   }
 }
 
-type ThemeMode = "system" | "light" | "dark";
-
-function getSystemPrefersDark() {
-  if (typeof window === "undefined") return false;
-  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
-}
-
-function applyTheme(mode: ThemeMode) {
-  if (typeof window === "undefined") return;
-  const root = document.documentElement;
-  const dark = mode === "dark" || (mode === "system" && getSystemPrefersDark());
-  root.classList.toggle("dark", dark);
-  // Optional: help native controls render correctly
-  root.style.colorScheme = dark ? "dark" : "light";
-}
-
-function ThemeToggle() {
-  const [mode, setMode] = React.useState<ThemeMode>("system");
-
-  React.useEffect(() => {
-    // Load persisted preference
-    try {
-      const saved = window.localStorage.getItem("cbx_theme") as ThemeMode | null;
-      if (saved === "light" || saved === "dark" || saved === "system") {
-        setMode(saved);
-        applyTheme(saved);
-      } else {
-        setMode("system");
-        applyTheme("system");
-      }
-    } catch {
-      applyTheme("system");
-    }
-
-    // React to OS theme changes when in system mode
-    const mql = window.matchMedia?.("(prefers-color-scheme: dark)");
-    if (!mql) return;
-
-    const onChange = () => {
-      // Only re-apply when we're in system mode
-      try {
-        const saved = window.localStorage.getItem("cbx_theme") as ThemeMode | null;
-        const current = saved === "light" || saved === "dark" || saved === "system" ? saved : "system";
-        if (current === "system") applyTheme("system");
-      } catch {
-        applyTheme("system");
-      }
-    };
-
-    mql.addEventListener?.("change", onChange);
-    return () => mql.removeEventListener?.("change", onChange);
-  }, []);
-
-  const Icon = mode === "dark" ? Moon : mode === "light" ? Sun : Laptop2;
-
-  const setAndPersist = (next: ThemeMode) => {
-    setMode(next);
-    try {
-      window.localStorage.setItem("cbx_theme", next);
-    } catch {}
-    applyTheme(next);
-  };
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-10 w-10 p-0"
-          aria-label="Theme"
-        >
-          <Icon className="h-5 w-5" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-44">
-        <DropdownMenuLabel>Theme</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setAndPersist("system"); }}>
-          <Laptop2 className="mr-2 h-4 w-4" /> System
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setAndPersist("light"); }}>
-          <Sun className="mr-2 h-4 w-4" /> Light
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setAndPersist("dark"); }}>
-          <Moon className="mr-2 h-4 w-4" /> Dark
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
 
 export function Topbar({
   title = "CBX Demo",
@@ -232,86 +227,7 @@ export function Topbar({
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => setMounted(true), []);
 
-  const [me, setMe] = React.useState<null | { name: string; email?: string; org?: string; role?: string; imageUrl?: string }>(null);
-  const meFetchInFlightRef = React.useRef<Promise<void> | null>(null);
-  const lastMeFetchAtRef = React.useRef<number>(0);
-  const meAbortRef = React.useRef<AbortController | null>(null);
-
-  const refreshMe = React.useCallback(
-    async (reason?: 'init' | 'auth-changed' | 'focus') => {
-      if (!mounted) return;
-
-      const now = Date.now();
-      // Small throttle to avoid bursts
-      if (now - lastMeFetchAtRef.current < 250 && reason !== 'init') return;
-      lastMeFetchAtRef.current = now;
-
-      if (meFetchInFlightRef.current) {
-        await meFetchInFlightRef.current;
-        return;
-      }
-
-      // Abort any previous in-flight request
-      try {
-        meAbortRef.current?.abort();
-      } catch {}
-
-      const ac = new AbortController();
-      meAbortRef.current = ac;
-
-      const p = (async () => {
-        try {
-          const res = await fetch("/api/demo-auth/me", { cache: "no-store", signal: ac.signal });
-          const json = await res.json().catch(() => null);
-          setMe(json?.user ?? null);
-        } catch (err) {
-          // Ignore abort errors; clear user on real errors
-          if ((err as any)?.name === 'AbortError') return;
-          setMe(null);
-        }
-      })();
-
-      meFetchInFlightRef.current = p.then(() => undefined);
-      try {
-        await meFetchInFlightRef.current;
-      } finally {
-        meFetchInFlightRef.current = null;
-      }
-    },
-    [mounted]
-  );
-
-  React.useEffect(() => {
-    if (!mounted) return;
-
-    const onAuthChanged = () => {
-      void refreshMe('auth-changed');
-    };
-
-    const onFocus = () => {
-      void refreshMe('focus');
-    };
-
-    void refreshMe('init');
-
-    window.addEventListener('cbx:auth-changed', onAuthChanged as EventListener);
-    if (typeof document !== 'undefined') {
-      document.addEventListener('cbx:auth-changed', onAuthChanged as EventListener);
-    }
-    window.addEventListener('focus', onFocus);
-
-    return () => {
-      window.removeEventListener('cbx:auth-changed', onAuthChanged as EventListener);
-      if (typeof document !== 'undefined') {
-        document.removeEventListener('cbx:auth-changed', onAuthChanged as EventListener);
-      }
-      window.removeEventListener('focus', onFocus);
-      try {
-        meAbortRef.current?.abort();
-      } catch {}
-      meAbortRef.current = null;
-    };
-  }, [mounted, refreshMe]);
+  const { me, setMe, refreshMe } = useDemoMe(mounted);
 
   const resolvedUser = (user ?? me) as {
     name: string;
@@ -338,6 +254,11 @@ export function Topbar({
   const userInitials = React.useMemo(() => initials(displayUser?.name ?? ""), [displayUser?.name]);
 
   const [internalQuery, setInternalQuery] = React.useState(initialSearchQuery ?? "");
+  React.useEffect(() => {
+    // Keep internal query in sync if the prop changes (only when uncontrolled)
+    if (onSearchChange) return;
+    setInternalQuery(initialSearchQuery ?? "");
+  }, [initialSearchQuery, onSearchChange]);
   const [searchScope, setSearchScope] = React.useState<'drive' | 'stock'>(derivedActiveProduct);
 
   React.useEffect(() => {
@@ -349,61 +270,6 @@ export function Topbar({
   // Only pass a placeholder when explicitly provided (lets SearchBar show scope-aware defaults)
   const resolvedSearchPlaceholder = searchPlaceholder;
 
-  // Suggestion provider for SearchBar
-  const getTopbarSuggestions = React.useCallback(
-    async (q: string, scope?: string) => {
-      const query = (q ?? "").trim().toLowerCase();
-      if (!query) return [];
-
-      const STOCK = [
-        "business",
-        "team",
-        "meeting",
-        "office",
-        "technology",
-        "healthcare",
-        "education",
-        "food",
-        "travel",
-        "nature",
-        "portrait",
-        "banner",
-        "background",
-        "abstract",
-        "minimal",
-        "christmas",
-        "easter",
-      ];
-
-      const DRIVE = [
-        "brief",
-        "campaign",
-        "brand",
-        "logo",
-        "press",
-        "contract",
-        "consent",
-        "model release",
-        "presentation",
-        "invoice",
-        "video",
-        "social",
-      ];
-
-      const list = scope === 'drive' ? DRIVE : STOCK;
-      const out = list
-        .filter((s) => s.toLowerCase().includes(query))
-        .slice(0, 8);
-
-      // If no matches, still provide a couple of helpful starters
-      if (out.length === 0) {
-        return list.slice(0, 6);
-      }
-
-      return out;
-    },
-    []
-  );
 
   const submitSearch = React.useCallback(() => {
     const q = (onSearchChange ? (searchValue ?? "") : internalQuery).trim();
@@ -470,11 +336,19 @@ export function Topbar({
   const shouldShowSearch = loggedIn ? true : (enableSearch || Boolean(onSearchChange));
   const shouldShowLogo = showLogo && !loggedIn;
   const shouldShowSwitcher = Boolean(showProductSwitcher) && !loggedIn;
-  const resolvedCartCount = typeof cartCount === "number" ? cartCount : liveCartCount;
+  const resolvedCartCount =
+    typeof cartCount === "number"
+      ? cartCount
+      : typeof liveCartCount === "number"
+      ? liveCartCount
+      : 0;
   const isBuiltInSearch = !centerSlot && shouldShowSearch;
 
   // Mobile: show the search bar as a full-width second row
   const showMobileSearchRow = Boolean(isBuiltInSearch);
+
+  const hasRightExtras =
+    (shouldShowCart && mounted) || (showThemeToggle && mounted) || Boolean(rightSlot);
 
   const center = centerSlot
     ? centerSlot
@@ -510,7 +384,13 @@ export function Topbar({
                   }
                 : undefined
             }
-            getSuggestions={getTopbarSuggestions}
+            getSuggestions={async (q, scope) =>
+              getTopbarSuggestions({
+                query: q,
+                scope: (scope === 'drive' ? 'drive' : 'stock'),
+                loggedIn,
+              }).map((s) => s.label)
+            }
             onSelectSuggestion={(v) => {
               // Update value and navigate immediately
               if (onSearchChange) onSearchChange(v);
@@ -557,7 +437,7 @@ export function Topbar({
 
   return (
     <div
-      className={cx(
+      className={cn(
         "w-full border-b border-border/70 bg-background/75 backdrop-blur-md supports-[backdrop-filter]:bg-background/60 shadow-sm",
         loggedIn ? "md:pl-[88px]" : ""
       )}
@@ -599,7 +479,7 @@ export function Topbar({
               <div className="ml-1 flex h-10 items-center rounded-full border bg-muted/40 p-1 shadow-sm">
                 <Link
                   href="/stock"
-                  className={cx(
+                  className={cn(
                     'rounded-full px-3 py-1.5 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                     derivedActiveProduct === 'stock'
                       ? 'bg-background text-foreground shadow-sm'
@@ -613,7 +493,7 @@ export function Topbar({
 
                 <Link
                   href="/drive"
-                  className={cx(
+                  className={cn(
                     'rounded-full px-3 py-1.5 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                     derivedActiveProduct === 'drive'
                       ? 'bg-background text-foreground shadow-sm'
@@ -655,21 +535,6 @@ export function Topbar({
 
           {/* Right */}
           <div className="flex h-10 shrink-0 items-center justify-end gap-1.5 whitespace-nowrap sm:gap-3">
-            {shouldShowSearch && !showMobileSearchRow ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-10 w-10 p-0 sm:hidden"
-                aria-label="Search"
-                onClick={() => {
-                  if (!loggedIn) return router.push('/stock/search');
-                  return router.push(searchScope === 'stock' ? '/stock/search' : '/drive');
-                }}
-              >
-                <Search className="h-5 w-5" />
-              </Button>
-            ) : null}
             {shouldShowCart && mounted ? (
               <CartButton
                 count={resolvedCartCount}
@@ -687,9 +552,7 @@ export function Topbar({
 
             {rightSlot ? <div className="flex items-center gap-2">{rightSlot}</div> : null}
 
-            {shouldShowCart || showThemeToggle || rightSlot ? (
-              <div className="mx-1 h-7 w-px bg-border/70" />
-            ) : null}
+            {hasRightExtras ? <div className="mx-1 h-7 w-px bg-border/70" /> : null}
 
             {loggedIn ? (
               showAccountMenu ? (

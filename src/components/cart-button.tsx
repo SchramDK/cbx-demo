@@ -25,7 +25,7 @@ export function CartButton({
   onClick,
 }: CartButtonProps) {
   return (
-    <Button asChild type="button" variant="ghost" size="sm" className="relative h-10 w-10 p-0">
+    <Button type="button" variant="ghost" size="sm" className="relative h-10 w-10 p-0">
       <Link href={href} aria-label={label} onClick={onClick}>
         <ShoppingCart className="h-5 w-5" />
         {count > 0 ? (

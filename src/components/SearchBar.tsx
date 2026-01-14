@@ -313,9 +313,9 @@ export function SearchBar({
       return;
     }
 
-    // Keep current highlight if still present, otherwise default to first
-    if (!highlight || !selectableItems.includes(highlight)) {
-      setHighlight(selectableItems[0] ?? "");
+    // Do NOT auto-highlight on open. Only clear invalid highlight.
+    if (highlight && !selectableItems.includes(highlight)) {
+      setHighlight("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [suggestionsOpen, selectableItems]);
@@ -640,7 +640,7 @@ export function SearchBar({
               <Command className="rounded-xl border border-border bg-popover shadow-md">
                 <CommandList>
                   <div className="px-3 py-2 text-xs text-muted-foreground">
-                    Use ↑/↓ to navigate • Enter to select • Esc to close
+                    Enter to search • ↑/↓ then Enter to select • Esc to close
                   </div>
                   {showRecents && value.trim().length === 0 && recents.length > 0 ? (
                     <CommandGroup
