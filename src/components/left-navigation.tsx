@@ -39,7 +39,7 @@ export function LeftNavigation() {
   const productItems = [
     { href: '/home', label: 'Home', icon: Home },
     { href: '/stock', label: 'Stock', icon: Image },
-    { href: '/drive', label: 'Share', icon: Folder },
+    { href: '/drive', label: 'Files', icon: Folder },
   ];
 
   return (

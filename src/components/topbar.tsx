@@ -21,6 +21,7 @@ import { useCart, useCartUI } from '@/lib/cart/cart';
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import { getTopbarSuggestions } from "@/lib/search/topbarSuggestions";
 import { cn } from "@/lib/utils";
+import { Bell } from "lucide-react";
 
 function useDemoMe(mounted: boolean) {
   const [me, setMe] = React.useState<null | {
@@ -364,7 +365,7 @@ export function Topbar({
               loggedIn
                 ? [
                     { value: 'stock', label: 'Stock' },
-                    { value: 'drive', label: 'Drive' },
+                    { value: 'drive', label: 'Files' },
                   ]
                 : undefined
             }
@@ -548,6 +549,98 @@ export function Topbar({
             ) : null}
 
             {showThemeToggle && mounted ? <ThemeToggle /> : null}
+
+            {loggedIn ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="relative h-10 w-10 px-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    aria-label="Notifications"
+                    aria-haspopup="menu"
+                  >
+                    <Bell className="h-5 w-5" />
+                    {/* simple unread indicator */}
+                    <span
+                      className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary"
+                      aria-hidden
+                    />
+                  </Button>
+                </DropdownMenuTrigger>
+
+                <DropdownMenuContent align="end" className="w-80 p-0">
+                  <div className="flex items-center justify-between px-3 py-2">
+                    <div className="text-sm font-semibold">Notifications</div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 px-2 text-xs"
+                      onClick={() => {
+                        // placeholder
+                      }}
+                    >
+                      Mark all read
+                    </Button>
+                  </div>
+                  <div className="h-px bg-border" />
+
+                  <div className="max-h-80 overflow-y-auto">
+                    <button
+                      type="button"
+                      className="w-full px-3 py-3 text-left hover:bg-muted/40"
+                      onClick={() => {
+                        // placeholder
+                      }}
+                    >
+                      <div className="text-sm font-medium">New demo assets added</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        We updated the stock demo set (s-014 → s-018).
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="w-full px-3 py-3 text-left hover:bg-muted/40"
+                      onClick={() => {
+                        // placeholder
+                      }}
+                    >
+                      <div className="text-sm font-medium">Search improvements</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        Sticky menu is smoother and respects the left nav.
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="w-full px-3 py-3 text-left hover:bg-muted/40"
+                      onClick={() => {
+                        // placeholder
+                      }}
+                    >
+                      <div className="text-sm font-medium">Welcome back</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        Your personal dashboard is ready.
+                      </div>
+                    </button>
+                  </div>
+
+                  <div className="h-px bg-border" />
+                  <div className="p-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="w-full"
+                      onClick={() => router.push('/notifications')}
+                    >
+                      View all notifications
+                    </Button>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
 
             {rightSlot ? <div className="flex items-center gap-2">{rightSlot}</div> : null}
 

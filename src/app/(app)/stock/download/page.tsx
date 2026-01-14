@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getOrder } from "@/lib/stock/commerce";
+import { Button } from "@/components/ui/button";
 
 type DemoUser = { id: string; name: string; org: string };
 
@@ -260,7 +261,7 @@ useEffect(() => {
       : undefined;
 
     return (
-      <main className="mx-auto w-full max-w-3xl bg-background px-4 pb-10 pt-24 text-foreground">
+      <main className="mx-auto w-full max-w-6xl bg-background px-4 pb-10 pt-[calc(var(--cbx-topbar)+24px)] text-foreground sm:pt-[calc(var(--cbx-topbar-sm)+24px)]">
         {showAccountCreatedBanner ? (
           <div className="mb-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 dark:border-emerald-400/20 dark:bg-emerald-400/10">
             <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Account created</p>
@@ -281,18 +282,12 @@ useEffect(() => {
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link
-                href="/drive"
-                className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary/90"
-              >
-                Open Drive
-              </Link>
-              <Link
-                href="/stock"
-                className="inline-flex items-center justify-center rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted/60"
-              >
-                Browse Stock
-              </Link>
+              <Button asChild>
+                <Link href="/drive">Open Drive</Link>
+              </Button>
+              <Button asChild variant="secondary">
+                <Link href="/stock">Browse Stock</Link>
+              </Button>
             </div>
           </div>
 
@@ -315,26 +310,8 @@ useEffect(() => {
           </div>
         </section>
 
-        <header className="mb-8">
-          <p className="text-xs font-medium text-muted-foreground">Welcome</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
-            {demoUser?.name ? `Welcome, ${demoUser.name}` : "Welcome"}
-          </h1>
-          <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-            Open Drive to upload your own files — or browse Stock to download images. Everything you download is saved in Drive so you can access it later.
-          </p>
 
-          {demoUser ? (
-            <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
-              <span className="text-muted-foreground">Signed in as</span>
-              <span className="font-semibold text-foreground">{demoUser.name}</span>
-              <span className="text-muted-foreground/60">•</span>
-              <span className="text-muted-foreground">{demoUser.org}</span>
-            </div>
-          ) : null}
-        </header>
-
-        <div className="rounded-2xl border border-border bg-card p-6 shadow">
+        <div className="rounded-2xl border border-border bg-card p-6">
 
           {purchased.length ? (
             <div className="mt-6">
@@ -375,13 +352,11 @@ useEffect(() => {
                       </div>
 
                       {perAssetHref ? (
-                        <a
-                          href={perAssetHref}
-                          download
-                          className="inline-flex shrink-0 items-center justify-center rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-foreground hover:bg-muted/60"
-                        >
-                          Download
-                        </a>
+                        <Button asChild variant="secondary" size="sm" className="shrink-0">
+                          <a href={perAssetHref} download>
+                            Download
+                          </a>
+                        </Button>
                       ) : null}
                     </div>
                   );
@@ -396,18 +371,12 @@ useEffect(() => {
               </p>
 
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                <Link
-                  href="/drive"
-                  className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary/90"
-                >
-                  Open Drive
-                </Link>
-                <Link
-                  href="/stock"
-                  className="inline-flex items-center justify-center rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted/60"
-                >
-                  Browse Stock
-                </Link>
+                <Button asChild>
+                  <Link href="/drive">Open Drive</Link>
+                </Button>
+                <Button asChild variant="secondary">
+                  <Link href="/stock">Browse Stock</Link>
+                </Button>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <span className="rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">✅ Files saved in Drive</span>
@@ -423,29 +392,21 @@ useEffect(() => {
                 Everything is saved in <span className="font-medium text-foreground">Drive</span>.
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
-                <Link
-                  href="/drive"
-                  className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary/90"
-                >
-                  Open Drive
-                </Link>
-                <Link
-                  href="/stock"
-                  className="inline-flex items-center justify-center rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted/60"
-                >
-                  Browse Stock
-                </Link>
+                <Button asChild>
+                  <Link href="/drive">Open Drive</Link>
+                </Button>
+                <Button asChild variant="secondary">
+                  <Link href="/stock">Browse Stock</Link>
+                </Button>
               </div>
             </div>
             {orderDownloadHref ? (
               <div className="mt-5">
-                <a
-                  href={orderDownloadHref}
-                  download
-                  className="inline-flex w-full items-center justify-center rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-muted/60"
-                >
-                  Download all files
-                </a>
+                <Button asChild variant="secondary" className="w-full">
+                  <a href={orderDownloadHref} download>
+                    Download all files
+                  </a>
+                </Button>
                 <p className="mt-2 text-center text-xs text-muted-foreground">Downloads everything from this order in one file</p>
               </div>
             ) : null}
@@ -463,7 +424,7 @@ useEffect(() => {
   )}&format=${encodeURIComponent(format)}`;
 
   return (
-    <main className="mx-auto w-full max-w-3xl bg-background px-4 pb-10 pt-24 text-foreground">
+    <main className="mx-auto w-full max-w-6xl bg-background px-4 pb-10 pt-[calc(var(--cbx-topbar)+24px)] text-foreground sm:pt-[calc(var(--cbx-topbar-sm)+24px)]">
       {showAccountCreatedBanner ? (
         <div className="mb-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 dark:border-emerald-400/20 dark:bg-emerald-400/10">
           <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Account created</p>
@@ -488,7 +449,7 @@ useEffect(() => {
         ) : null}
       </header>
 
-      <div className="rounded-2xl border border-border bg-card p-6 shadow">
+      <div className="rounded-2xl border border-border bg-card p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <p className="text-xs font-medium text-muted-foreground">Your download</p>
@@ -497,12 +458,9 @@ useEffect(() => {
           </div>
 
           <div className="flex gap-2">
-            <Link
-              href={next ?? "/stock"}
-              className="inline-flex items-center justify-center rounded-xl border border-border bg-card px-3 py-2 text-sm font-medium text-foreground hover:bg-muted/60"
-            >
-              Back
-            </Link>
+            <Button asChild variant="secondary">
+              <Link href={next ?? "/stock"}>Back</Link>
+            </Button>
           </div>
         </div>
 
@@ -538,33 +496,25 @@ useEffect(() => {
               Everything is saved in <span className="font-medium text-foreground">Drive</span>.
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
-              <Link
-                href="/drive"
-                className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary/90"
-              >
-                Open Drive
-              </Link>
-              <Link
-                href="/stock"
-                className="inline-flex items-center justify-center rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground hover:bg-muted/60"
-              >
-                Browse Stock
-              </Link>
+              <Button asChild>
+                <Link href="/drive">Open Drive</Link>
+              </Button>
+              <Button asChild variant="secondary">
+                <Link href="/stock">Browse Stock</Link>
+              </Button>
             </div>
           </div>
           <div className="mt-5">
-            <a
-              href={downloadHref}
-              download
-              className="inline-flex w-full items-center justify-center rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground hover:bg-muted/60"
-            >
-              Download file
-            </a>
+            <Button asChild variant="secondary" className="w-full">
+              <a href={downloadHref} download>
+                Download file
+              </a>
+            </Button>
           </div>
         </div>
       </div>
 
-      <p className="mx-auto mt-4 max-w-3xl text-center text-xs text-muted-foreground">
+      <p className="mx-auto mt-4 max-w-6xl text-center text-xs text-muted-foreground">
         If you link to this page from an asset view, you can pass:
         <span className="font-mono"> ?assetId=…&title=…&size=…&format=…</span>.
       </p>

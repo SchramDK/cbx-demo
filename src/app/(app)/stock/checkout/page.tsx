@@ -66,7 +66,7 @@ export default function CheckoutPage() {
   };
 
   return (
-    <main className="mx-auto w-full max-w-5xl px-4 py-10">
+    <main className="mx-auto w-full max-w-6xl px-4 py-10">
       {/* Stepper */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
