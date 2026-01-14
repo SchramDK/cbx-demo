@@ -16,8 +16,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CBX Demo",
+  title: {
+    default: "CBX Demo",
+    template: "%s · CBX Demo",
+  },
   description: "CBX viewer demo",
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({
@@ -28,20 +34,17 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        suppressHydrationWarning
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
+        className={`${geistSans.variable} ${geistMono.variable} min-h-screen antialiased bg-background text-foreground`}
       >
         <ThemeProvider
           attribute="class"
-          defaultTheme="dark"
-          enableSystem={false}
+          defaultTheme="system"
+          enableSystem
           disableTransitionOnChange
         >
           <ProtoAuthProvider>
             <CartProvider>
-              <CartUIProvider>
-                {children}
-              </CartUIProvider>
+              <CartUIProvider>{children}</CartUIProvider>
             </CartProvider>
           </ProtoAuthProvider>
         </ThemeProvider>

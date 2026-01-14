@@ -34,35 +34,35 @@
 :root {
   --radius: 10px;
 
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --background: oklch(0.99 0.008 90);
+  --foreground: oklch(0.16 0 0);
 
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card: oklch(0.995 0.004 90);
+  --card-foreground: oklch(0.16 0 0);
 
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0.002 90);
+  --popover-foreground: oklch(0.16 0 0);
 
-  --primary: oklch(0.205 0 0);
+  --primary: oklch(0.22 0.015 90);
   --primary-foreground: oklch(0.985 0 0);
 
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.965 0.008 90);
+  --secondary-foreground: oklch(0.22 0 0);
 
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  --muted: oklch(0.965 0.006 90);
+  --muted-foreground: oklch(0.46 0 0);
 
-  --logo: oklch(0.205 0 0);
+  --logo: oklch(0.22 0.02 90);
 
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --accent: oklch(0.965 0.01 90);
+  --accent-foreground: oklch(0.22 0 0);
 
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
 
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: oklch(0.89 0.012 90);
+  --input: oklch(0.895 0.012 90);
+  --ring: oklch(0.62 0.05 90);
 }
 
 :root {
@@ -127,9 +127,10 @@
     height: 60vh;
     pointer-events: none;
     background:
-      radial-gradient(60% 40% at 20% 10%, color-mix(in oklch, var(--primary) 12%, transparent), transparent 60%),
-      radial-gradient(40% 30% at 80% 0%, color-mix(in oklch, var(--logo) 10%, transparent), transparent 60%);
-    opacity: 0.6;
+      radial-gradient(70% 45% at 15% 10%, color-mix(in oklch, var(--primary) 14%, transparent), transparent 62%),
+      radial-gradient(45% 35% at 85% 0%, color-mix(in oklch, var(--logo) 12%, transparent), transparent 62%),
+      radial-gradient(55% 40% at 55% 18%, color-mix(in oklch, var(--accent) 10%, transparent), transparent 65%);
+    opacity: 0.55;
     z-index: 0;
   }
 

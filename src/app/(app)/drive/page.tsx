@@ -1,13 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useProtoAuth } from "@/lib/proto-auth";
-import { Menu, LayoutGrid, List, User, Settings, LogOut, Upload, Share2, Trash2 } from "lucide-react";
+import { Menu, LayoutGrid, List, Upload, Share2, Trash2, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Slider } from "@/components/ui/slider";
 import {
   Select,
@@ -16,14 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Breadcrumb,
@@ -33,8 +23,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { SearchBar } from "../../../components/SearchBar";
-import { ImageGrid, getAssetSearchSuggestions } from "../../../components/image-grid";
+import { ImageGrid } from "../../../components/image-grid";
 import { demoAssets } from "@/lib/demo/assets";
 import { FolderSidebar, getFolderPathById, demoFolders } from "../../../components/FolderSidebar";
 import { SelectionBar } from "../../../components/selection-bar";
@@ -165,7 +154,7 @@ export default function Page() {
   }, []);
 
   const router = useRouter();
-  const { isReady, isLoggedIn, logout } = useProtoAuth();
+  const { isReady, isLoggedIn } = useProtoAuth();
 
   useEffect(() => {
     if (!isReady) return;
@@ -174,31 +163,22 @@ export default function Page() {
     }
   }, [isReady, isLoggedIn, router]);
 
-  const [query, setQuery] = useState("");
-  const getSearchSuggestions = useCallback((q: string) => getAssetSearchSuggestions(q, 8), []);
+  const searchParams = useSearchParams();
+  const urlQ = (searchParams.get("q") ?? "").trim();
+
+  const [query, setQuery] = useState(urlQ);
+
+  // Sync query when URL changes (e.g. from Topbar search)
+  useEffect(() => {
+    if (!mounted) return;
+    if (urlQ === query.trim()) return;
+    setQuery(urlQ);
+  }, [mounted, urlQ]);
 
   const [selectedFolder, setSelectedFolder] = useState<string>("all");
 
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
-  const signOut = useCallback(() => {
-    // Central proto auth (if present)
-    try {
-      logout?.();
-    } catch {
-      // ignore
-    }
-
-    // Demo auth flag used by some pages/topbar
-    try {
-      window.localStorage.removeItem(LS_KEYS.auth);
-      window.sessionStorage.removeItem(LS_KEYS.auth);
-    } catch {
-      // ignore
-    }
-
-    router.replace("/drive/landing");
-  }, [logout, router]);
 
   const shareFolder = useCallback(async () => {
     if (!mounted) return;
@@ -328,17 +308,6 @@ export default function Page() {
     saveFiltersToStorage(LS_KEYS.filters, filters);
   }, [mounted, filters]);
 
-  const user = {
-    name: "Nicki Larsen",
-    imageUrl: "https://i.pravatar.cc/80?img=12",
-  };
-
-  const userInitials = user.name
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]!.toUpperCase())
-    .join("");
 
   useEffect(() => {
     const raw = readLSString(LS_KEYS.sort);
@@ -688,8 +657,9 @@ export default function Page() {
         </Sheet>
 
         <div className="flex-1 flex flex-col">
-          <header className="sticky top-14 z-20 border-b bg-background/70 px-0 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <div className="flex items-center gap-3">
+          <header className="sticky top-14 z-20 border-b bg-background/70 px-0 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
                 size="icon"
@@ -701,69 +671,114 @@ export default function Page() {
               </Button>
 
               <div className="min-w-0 flex-1">
-                <SearchBar
-                  value={query}
-                  onChange={setQuery}
-                  placeholder="Search files, keywords, comments…"
-                  getSuggestions={getSearchSuggestions}
-                  onSelectSuggestion={(v) => setQuery(v)}
-                />
+                {query.trim().length > 0 ? (
+                  <div className="flex items-center gap-2">
+                    <span className="max-w-[520px] truncate rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
+                      <span className="inline-flex items-center gap-1">
+                        <Search className="h-3.5 w-3.5" />
+                        <span className="text-foreground">{query.trim()}</span>
+                      </span>
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9"
+                      aria-label="Clear search"
+                      onClick={() => setQuery("")}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <span className="text-xs text-muted-foreground">Search in the top bar</span>
+                )}
               </div>
 
-              {query.trim().length > 0 ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="hidden sm:inline-flex"
-                  onClick={() => setQuery("")}
-                >
-                  Clear
-                </Button>
-              ) : null}
 
+              </div>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
+              {/* Row 2: Controls */}
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                {/* Left: Filters */}
+                <div className="flex items-center gap-2">
                   <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Account"
-                    className="h-10 w-10 rounded-full focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 transition-transform duration-150 hover:scale-[1.02] active:scale-[0.98]"
+                    type="button"
+                    variant="outline"
+                    className="h-10 transition-transform duration-150 active:scale-[0.98]"
+                    onClick={openFilters}
                   >
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage src={user.imageUrl} alt={user.name} />
-                      <AvatarFallback>{userInitials}</AvatarFallback>
-                    </Avatar>
+                    Filters
+                    {activeFilterCount > 0 ? (
+                      <Badge className="ml-2" variant="secondary">
+                        {activeFilterCount}
+                      </Badge>
+                    ) : null}
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" sideOffset={8} className="w-56 z-50">
-                  <DropdownMenuLabel className="flex flex-col">
-                    <span className="text-sm font-medium">{user.name}</span>
-                    <span className="text-xs text-muted-foreground">Account</span>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem>
-                    <User className="mr-2 h-4 w-4" />
-                    Profile
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/settings" className="flex items-center">
-                      <Settings className="mr-2 h-4 w-4" />
-                      Settings
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      signOut();
+                </div>
+
+                {/* Right: Sort + View */}
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  <Select
+                    value={assetSort}
+                    onValueChange={(v) => {
+                      if (isAssetSort(v)) setAssetSort(v);
                     }}
                   >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Sign out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                    <SelectTrigger className="h-10 w-[180px]">
+                      <SelectValue placeholder="Sort" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="name_asc">Name (A–Z)</SelectItem>
+                      <SelectItem value="name_desc">Name (Z–A)</SelectItem>
+                      <SelectItem value="id_asc">ID (Low → High)</SelectItem>
+                      <SelectItem value="id_desc">ID (High → Low)</SelectItem>
+                      <SelectItem value="color_asc">Color (Hue)</SelectItem>
+                      <SelectItem value="color_desc">Color (Hue rev)</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <div className="flex items-center gap-2">
+                    {assetView === "grid" ? (
+                      <div className="hidden sm:flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">Size</span>
+                        <div className="w-32">
+                          <Slider
+                            value={[thumbSize]}
+                            min={140}
+                            max={520}
+                            step={10}
+                            onValueChange={(v) => setThumbSize(v[0] ?? 220)}
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="flex h-10 shrink-0 items-stretch overflow-hidden rounded-md border border-border">
+                      <Button
+                        type="button"
+                        variant={assetView === "grid" ? "secondary" : "ghost"}
+                        size="icon"
+                        className="h-10 w-10 rounded-none"
+                        aria-label="Grid view"
+                        onClick={() => setAssetView("grid")}
+                      >
+                        <LayoutGrid className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={assetView === "list" ? "secondary" : "ghost"}
+                        size="icon"
+                        className="h-10 w-10 rounded-none"
+                        aria-label="List view"
+                        onClick={() => setAssetView("list")}
+                      >
+                        <List className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </header>
 
@@ -797,11 +812,6 @@ export default function Page() {
                   {subfolderItems.length > 0 && isRealFolderView ? (
                     <span className="rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
                       {subfolderItems.length} subfolders
-                    </span>
-                  ) : null}
-                  {activeFilterCount > 0 ? (
-                    <span className="rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
-                      {activeFilterCount} filter{activeFilterCount === 1 ? '' : 's'}
                     </span>
                   ) : null}
                 </div>
@@ -941,86 +951,7 @@ export default function Page() {
               />
             ) : null}
 
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              {/* Left: Filters */}
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-10 transition-transform duration-150 active:scale-[0.98]"
-                  onClick={openFilters}
-                >
-                  Filters
-                  {activeFilterCount > 0 ? (
-                    <Badge className="ml-2" variant="secondary">
-                      {activeFilterCount}
-                    </Badge>
-                  ) : null}
-                </Button>
-              </div>
 
-              {/* Right: Sort + View */}
-              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                <Select
-                  value={assetSort}
-                  onValueChange={(v) => {
-                    if (isAssetSort(v)) setAssetSort(v);
-                  }}
-                >
-                  <SelectTrigger className="h-10 w-[180px]">
-                    <SelectValue placeholder="Sort" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="name_asc">Name (A–Z)</SelectItem>
-                    <SelectItem value="name_desc">Name (Z–A)</SelectItem>
-                    <SelectItem value="id_asc">ID (Low → High)</SelectItem>
-                    <SelectItem value="id_desc">ID (High → Low)</SelectItem>
-                    <SelectItem value="color_asc">Color (Hue)</SelectItem>
-                    <SelectItem value="color_desc">Color (Hue rev)</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <div className="flex items-center gap-2">
-                  {assetView === "grid" ? (
-                    <div className="hidden sm:flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">Size</span>
-                      <div className="w-32">
-                        <Slider
-                          value={[thumbSize]}
-                          min={140}
-                          max={520}
-                          step={10}
-                          onValueChange={(v) => setThumbSize(v[0] ?? 220)}
-                        />
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="flex h-10 shrink-0 items-stretch overflow-hidden rounded-md border border-border">
-                    <Button
-                      type="button"
-                      variant={assetView === "grid" ? "secondary" : "ghost"}
-                      size="icon"
-                      className="h-10 w-10 rounded-none"
-                      aria-label="Grid view"
-                      onClick={() => setAssetView("grid")}
-                    >
-                      <LayoutGrid className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant={assetView === "list" ? "secondary" : "ghost"}
-                      size="icon"
-                      className="h-10 w-10 rounded-none"
-                      aria-label="List view"
-                      onClick={() => setAssetView("list")}
-                    >
-                      <List className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
 
             {showTrashEmptyState ? (
               <div className="mt-10 flex w-full justify-center">

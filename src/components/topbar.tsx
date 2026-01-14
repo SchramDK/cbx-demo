@@ -121,7 +121,7 @@ function applyTheme(mode: ThemeMode) {
 }
 
 function ThemeToggle() {
-  const [mode, setMode] = React.useState<ThemeMode>("dark");
+  const [mode, setMode] = React.useState<ThemeMode>("system");
 
   React.useEffect(() => {
     // Load persisted preference
@@ -131,11 +131,11 @@ function ThemeToggle() {
         setMode(saved);
         applyTheme(saved);
       } else {
-        setMode("dark");
-        applyTheme("dark");
+        setMode("system");
+        applyTheme("system");
       }
     } catch {
-      applyTheme("dark");
+      applyTheme("system");
     }
 
     // React to OS theme changes when in system mode
@@ -235,6 +235,7 @@ export function Topbar({
   const [me, setMe] = React.useState<null | { name: string; email?: string; org?: string; role?: string; imageUrl?: string }>(null);
   const meFetchInFlightRef = React.useRef<Promise<void> | null>(null);
   const lastMeFetchAtRef = React.useRef<number>(0);
+  const meAbortRef = React.useRef<AbortController | null>(null);
 
   const refreshMe = React.useCallback(
     async (reason?: 'init' | 'auth-changed' | 'focus') => {
@@ -250,13 +251,22 @@ export function Topbar({
         return;
       }
 
+      // Abort any previous in-flight request
+      try {
+        meAbortRef.current?.abort();
+      } catch {}
+
       const ac = new AbortController();
+      meAbortRef.current = ac;
+
       const p = (async () => {
         try {
           const res = await fetch("/api/demo-auth/me", { cache: "no-store", signal: ac.signal });
           const json = await res.json().catch(() => null);
           setMe(json?.user ?? null);
-        } catch {
+        } catch (err) {
+          // Ignore abort errors; clear user on real errors
+          if ((err as any)?.name === 'AbortError') return;
           setMe(null);
         }
       })();
@@ -267,8 +277,6 @@ export function Topbar({
       } finally {
         meFetchInFlightRef.current = null;
       }
-
-      return () => ac.abort();
     },
     [mounted]
   );
@@ -298,6 +306,10 @@ export function Topbar({
         document.removeEventListener('cbx:auth-changed', onAuthChanged as EventListener);
       }
       window.removeEventListener('focus', onFocus);
+      try {
+        meAbortRef.current?.abort();
+      } catch {}
+      meAbortRef.current = null;
     };
   }, [mounted, refreshMe]);
 
@@ -326,27 +338,86 @@ export function Topbar({
   const userInitials = React.useMemo(() => initials(displayUser?.name ?? ""), [displayUser?.name]);
 
   const [internalQuery, setInternalQuery] = React.useState(initialSearchQuery ?? "");
+  const [searchScope, setSearchScope] = React.useState<'drive' | 'stock'>(derivedActiveProduct);
 
-  const searchTargetBase = !loggedIn
-    ? '/stock/search'
-    : derivedActiveProduct === 'stock'
-    ? '/stock/search'
-    : '/drive';
+  React.useEffect(() => {
+    // Keep search scope aligned with current section unless user explicitly toggles
+    setSearchScope(derivedActiveProduct);
+  }, [derivedActiveProduct]);
 
-  const resolvedSearchPlaceholder =
-    searchPlaceholder ??
-    (!loggedIn
-      ? 'Search stock images, keywords…'
-      : derivedActiveProduct === 'stock'
-      ? 'Search images, keywords…'
-      : 'Search files, folders…');
+
+  // Only pass a placeholder when explicitly provided (lets SearchBar show scope-aware defaults)
+  const resolvedSearchPlaceholder = searchPlaceholder;
+
+  // Suggestion provider for SearchBar
+  const getTopbarSuggestions = React.useCallback(
+    async (q: string, scope?: string) => {
+      const query = (q ?? "").trim().toLowerCase();
+      if (!query) return [];
+
+      const STOCK = [
+        "business",
+        "team",
+        "meeting",
+        "office",
+        "technology",
+        "healthcare",
+        "education",
+        "food",
+        "travel",
+        "nature",
+        "portrait",
+        "banner",
+        "background",
+        "abstract",
+        "minimal",
+        "christmas",
+        "easter",
+      ];
+
+      const DRIVE = [
+        "brief",
+        "campaign",
+        "brand",
+        "logo",
+        "press",
+        "contract",
+        "consent",
+        "model release",
+        "presentation",
+        "invoice",
+        "video",
+        "social",
+      ];
+
+      const list = scope === 'drive' ? DRIVE : STOCK;
+      const out = list
+        .filter((s) => s.toLowerCase().includes(query))
+        .slice(0, 8);
+
+      // If no matches, still provide a couple of helpful starters
+      if (out.length === 0) {
+        return list.slice(0, 6);
+      }
+
+      return out;
+    },
+    []
+  );
 
   const submitSearch = React.useCallback(() => {
     const q = (onSearchChange ? (searchValue ?? "") : internalQuery).trim();
     if (!q) return;
-    const href = `${searchTargetBase}?q=${encodeURIComponent(q)}`;
+
+    const base = !loggedIn
+      ? '/stock/search'
+      : searchScope === 'stock'
+      ? '/stock/search'
+      : '/drive';
+
+    const href = `${base}?q=${encodeURIComponent(q)}`;
     router.push(href);
-  }, [router, searchTargetBase, internalQuery, onSearchChange, searchValue]);
+  }, [router, internalQuery, onSearchChange, searchValue, loggedIn, searchScope]);
 
   const handleLogout = React.useCallback(async () => {
     // Prefer app-provided logout (usually proto-auth). It may be async.
@@ -392,11 +463,11 @@ export function Topbar({
     emitAuthChanged();
 
     router.replace("/drive/landing");
-    router.refresh();
   }, [onLogout, router, refreshMe]);
 
   const shouldShowCart = showCart ?? true;
-  const shouldShowSearch = enableSearch || Boolean(onSearchChange);
+  // When logged in, always show the built-in SearchBar unless a custom centerSlot is provided.
+  const shouldShowSearch = loggedIn ? true : (enableSearch || Boolean(onSearchChange));
   const shouldShowLogo = showLogo && !loggedIn;
   const shouldShowSwitcher = Boolean(showProductSwitcher) && !loggedIn;
   const resolvedCartCount = typeof cartCount === "number" ? cartCount : liveCartCount;
@@ -413,7 +484,49 @@ export function Topbar({
           <SearchBar
             value={onSearchChange ? (searchValue ?? "") : internalQuery}
             onChange={onSearchChange ?? setInternalQuery}
-            placeholder={resolvedSearchPlaceholder}
+            {...(resolvedSearchPlaceholder ? { placeholder: resolvedSearchPlaceholder } : {})}
+            scope={loggedIn ? searchScope : undefined}
+            scopes={
+              loggedIn
+                ? [
+                    { value: 'stock', label: 'Stock' },
+                    { value: 'drive', label: 'Drive' },
+                  ]
+                : undefined
+            }
+            onScopeChange={
+              loggedIn
+                ? (next) => {
+                    const v = next === 'stock' ? 'stock' : 'drive';
+                    setSearchScope(v);
+
+                    // If user toggles scope, keep query and navigate to the right section
+                    const q = (onSearchChange ? (searchValue ?? "") : internalQuery).trim();
+                    if (v === 'stock') {
+                      router.push(q ? `/stock/search?q=${encodeURIComponent(q)}` : '/stock');
+                    } else {
+                      router.push(q ? `/drive?q=${encodeURIComponent(q)}` : '/drive');
+                    }
+                  }
+                : undefined
+            }
+            getSuggestions={getTopbarSuggestions}
+            onSelectSuggestion={(v) => {
+              // Update value and navigate immediately
+              if (onSearchChange) onSearchChange(v);
+              else setInternalQuery(v);
+
+              if (!loggedIn) {
+                router.push(`/stock/search?q=${encodeURIComponent(v)}`);
+                return;
+              }
+
+              if (searchScope === 'stock') {
+                router.push(`/stock/search?q=${encodeURIComponent(v)}`);
+              } else {
+                router.push(`/drive?q=${encodeURIComponent(v)}`);
+              }
+            }}
             onSubmit={submitSearch}
           />
         </div>
@@ -443,7 +556,12 @@ export function Topbar({
   );
 
   return (
-    <div className="w-full border-b border-border/70 bg-background/75 backdrop-blur-md supports-[backdrop-filter]:bg-background/60 shadow-sm">
+    <div
+      className={cx(
+        "w-full border-b border-border/70 bg-background/75 backdrop-blur-md supports-[backdrop-filter]:bg-background/60 shadow-sm",
+        loggedIn ? "md:pl-[88px]" : ""
+      )}
+    >
       <div className="w-full px-4 sm:px-6">
         <div className="grid h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:h-16 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:gap-3">
           {/* Left */}
@@ -544,7 +662,10 @@ export function Topbar({
                 size="sm"
                 className="h-10 w-10 p-0 sm:hidden"
                 aria-label="Search"
-                onClick={() => router.push(searchTargetBase)}
+                onClick={() => {
+                  if (!loggedIn) return router.push('/stock/search');
+                  return router.push(searchScope === 'stock' ? '/stock/search' : '/drive');
+                }}
               >
                 <Search className="h-5 w-5" />
               </Button>

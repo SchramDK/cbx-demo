@@ -30,7 +30,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     }
   }, [isReady, isLoggedIn, pathname, router]);
 
-  const showLeftNavigation = isReady && isLoggedIn;
+  const showLeftNavigation = mounted && isReady && isLoggedIn;
   const withLeftNav = showLeftNavigation ? 'md:pl-[88px]' : '';
 
   const handleLogout = useCallback(async () => {
@@ -41,7 +41,6 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     }
 
     router.replace('/drive/landing');
-    router.refresh();
   }, [logout, router]);
 
   const title = useMemo(() => {
@@ -59,7 +58,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <CartDrawerMount />
           {/* App shell header (Topbar). Section-level heroes live inside pages, not here. */}
           <header
-            className={`sticky top-0 z-30 border-b border-border/60 bg-background/70 backdrop-blur supports-[backdrop-filter]:bg-background/50 ${withLeftNav}`}
+            className="sticky top-0 z-30 border-b border-border/60 bg-background/70 backdrop-blur supports-[backdrop-filter]:bg-background/50"
           >
             {mounted ? (
               <Topbar
@@ -96,15 +95,17 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
 // Right‑side cart drawer mounted once for the entire app
 function CartDrawerMount() {
+  const router = useRouter();
   const { isOpen, close } = useCartUI();
   const { items, total, removeItem, clear } = useCart();
 
-  // Import moved here to keep it local to this component
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const Link = require('next/link').default;
-
   return (
-    <Sheet open={isOpen} onOpenChange={(v) => (v ? null : close())}>
+    <Sheet
+      open={isOpen}
+      onOpenChange={(v) => {
+        if (!v) close();
+      }}
+    >
       <SheetContent side="right" className="w-[380px] sm:w-[420px] p-0">
         <SheetTitle className="sr-only">Cart</SheetTitle>
         <div className="flex items-center justify-between border-b px-4 py-3">
@@ -128,12 +129,25 @@ function CartDrawerMount() {
 
         <div className="px-4 py-4">
           {items.length === 0 ? (
-            <div className="text-sm text-muted-foreground">Your cart is empty.</div>
+            <div className="space-y-3">
+              <div className="text-sm text-muted-foreground">Your cart is empty.</div>
+              <Button
+                onClick={() => {
+                  close();
+                  router.push('/stock');
+                }}
+              >
+                Browse Stock
+              </Button>
+            </div>
           ) : (
             <div className="space-y-3">
               {items.map((it) => (
-                <div key={`${it.id}:${it.license ?? ''}`} className="flex gap-3 rounded-xl border p-3">
-                  <div className="relative h-14 w-20 overflow-hidden rounded-lg bg-muted">
+                <div
+                  key={`${it.id}:${it.license ?? ''}`}
+                  className="flex gap-3 rounded-xl border border-border/60 bg-background/40 p-3"
+                >
+                  <div className="relative h-14 w-20 overflow-hidden rounded-lg bg-muted ring-1 ring-border/30">
                     {it.image ? (
                       <Image src={it.image} alt={it.title} fill className="object-cover" />
                     ) : null}
@@ -163,15 +177,26 @@ function CartDrawerMount() {
         <div className="mt-auto border-t px-4 py-4">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Subtotal</span>
-            <span className="font-semibold tabular-nums">{formatMoneyEUR(total)}</span>
+            <span className="font-semibold tabular-nums" aria-live="polite">
+              {formatMoneyEUR(total)}
+            </span>
           </div>
 
           <div className="mt-3 grid gap-2">
-            <Button asChild disabled={items.length === 0}>
-              <Link href="/stock/cart">View cart</Link>
+            <Button
+              disabled={items.length === 0}
+              onClick={() => {
+                if (items.length === 0) return;
+                close();
+                router.push('/stock/cart');
+              }}
+            >
+              View cart
             </Button>
-            <Button variant="secondary" disabled>
-              Checkout (prototype)
+
+            <Button variant="secondary" disabled className="justify-between">
+              <span>Checkout</span>
+              <span className="text-xs text-muted-foreground">Coming soon</span>
             </Button>
           </div>
         </div>
@@ -181,5 +206,5 @@ function CartDrawerMount() {
 }
 
 function formatMoneyEUR(v: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'EUR' }).format(v || 0);
+  return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'EUR' }).format(v || 0);
 }

@@ -10,7 +10,6 @@ import {
   Sparkles,
   UploadCloud,
   Search,
-  Clock,
   ShoppingCart,
   History,
   TrendingUp,
@@ -174,12 +173,11 @@ export default function HomePage() {
   }, [LS_KEYS, clampList, lsGet, lsSet]);
 
   // Demo images from the existing demo asset list
-  const heroSrcs = ASSETS.slice(0, 12)
-    .map((a) => (a as any).preview ?? (a as any).src ?? (a as any).url)
-    .filter(Boolean) as string[];
-
-  const shareThumb = heroSrcs[0] ?? '/placeholders/stock_1.jpg';
-  const stockThumb = heroSrcs[1] ?? '/placeholders/stock_2.jpg';
+  const heroSrcs = useMemo(() => {
+    return ASSETS.slice(0, 12)
+      .map((a) => (a as any).preview ?? (a as any).src ?? (a as any).url)
+      .filter(Boolean) as string[];
+  }, []);
   const driveMarquee = useMemo(() => heroSrcs.slice(0, 10), [heroSrcs]);
 
   // Thumbnail helpers
@@ -283,6 +281,25 @@ export default function HomePage() {
       lsSet(LS_KEYS.recentSearches, JSON.stringify(next));
     },
     [LS_KEYS.recentSearches, clampList, lsSet, recentSearches]
+  );
+
+  const openRecentView = useCallback(
+    (id: string) => {
+      const v = (id ?? '').trim();
+      if (!v) return;
+
+      // Heuristic: COLOURBOX ids (and pure numeric ids) should open the asset detail.
+      const isColourbox = /^COLOURBOX\d+$/i.test(v);
+      const isNumeric = /^\d+$/.test(v);
+
+      if (isColourbox || isNumeric) {
+        router.push(`/stock/assets/${encodeURIComponent(v)}`);
+        return;
+      }
+
+      router.push(`/stock?q=${encodeURIComponent(v)}`);
+    },
+    [router]
   );
 
   const simulateDemoActivity = useCallback(() => {
@@ -827,7 +844,7 @@ export default function HomePage() {
                 {recentViews.map((id) => (
                   <button
                     key={id}
-                    onClick={() => router.push(`/stock?q=${encodeURIComponent(id)}`)}
+                    onClick={() => openRecentView(id)}
                     className="inline-flex items-center gap-2 rounded-full bg-background/60 px-3 py-1.5 text-sm transition hover:bg-background/80"
                   >
                     {(() => {
@@ -840,7 +857,7 @@ export default function HomePage() {
                     })()}
                     <Images className="h-4 w-4" />
                     <span className="font-medium">{id}</span>
-                    <span className="text-xs text-muted-foreground">Open in Stock</span>
+                    <span className="text-xs text-muted-foreground">Open</span>
                   </button>
                 ))}
               </div>

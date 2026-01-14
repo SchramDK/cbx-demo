@@ -22,7 +22,7 @@ type SearchBarProps = {
    * Optional suggestions provider. If provided, a dropdown will show under the input.
    * Return up to ~8-12 items for best UX.
    */
-  getSuggestions?: (query: string) => string[] | Promise<string[]>;
+  getSuggestions?: (query: string, scope?: string) => string[] | Promise<string[]>;
   /** Called when a suggestion is clicked/selected */
   onSelectSuggestion?: (value: string) => void;
   /** Max number of suggestions to show (default 8) */
@@ -43,6 +43,10 @@ type SearchBarProps = {
   rightSlot?: React.ReactNode;
   /** Additional wrapper classes */
   className?: string;
+  /** Optional scope selector (e.g. Stock vs Drive). If onScopeChange is provided, selector is shown. */
+  scope?: string;
+  onScopeChange?: (scope: string) => void;
+  scopes?: Array<{ value: string; label: string }>;
 };
 
 export function SearchBar({
@@ -62,13 +66,26 @@ export function SearchBar({
   showIcon = true,
   autoFocus = false,
   rightSlot,
+  scope = "stock",
+  onScopeChange,
+  scopes = [
+    { value: "stock", label: "Stock" },
+    { value: "drive", label: "Drive" },
+  ],
   className,
 }: SearchBarProps) {
   const inputRef = React.useRef<HTMLInputElement | null>(null);
   const triggerRef = React.useRef<HTMLDivElement | null>(null);
+  const popoverRef = React.useRef<HTMLDivElement | null>(null);
+  const blurCloseTimerRef = React.useRef<number | null>(null);
   const suppressOpenRef = React.useRef(false);
   const [isFocused, setIsFocused] = React.useState(false);
   const [popoverWidth, setPopoverWidth] = React.useState<number | undefined>(undefined);
+
+  const effectiveRecentsKey = React.useMemo(() => {
+    // Only scope the key when the selector is enabled (keeps existing behavior for all current callers)
+    return onScopeChange ? `${recentsStorageKey}_${scope}` : recentsStorageKey;
+  }, [onScopeChange, recentsStorageKey, scope]);
 
   React.useLayoutEffect(() => {
     const el = triggerRef.current;
@@ -76,6 +93,8 @@ export function SearchBar({
 
     const update = () => setPopoverWidth(el.getBoundingClientRect().width);
     update();
+
+    if (typeof ResizeObserver === "undefined") return;
 
     const ro = new ResizeObserver(() => update());
     ro.observe(el);
@@ -91,7 +110,7 @@ export function SearchBar({
   const [recents, setRecents] = React.useState<string[]>(() => {
     if (!showRecents) return [];
     try {
-      const raw = window.localStorage.getItem(recentsStorageKey);
+      const raw = window.localStorage.getItem(effectiveRecentsKey);
       const parsed = raw ? (JSON.parse(raw) as unknown) : [];
       const list = Array.isArray(parsed)
         ? parsed.map((x) => String(x).trim()).filter(Boolean)
@@ -109,7 +128,7 @@ export function SearchBar({
   const loadRecents = React.useCallback(() => {
     if (!showRecents) return [];
     try {
-      const raw = window.localStorage.getItem(recentsStorageKey);
+      const raw = window.localStorage.getItem(effectiveRecentsKey);
       const parsed = raw ? (JSON.parse(raw) as unknown) : [];
       const list = Array.isArray(parsed)
         ? parsed.map((x) => String(x).trim()).filter(Boolean)
@@ -118,18 +137,18 @@ export function SearchBar({
     } catch {
       return [];
     }
-  }, [showRecents, recentsStorageKey, maxRecents]);
+  }, [showRecents, effectiveRecentsKey, maxRecents]);
 
   const persistRecents = React.useCallback(
     (next: string[]) => {
       if (!showRecents) return;
       try {
-        window.localStorage.setItem(recentsStorageKey, JSON.stringify(next));
+        window.localStorage.setItem(effectiveRecentsKey, JSON.stringify(next));
       } catch {
         // ignore
       }
     },
-    [showRecents, recentsStorageKey]
+    [showRecents, effectiveRecentsKey]
   );
 
   const addRecent = React.useCallback(
@@ -149,24 +168,72 @@ export function SearchBar({
 
   const clearRecents = React.useCallback(() => {
     try {
-      window.localStorage.removeItem(recentsStorageKey);
+      window.localStorage.removeItem(effectiveRecentsKey);
     } catch {
       // ignore
     }
     setRecents([]);
-  }, [recentsStorageKey]);
+  }, [effectiveRecentsKey]);
+  React.useEffect(() => {
+    if (!onScopeChange) return;
+    if (!showRecents) {
+      setRecents([]);
+      setHighlight("");
+      return;
+    }
+    setRecents(loadRecents());
+    setHighlight("");
+  }, [scope, onScopeChange, showRecents, loadRecents]);
 
   const maxSug = maxSuggestions ?? 8;
   const minChars = minSuggestionChars ?? 1;
 
-  // Avoid SSR/CSR mismatch: render a stable default and update after mount
+  const setScope = React.useCallback(
+    (next: string) => {
+      if (!onScopeChange) return;
+      onScopeChange(next);
+      // Keep focus so the user can keep typing
+      window.setTimeout(() => inputRef.current?.focus(), 0);
+    },
+    [onScopeChange]
+  );
+
+  const scopeLabel = React.useMemo(() => {
+    const found = scopes.find((s) => s.value === scope);
+    return found?.label ?? scope;
+  }, [scopes, scope]);
+
+  const effectivePlaceholder = React.useMemo(() => {
+    // Only adjust when using the default placeholder and the selector is enabled
+    if (!onScopeChange) return placeholder;
+    if (placeholder !== "Search images, keywords, tags…") return placeholder;
+    return scope === "drive" ? "Search files, folders, people…" : "Search images, keywords, tags…";
+  }, [onScopeChange, placeholder, scope]);
+
+  const effectiveAriaLabel = React.useMemo(() => {
+    return onScopeChange ? `Search in ${scopeLabel}` : "Search assets";
+  }, [onScopeChange, scopeLabel]);
+
+  const scopePadLeft = React.useMemo(() => {
+    if (!onScopeChange) return undefined;
+    // Rough estimate: base + label widths (keeps compact while avoiding overlap)
+    const base = 74; // pill + icon gap
+    const perChar = 6; // conservative
+    const labels = scopes.slice(0, 4).map((s) => s.label).join("");
+    const est = base + labels.length * perChar;
+    return Math.min(Math.max(est, 120), 160);
+  }, [onScopeChange, scopes]);
+
+  // Avoid mismatch: render a stable default, then show shortcut hint only after mount
   const [primaryShortcut, setPrimaryShortcut] = React.useState("Ctrl K");
+  const [shortcutReady, setShortcutReady] = React.useState(false);
 
   React.useEffect(() => {
     const isMac =
       typeof navigator !== "undefined" &&
       /Mac|iPhone|iPad|iPod/.test(navigator.platform);
     setPrimaryShortcut(isMac ? "⌘K" : "Ctrl K");
+    setShortcutReady(true);
   }, []);
 
   // Debounce
@@ -218,7 +285,7 @@ export function SearchBar({
 
     const t = window.setTimeout(async () => {
       try {
-        const res = await getSuggestions(q);
+        const res = await getSuggestions(q, scope);
         if (cancelled) return;
         const cleaned = (Array.isArray(res) ? res : [])
           .map((s) => String(s))
@@ -236,7 +303,7 @@ export function SearchBar({
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [value, getSuggestions, minChars, maxSug]);
+  }, [value, getSuggestions, minChars, maxSug, scope]);
 
   React.useEffect(() => {
     if (!suggestionsOpen) return;
@@ -274,20 +341,31 @@ export function SearchBar({
       if (isEditable) return;
 
       const key = e.key;
-      const isSlash = key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey;
+      const isSlashKey = e.code === "Slash" && !e.metaKey && !e.ctrlKey && !e.altKey;
       const isCmdK = (e.metaKey || e.ctrlKey) && key.toLowerCase() === "k";
 
-      if (isSlash || isCmdK) {
+      if (isSlashKey) {
+        e.preventDefault();
+        // Scope-aware shortcuts: / = Stock, ⇧/ = Drive
+        if (onScopeChange) {
+          const target = e.shiftKey ? "drive" : "stock";
+          setScope(target);
+        }
+        inputRef.current?.focus();
+        setSuggestionsOpen(true);
+        return;
+      }
+
+      if (isCmdK) {
         e.preventDefault();
         inputRef.current?.focus();
-        // Give immediate feedback
         setSuggestionsOpen(true);
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [onScopeChange, setScope]);
 
   const clear = React.useCallback(() => {
     onChange("");
@@ -310,12 +388,19 @@ export function SearchBar({
     [onSelectSuggestion, onChange, addRecent]
   );
 
+  React.useEffect(() => {
+    return () => {
+      if (blurCloseTimerRef.current) window.clearTimeout(blurCloseTimerRef.current);
+    };
+  }, []);
+
   return (
     <div className={cn("flex w-full items-center gap-3", className)}>
       <Popover
         open={suggestionsOpen}
         onOpenChange={(open) => {
           setSuggestionsOpen(open);
+          if (!open) setHighlight("");
         }}
       >
         <div role="search" className="relative w-full">
@@ -337,6 +422,10 @@ export function SearchBar({
                   }
                 }}
                 onFocus={() => {
+                  if (blurCloseTimerRef.current) {
+                    window.clearTimeout(blurCloseTimerRef.current);
+                    blurCloseTimerRef.current = null;
+                  }
                   setIsFocused(true);
                   const q = value.trim();
                   if (q.length >= minChars) {
@@ -345,11 +434,22 @@ export function SearchBar({
                   }
 
                   if (q.length === 0) {
+                    // Ensure recents are fresh (scoped per selector)
+                    if (showRecents) setRecents(loadRecents());
                     setSuggestionsOpen(true);
                   }
                 }}
-                onBlur={() => {
+                onBlur={(e) => {
                   setIsFocused(false);
+
+                  // Close slightly later to allow clicks into the popover without flicker
+                  if (blurCloseTimerRef.current) window.clearTimeout(blurCloseTimerRef.current);
+                  blurCloseTimerRef.current = window.setTimeout(() => {
+                    const ae = document.activeElement as HTMLElement | null;
+                    if (ae && popoverRef.current && popoverRef.current.contains(ae)) return;
+                    setSuggestionsOpen(false);
+                    setHighlight("");
+                  }, 90);
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -406,11 +506,16 @@ export function SearchBar({
                     if (onSubmit) onSubmit(value);
                   }
                 }}
-                placeholder={placeholder}
-                aria-label="Search assets"
+                placeholder={effectivePlaceholder}
+                aria-label={effectiveAriaLabel}
+                style={
+                  onScopeChange
+                    ? ({ paddingLeft: `${scopePadLeft ?? 130}px` } as React.CSSProperties)
+                    : undefined
+                }
                 className={cn(
                   "h-10 bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring focus-visible:ring-offset-background",
-                  showIcon ? "pl-9" : "pl-3",
+                  onScopeChange ? "pl-3" : showIcon ? "pl-9" : "pl-3",
                   value ? "pr-9" : "pr-16",
                   "[&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none [&::-webkit-search-results-button]:appearance-none [&::-webkit-search-results-decoration]:appearance-none"
                 )}
@@ -418,7 +523,53 @@ export function SearchBar({
             </div>
           </PopoverAnchor>
 
-          {showIcon ? (
+          {onScopeChange ? (
+            <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
+              <div
+                className="inline-flex h-7 items-center rounded-full bg-muted/50 p-0.5 ring-1 ring-border/40"
+                role="tablist"
+                aria-label="Search scope"
+                onKeyDown={(e) => {
+                  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+                  e.preventDefault();
+                  const list = scopes.slice(0, 4);
+                  const idx = Math.max(0, list.findIndex((s) => s.value === scope));
+                  const dir = e.key === 'ArrowRight' ? 1 : -1;
+                  const next = list[(idx + dir + list.length) % list.length];
+                  if (next) setScope(next.value);
+                }}
+              >
+                {scopes.slice(0, 4).map((s) => {
+                  const active = s.value === scope;
+                  return (
+                    <button
+                      key={s.value}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => setScope(s.value)}
+                      className={cn(
+                        "h-6 rounded-full px-2.5 text-[11px] font-medium transition",
+                        active
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                      aria-pressed={active}
+                      role="tab"
+                      aria-selected={active}
+                    >
+                      {s.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {showIcon ? (
+                <div className="pointer-events-none text-muted-foreground">
+                  <Search className="h-4 w-4" />
+                </div>
+              ) : null}
+            </div>
+          ) : showIcon ? (
             <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
               <Search className="h-4 w-4" />
             </div>
@@ -436,12 +587,9 @@ export function SearchBar({
             </button>
           ) : null}
 
-          {/* Show shortcut hint only when input is NOT focused */}
-          {!value && !isFocused ? (
-            <div
-              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[11px] text-muted-foreground"
-              suppressHydrationWarning
-            >
+          {/* Show shortcut hint only when input is NOT focused (after mount to avoid mismatch) */}
+          {!value && !isFocused && shortcutReady ? (
+            <div className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[11px] text-muted-foreground">
               <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">
                 {primaryShortcut.startsWith("⌘") ? (
                   <span className="flex items-center gap-0.5">
@@ -456,11 +604,17 @@ export function SearchBar({
               <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">
                 /
               </kbd>
+              {onScopeChange ? (
+                <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">
+                  ⇧/
+                </kbd>
+              ) : null}
             </div>
           ) : null}
 
           {suggestionsOpen ? (
             <PopoverContent
+              ref={popoverRef}
               align="start"
               side="bottom"
               sideOffset={8}
@@ -492,7 +646,7 @@ export function SearchBar({
                     <CommandGroup
                       heading={
                         <div className="flex items-center justify-between">
-                          <span>Recent searches</span>
+                          <span>Recent {onScopeChange ? (scope === 'drive' ? 'Drive' : 'Stock') : ''} searches</span>
                           <button
                             type="button"
                             onClick={clearRecents}
