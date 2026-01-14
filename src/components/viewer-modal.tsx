@@ -10,6 +10,7 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ViewerSidebar } from "@/components/viewer-sidebar";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { demoAssets } from "@/lib/demo/assets";
 
 function withUnsplashParams(src: string, params: Record<string, string | number>) {
@@ -72,6 +73,11 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
   const [viewerTab, setViewerTab] = useState<"info" | "comments" | "stats">("info");
 
   const [isMobile, setIsMobile] = useState(false);
+  const [portalEl, setPortalEl] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    setPortalEl(document.body);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -698,10 +704,10 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
 
   if (!open || !current) return null;
 
-  return (
+  const content = (
     <TooltipProvider delayDuration={150}>
       <div
-        className="fixed inset-0 z-50 bg-background/95 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200 motion-reduce:animate-none"
+        className="fixed inset-0 z-[2147483647] bg-background/95 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200 motion-reduce:animate-none"
         onClick={() => {
           // On mobile: close the sidebar sheet first
           if (isMobile && sidebarOpen) {
@@ -994,7 +1000,7 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
           {/* Mobile sidebar as Sheet */}
           {isMobile && (
             <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-              <SheetContent side="right" className="w-[92vw] max-w-[360px] p-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-2 motion-safe:duration-200 motion-reduce:animate-none">
+              <SheetContent side="right" className="z-[2147483647] w-[92vw] max-w-[360px] p-0 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-2 motion-safe:duration-200 motion-reduce:animate-none">
                 <SheetHeader className="border-b border-border bg-background/70 px-3 py-2 backdrop-blur">
                   <div className="flex items-center justify-between">
                     <SheetTitle className="text-sm">Asset information</SheetTitle>
@@ -1049,4 +1055,6 @@ export function ViewerModal({ open, item, items, onClose }: ViewerModalProps) {
       </div>
     </TooltipProvider>
   );
+
+  return portalEl ? createPortal(content, portalEl) : content;
 }

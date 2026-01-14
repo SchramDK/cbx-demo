@@ -67,6 +67,13 @@ export type FolderNode = {
   children?: FolderNode[];
 };
 
+const LS_KEYS = {
+  favorites: "CBX_FAVORITES_V1",
+  smartFolders: "CBX_SMART_FOLDERS_V1",
+  sections: "CBX_SIDEBAR_SECTIONS_V1",
+  folderOpen: "CBX_FOLDER_OPEN_V1",
+} as const;
+
 export const demoFolders: FolderNode[] = [
   {
     id: "marketing",
@@ -190,15 +197,18 @@ function isSmartFolderId(id?: string) {
   return Boolean(id && id.startsWith("smart:"));
 }
 
-function findNodeById(id: string, nodes: FolderNode[]): FolderNode | null {
-  for (const n of nodes) {
-    if (n.id === id) return n;
-    if (n.children?.length) {
-      const found = findNodeById(id, n.children);
-      if (found) return found;
+
+
+function buildFolderIndex(nodes: FolderNode[]) {
+  const map = new Map<string, FolderNode>();
+  const walk = (list: FolderNode[]) => {
+    for (const n of list) {
+      map.set(n.id, n);
+      if (n.children?.length) walk(n.children);
     }
-  }
-  return null;
+  };
+  walk(nodes);
+  return map;
 }
 
 function SectionChevron({ open }: { open: boolean }) {
@@ -217,12 +227,21 @@ type PaletteItem = {
 
 function flattenFolders(nodes: FolderNode[], trail: string[] = []): PaletteItem[] {
   const out: PaletteItem[] = [];
-  for (const n of nodes) {
-    const nextTrail = [...trail, n.name];
-    const path = nextTrail.join(" / ");
-    out.push({ id: n.id, label: n.name, keywords: path });
-    if (n.children?.length) out.push(...flattenFolders(n.children, nextTrail));
-  }
+
+  const walk = (list: FolderNode[]) => {
+    for (const n of list) {
+      trail.push(n.name);
+
+      const path = trail.join(" / ");
+      out.push({ id: n.id, label: n.name, keywords: path });
+
+      if (n.children?.length) walk(n.children);
+
+      trail.pop();
+    }
+  };
+
+  walk(nodes);
   return out;
 }
 
@@ -364,7 +383,7 @@ export function FolderSidebar({
 
   React.useEffect(() => {
     try {
-      const raw = window.localStorage.getItem("CBX_FAVORITES_V1");
+      const raw = window.localStorage.getItem(LS_KEYS.favorites);
       const arr = raw ? (JSON.parse(raw) as string[]) : [];
       setFavoriteIds(new Set(arr));
     } catch {
@@ -378,7 +397,7 @@ export function FolderSidebar({
     if (!favoritesReady) return;
     try {
       window.localStorage.setItem(
-        "CBX_FAVORITES_V1",
+        LS_KEYS.favorites,
         JSON.stringify(Array.from(favoriteIds))
       );
     } catch {
@@ -397,6 +416,7 @@ export function FolderSidebar({
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [newFolderName, setNewFolderName] = React.useState("");
+  const folderIndex = React.useMemo(() => buildFolderIndex(folders), [folders]);
 
   // Shared row classes for navigation rows
   const navRowBase =
@@ -412,7 +432,7 @@ export function FolderSidebar({
 
   React.useEffect(() => {
     try {
-      const raw = window.localStorage.getItem("CBX_SMART_FOLDERS_V1");
+      const raw = window.localStorage.getItem(LS_KEYS.smartFolders);
       const parsed = raw ? (JSON.parse(raw) as SmartFolderDef[]) : null;
 
       if (Array.isArray(parsed) && parsed.length > 0) {
@@ -454,7 +474,7 @@ export function FolderSidebar({
     if (!smartReady) return;
     try {
       window.localStorage.setItem(
-        "CBX_SMART_FOLDERS_V1",
+        LS_KEYS.smartFolders,
         JSON.stringify(smartFolderDefs)
       );
     } catch {
@@ -493,7 +513,7 @@ export function FolderSidebar({
 
   React.useEffect(() => {
     try {
-      const raw = window.localStorage.getItem("CBX_SIDEBAR_SECTIONS_V1");
+      const raw = window.localStorage.getItem(LS_KEYS.sections);
       const parsed = raw ? (JSON.parse(raw) as Partial<typeof sectionsOpen>) : {};
       setSectionsOpen((prev) => ({
         smart: typeof parsed.smart === "boolean" ? parsed.smart : prev.smart,
@@ -511,7 +531,7 @@ export function FolderSidebar({
     if (!sectionsReady) return;
     try {
       window.localStorage.setItem(
-        "CBX_SIDEBAR_SECTIONS_V1",
+        LS_KEYS.sections,
         JSON.stringify(sectionsOpen)
       );
     } catch {
@@ -524,6 +544,7 @@ export function FolderSidebar({
   }, []);
 
   const [folderQuery, setFolderQuery] = React.useState("");
+  const deferredFolderQuery = React.useDeferredValue(folderQuery);
 
   const [folderSort, setFolderSort] = React.useState<"name_asc" | "name_desc">("name_asc");
 
@@ -533,7 +554,7 @@ export function FolderSidebar({
   // Load persisted open/closed state after mount (avoid SSR hydration mismatch)
   React.useEffect(() => {
     try {
-      const raw = window.localStorage.getItem("CBX_FOLDER_OPEN_V1");
+      const raw = window.localStorage.getItem(LS_KEYS.folderOpen);
       const obj = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
       setOpenById(obj || {});
     } catch {
@@ -547,7 +568,7 @@ export function FolderSidebar({
   React.useEffect(() => {
     if (!openReady) return;
     try {
-      window.localStorage.setItem("CBX_FOLDER_OPEN_V1", JSON.stringify(openById));
+      window.localStorage.setItem(LS_KEYS.folderOpen, JSON.stringify(openById));
     } catch {
       // ignore
     }
@@ -560,7 +581,14 @@ export function FolderSidebar({
   };
 
   const toggleOpen = (id: string) => {
-    setOpenById((prev) => ({ ...prev, [id]: !isOpen(id) }));
+    // While searching, we force all folders open for visibility. Toggling would be confusing
+    // (and previously could produce incorrect state because isOpen() returns true).
+    if (folderQuery.trim().length > 0) return;
+
+    setOpenById((prev) => {
+      const current = prev[id] ?? false;
+      return { ...prev, [id]: !current };
+    });
   };
 
   const filterFolders = (nodes: FolderNode[], q: string): FolderNode[] => {
@@ -600,9 +628,9 @@ export function FolderSidebar({
   }, [folderSort]);
 
   const visibleFolders = React.useMemo(() => {
-    const filtered = filterFolders(folders, folderQuery);
+    const filtered = filterFolders(folders, deferredFolderQuery);
     return sortFolders(filtered);
-  }, [folders, folderQuery, sortFolders]);
+  }, [folders, deferredFolderQuery, sortFolders]);
 
   const isRealFolder =
     selectedId &&
@@ -727,7 +755,7 @@ export function FolderSidebar({
   };
 
   const requestRename = (id: string) => {
-    const node = findNodeById(id, folders);
+    const node = folderIndex.get(id) ?? null;
     setRenameId(id);
     setRenameValue(node?.name ?? "");
     setRenameOpen(true);
@@ -752,7 +780,7 @@ export function FolderSidebar({
     const id = deleteId;
     if (!id) return;
 
-    const node = findNodeById(id, folders);
+    const node = folderIndex.get(id) ?? null;
     const idsToRemove = node ? collectIds(node) : [id];
 
     // If the selected folder is being deleted (or is inside the deleted subtree), reset to all
@@ -920,6 +948,8 @@ export function FolderSidebar({
               onClick={() => toggleSection("smart")}
               className={sectionHeaderBase}
               aria-label={sectionsOpen.smart ? "Collapse smart folders" : "Expand smart folders"}
+              aria-expanded={sectionsOpen.smart}
+              aria-controls="cbx-sidebar-smart-folders"
             >
               <SectionChevron open={sectionsOpen.smart} />
               <span>Smart folders</span>
@@ -938,79 +968,82 @@ export function FolderSidebar({
             </Button>
           </div>
 
-          {sectionsOpen.smart &&
-            smartFolderDefs.map((sf) => {
-              return (
-                <div
-                  key={sf.id}
-                  className={cn(navRowBase, selectedId === sf.id && navRowActive)}
-                >
-                  <button
-                    type="button"
-                    onClick={() => onSelectAction?.(sf.id)}
-                    className="flex flex-1 items-center gap-2 text-left"
+          {sectionsOpen.smart && (
+            <div id="cbx-sidebar-smart-folders">
+              {smartFolderDefs.map((sf) => {
+                return (
+                  <div
+                    key={sf.id}
+                    className={cn(navRowBase, selectedId === sf.id && navRowActive)}
                   >
-                    <Sparkles className="h-4 w-4 text-muted-foreground" />
-                    <span className="truncate">{sf.name}</span>
-                  </button>
-                  <div className="ml-auto flex w-9 items-center justify-end">
-                    <div
-                      className={cn(
-                        "pointer-events-auto opacity-0 transition-opacity",
-                        "group-hover:opacity-100"
-                      )}
+                    <button
+                      type="button"
+                      onClick={() => onSelectAction?.(sf.id)}
+                      className="flex flex-1 items-center gap-2 text-left"
                     >
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            onClick={(e) => e.stopPropagation()}
-                            aria-label="Smart folder actions"
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
+                      <Sparkles className="h-4 w-4 text-muted-foreground" />
+                      <span className="truncate">{sf.name}</span>
+                    </button>
+                    <div className="ml-auto flex w-9 items-center justify-end">
+                      <div
+                        className={cn(
+                          "pointer-events-auto opacity-0 transition-opacity",
+                          "group-hover:opacity-100"
+                        )}
+                      >
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={(e) => e.stopPropagation()}
+                              aria-label="Smart folder actions"
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
 
-                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                          <DropdownMenuItem
-                            onSelect={(e) => {
-                              e.preventDefault();
-                              requestSmartRename(sf.id);
-                            }}
-                          >
-                            Rename
-                          </DropdownMenuItem>
+                          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenuItem
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                requestSmartRename(sf.id);
+                              }}
+                            >
+                              Rename
+                            </DropdownMenuItem>
 
-                          <DropdownMenuItem
-                            onSelect={(e) => {
-                              e.preventDefault();
-                              duplicateSmartFolder(sf.id);
-                            }}
-                          >
-                            Duplicate
-                          </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                duplicateSmartFolder(sf.id);
+                              }}
+                            >
+                              Duplicate
+                            </DropdownMenuItem>
 
-                          <DropdownMenuSeparator />
+                            <DropdownMenuSeparator />
 
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onSelect={(e) => {
-                              e.preventDefault();
-                              deleteSmartFolder(sf.id);
-                            }}
-                          >
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                deleteSmartFolder(sf.id);
+                              }}
+                            >
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {favoritesReady && (
@@ -1020,6 +1053,8 @@ export function FolderSidebar({
               onClick={() => toggleSection("starred")}
               className={sectionHeaderBase}
               aria-label={sectionsOpen.starred ? "Collapse starred folders" : "Expand starred folders"}
+              aria-expanded={sectionsOpen.starred}
+              aria-controls="cbx-sidebar-starred-folders"
             >
               <SectionChevron open={sectionsOpen.starred} />
               <span>Starred folders</span>
@@ -1027,15 +1062,17 @@ export function FolderSidebar({
 
             {favoriteIds.size === 0 ? (
               sectionsOpen.starred && (
-                <div className="mx-2 rounded-md bg-muted/40 px-2 py-2 text-xs text-muted-foreground">
-                  No starred folders yet. Use <span className="font-medium">⋯</span> on a folder to star it.
+                <div id="cbx-sidebar-starred-folders">
+                  <div className="mx-2 rounded-md bg-muted/40 px-2 py-2 text-xs text-muted-foreground">
+                    No starred folders yet. Use <span className="font-medium">⋯</span> on a folder to star it.
+                  </div>
                 </div>
               )
             ) : (
               sectionsOpen.starred && (
-                <div className="space-y-1">
+                <div id="cbx-sidebar-starred-folders" className="space-y-1">
                   {Array.from(favoriteIds)
-                    .map((id) => findNodeById(id, folders))
+                    .map((id) => folderIndex.get(id))
                     .filter((n): n is FolderNode => Boolean(n))
                     .map((n) => (
                       <div
@@ -1101,6 +1138,8 @@ export function FolderSidebar({
                 onClick={() => toggleSection("folders")}
                 className={sectionHeaderBase}
                 aria-label={sectionsOpen.folders ? "Collapse folders" : "Expand folders"}
+                aria-expanded={sectionsOpen.folders}
+                aria-controls="cbx-sidebar-folders"
               >
                 <SectionChevron open={sectionsOpen.folders} />
                 <span>Folders</span>
@@ -1208,6 +1247,7 @@ export function FolderSidebar({
           </div>
           {sectionsOpen.folders && (
             <div
+              id="cbx-sidebar-folders"
               className={cn(
                 "transition-opacity duration-150",
                 !openReady && folderQuery.trim().length === 0 && "pointer-events-none opacity-0"
@@ -1279,17 +1319,6 @@ function FolderRow({
   return (
     <div>
       <div
-        role="button"
-        tabIndex={0}
-        onClick={() => {
-          onSelectAction?.(node.id);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onSelectAction?.(node.id);
-          }
-        }}
         onDragEnter={(e) => {
           if (!droppable) return;
           e.preventDefault();
@@ -1308,9 +1337,13 @@ function FolderRow({
           e.preventDefault();
           setDragOver(false);
 
+          const rawCustom = e.dataTransfer.getData("application/x-cbx-asset-id");
+          const rawText = e.dataTransfer.getData("text/plain");
+
+          // Prefer our custom mime type. As a safe fallback, accept a tagged text format: "cbx-asset:<id>"
           const raw =
-            e.dataTransfer.getData("application/x-cbx-asset-id") ||
-            e.dataTransfer.getData("text/plain");
+            rawCustom ||
+            (rawText?.startsWith("cbx-asset:") ? rawText.slice("cbx-asset:".length) : "");
 
           const assetId = Number(raw);
           if (!Number.isFinite(assetId)) return;
@@ -1340,19 +1373,29 @@ function FolderRow({
                 onToggleOpen(node.id);
               }
             }}
-            aria-label={open ? "Collapse" : "Expand"}
+            aria-label={open ? "Collapse folder" : "Expand folder"}
+            aria-expanded={open}
           >
             <SectionChevron open={open} />
           </button>
         ) : (
           <span className="w-7" />
         )}
-        {open && hasChildren ? (
-          <FolderOpen className="h-4 w-4 text-muted-foreground" />
-        ) : (
-          <Folder className="h-4 w-4 text-muted-foreground" />
-        )}
-        <span className="truncate">{node.name}</span>
+
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          onClick={() => onSelectAction?.(node.id)}
+          aria-current={isActive ? "page" : undefined}
+        >
+          {open && hasChildren ? (
+            <FolderOpen className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <Folder className="h-4 w-4 text-muted-foreground" />
+          )}
+          <span className="truncate">{node.name}</span>
+        </button>
+
         <div className="ml-auto flex w-9 items-center justify-end">
           <div
             className={cn(

@@ -58,23 +58,6 @@ type FolderNode = {
   children?: FolderNode[];
 };
 
-function findFolderById(id: string, nodes: FolderNode[]): FolderNode | undefined {
-  for (const n of nodes) {
-    if (n.id === id) return n;
-    const kids = n.children;
-    if (Array.isArray(kids) && kids.length) {
-      const hit = findFolderById(id, kids);
-      if (hit) return hit;
-    }
-  }
-  return undefined;
-}
-
-function getSubfolders(id: string, nodes: FolderNode[]): FolderNode[] {
-  const folder = findFolderById(id, nodes);
-  const kids = folder?.children;
-  return Array.isArray(kids) ? kids : [];
-}
 
 const LS_KEYS = {
   filters: "CBX_ASSET_FILTERS_V1",
@@ -172,9 +155,19 @@ function DrivePageInner() {
   // Sync query when URL changes (e.g. from Topbar search)
   useEffect(() => {
     if (!mounted) return;
-    if (urlQ === query.trim()) return;
-    setQuery(urlQ);
-  }, [mounted, urlQ, query]);
+    const next = urlQ.trim();
+
+    setQuery((prev) => {
+      if (prev.trim() === next) return prev;
+
+      // If search comes from the URL (Topbar), search should apply across Drive
+      if (next.length > 0) {
+        setSelectedFolder("all");
+      }
+
+      return next;
+    });
+  }, [mounted, urlQ]);
 
   const [selectedFolder, setSelectedFolder] = useState<string>("all");
 
@@ -343,9 +336,13 @@ function DrivePageInner() {
 
   useEffect(() => {
     if (!mounted) return;
+
+    // If we have an active search from the URL, keep Drive in "All files"
+    if (urlQ.trim().length > 0) return;
+
     const raw = readLSString(LS_KEYS.selectedFolder);
     if (typeof raw === "string" && raw.length > 0) setSelectedFolder(raw);
-  }, [mounted]);
+  }, [mounted, urlQ]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -364,6 +361,18 @@ function DrivePageInner() {
   }, []);
 
   const [folderTree, setFolderTree] = useState<FolderNode[]>(() => demoFolders as unknown as FolderNode[]);
+
+  const folderIndex = useMemo(() => {
+    const map = new Map<string, FolderNode>();
+    const walk = (nodes: FolderNode[]) => {
+      for (const n of nodes) {
+        map.set(n.id, n);
+        if (Array.isArray(n.children) && n.children.length) walk(n.children);
+      }
+    };
+    walk(folderTree);
+    return map;
+  }, [folderTree]);
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
 
@@ -531,8 +540,8 @@ function DrivePageInner() {
   const isFolderView =
     selectedFolder !== "all" && selectedFolder !== "favorites" && selectedFolder !== "trash";
   const isRealFolder = useMemo(() => {
-    return Boolean(findFolderById(selectedFolder, folderTree));
-  }, [selectedFolder, folderTree]);
+    return folderIndex.has(selectedFolder);
+  }, [selectedFolder, folderIndex]);
   const isRealFolderView = isFolderView && isRealFolder;
   const canUploadHere = isRealFolderView;
   const folderName = isRealFolderView
@@ -546,10 +555,19 @@ function DrivePageInner() {
       .map((img) => ({ id: img.id, title: img.title, src: img.src }));
   }, [isRealFolderView, selectedFolder, assetFolderOverrides]);
 
+  const folderCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const img of demoImages) {
+      const fid = assetFolderOverrides[img.id] ?? img.folderId ?? "all";
+      counts[fid] = (counts[fid] ?? 0) + 1;
+    }
+    return counts;
+  }, [assetFolderOverrides]);
+
   const subfolders = useMemo<FolderNode[]>(() => {
     if (!isRealFolderView) return [];
-    return getSubfolders(selectedFolder, folderTree);
-  }, [isRealFolderView, selectedFolder, folderTree]);
+    return folderIndex.get(selectedFolder)?.children ?? [];
+  }, [isRealFolderView, selectedFolder, folderIndex]);
 
   const subfolderItems = useMemo(() => {
     return subfolders.map((sf) => {
@@ -562,20 +580,16 @@ function DrivePageInner() {
         id: sf.id,
         name: sf.name ?? "Folder",
         coverSrc,
-        count: demoImages.filter(
-          (img) => (assetFolderOverrides[img.id] ?? img.folderId) === sf.id
-        ).length,
+        count: folderCounts[sf.id] ?? 0,
       };
     });
-  }, [subfolders, folderCovers, assetFolderOverrides]);
+  }, [subfolders, folderCovers, folderCounts]);
 
   const coverAssetId = isRealFolderView ? folderCovers[selectedFolder] : undefined;
 
   const trashCount = useMemo(() => {
-    return demoImages.filter(
-      (img) => (assetFolderOverrides[img.id] ?? img.folderId) === "trash"
-    ).length;
-  }, [assetFolderOverrides]);
+    return folderCounts["trash"] ?? 0;
+  }, [folderCounts]);
 
   const showTrashEmptyState = isTrashView && query.trim() === "" && trashCount === 0;
 
@@ -646,7 +660,7 @@ function DrivePageInner() {
                 selectedId={selectedFolder}
                 onSelectAction={(folderId) => {
                   // Only allow real folders (no smart folders)
-                  if (!findFolderById(folderId, folderTree)) return;
+                  if (!folderIndex.has(folderId)) return;
 
                   setAssetFolderOverrides((prev) => {
                     const next = { ...prev };
@@ -697,12 +711,13 @@ function DrivePageInner() {
                         aria-label="Clear search"
                         onClick={() => {
                           setQuery("");
+                          setSelectedFolder("all");
                           try {
-                            const params = new URLSearchParams(Array.from(searchParams.entries()));
+                            const params = new URLSearchParams(Array.from(searchParamsRef.current.entries()));
                             params.delete("q");
                             params.delete("query");
                             params.delete("search");
-                            router.replace(`/drive${params.toString() ? `?${params.toString()}` : ""}`);
+                            routerRef.current.replace(`/drive${params.toString() ? `?${params.toString()}` : ""}`);
                           } catch {
                             // ignore
                           }
