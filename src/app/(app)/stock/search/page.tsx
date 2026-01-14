@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { Suspense, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
@@ -493,5 +493,9 @@ function StockSearchInner() {
 }
 
 export default function StockSearchPage() {
-  return <StockSearchInner />;
+  return (
+    <Suspense fallback={null}>
+      <StockSearchInner />
+    </Suspense>
+  );
 }

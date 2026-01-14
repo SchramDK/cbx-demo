@@ -28,9 +28,13 @@ function getCookie(name: string): string | undefined {
 }
 
 function FullscreenLoader({ hint }: { hint?: string }) {
-  if (typeof document === "undefined") return null;
+  const [mounted, setMounted] = useState(false);
 
-  return createPortal(
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const node = (
     <div
       className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-background text-foreground"
       aria-busy="true"
@@ -45,9 +49,13 @@ function FullscreenLoader({ hint }: { hint?: string }) {
           {hint ?? "Preparing your account and downloads."}
         </p>
       </div>
-    </div>,
-    document.body
+    </div>
   );
+
+  // First render must match SSR to avoid hydration mismatch.
+  // After mount, move into a portal to escape stacking contexts.
+  if (!mounted || typeof document === "undefined") return node;
+  return createPortal(node, document.body);
 }
 
 export default function StockDownloadPage() {
