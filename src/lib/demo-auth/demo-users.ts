@@ -11,7 +11,7 @@ export type DemoUser = {
   export const DEMO_USERS: DemoUser[] = [
     {
       id: "u_first_time",
-      name: "Esben (First time user)",
+      name: "Esben",
       email: "user@colourbox-demo.com",
       org: "My organisation",
       role: "first_time",

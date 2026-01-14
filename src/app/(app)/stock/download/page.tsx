@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getOrder } from "@/lib/stock/commerce";
 import { Button } from "@/components/ui/button";
@@ -27,9 +28,11 @@ function getCookie(name: string): string | undefined {
 }
 
 function FullscreenLoader({ hint }: { hint?: string }) {
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-[2147483647] isolate flex items-center justify-center bg-background text-foreground"
+      className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-background text-foreground"
       aria-busy="true"
       aria-live="polite"
     >
@@ -42,7 +45,8 @@ function FullscreenLoader({ hint }: { hint?: string }) {
           {hint ?? "Preparing your account and downloads."}
         </p>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -327,7 +331,20 @@ useEffect(() => {
                 {purchased.map((it: any) => {
                   const id = String(it.assetId ?? it.id ?? "");
                   const t = String(it.title ?? it.name ?? `Asset #${id}`);
-                  const thumb = it.thumbUrl ?? it.thumbnailUrl ?? it.previewUrl ?? null;
+                  const thumb =
+                    it.thumbUrl ??
+                    it.thumbnailUrl ??
+                    it.previewUrl ??
+                    it.image ??
+                    it.preview ??
+                    it.thumbnail ??
+                    it.asset?.thumbUrl ??
+                    it.asset?.thumbnailUrl ??
+                    it.asset?.previewUrl ??
+                    it.asset?.image ??
+                    it.asset?.preview ??
+                    it.asset?.thumbnail ??
+                    null;
                   const perAssetHref = id
                     ? `/api/stock/download?assetId=${encodeURIComponent(id)}&size=${encodeURIComponent(size)}&format=${encodeURIComponent(format)}`
                     : null;

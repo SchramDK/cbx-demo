@@ -1,9 +1,11 @@
 'use client';
 
-import { Suspense, useCallback, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image';
+
+import ImageCard from '@/components/stock/ImageCard';
+import { useCart, useCartUI } from '@/lib/cart/cart';
 
 import { STOCK_ASSETS as ASSETS, STOCK_CATEGORIES } from '@/lib/demo/stock-assets';
 
@@ -228,6 +230,50 @@ function StockSearchInner() {
   const q = normalize(rawQ);
   const hasQuery = q.length > 0;
 
+  const cart = useCart() as any;
+  const cartUI = useCartUI() as any;
+
+  const cartIds = useMemo(() => {
+    const ids = new Set<string>();
+    const items = (cart?.items ?? []) as any[];
+    for (const it of items) {
+      const id = (it?.id ?? it?.assetId ?? it?.asset?.id ?? '').toString();
+      if (id) ids.add(id);
+    }
+    return ids;
+  }, [cart?.items]);
+
+  const addToCart = useCallback(
+    (asset: Asset) => {
+      const fn = cart?.addAsset ?? cart?.addItem ?? cart?.add;
+      if (typeof fn === 'function') {
+        const img = getImage(asset);
+
+        // Provide a robust cart-item shape so previews render in the cart UI.
+        // We include multiple common keys used across cart implementations.
+        const cartItem: any = {
+          id: asset.id,
+          assetId: asset.id,
+          title: asset.title,
+          name: asset.title,
+          preview: img,
+          image: img,
+          thumbnail: img,
+          qty: 1,
+          quantity: 1,
+          asset,
+        };
+
+        fn(cartItem);
+
+        // Match front-page UX: open the cart UI if available
+        if (typeof cartUI?.open === 'function') cartUI.open();
+        else if (typeof cartUI?.setOpen === 'function') cartUI.setOpen(true);
+      }
+    },
+    [cart, cartUI]
+  );
+
   const rawCat = (searchParams.get('cat') ?? '').trim().toLowerCase();
   const cat = rawCat === 'all' ? '' : rawCat;
 
@@ -419,31 +465,19 @@ function StockSearchInner() {
       ) : (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
           {results.slice(0, 40).map((asset) => (
-            <Link
+            <ImageCard
               key={asset.id}
+              asset={{
+                id: asset.id,
+                title: asset.title,
+                preview: getImage(asset),
+                category: asset.category,
+              }}
               href={`/stock/assets/${asset.id}`}
-              className="group overflow-hidden rounded-xl border border-black/5 bg-background transition hover:border-foreground/20 dark:border-white/10"
-            >
-              {/* Image */}
-              <div className="relative aspect-[4/3] w-full overflow-hidden bg-muted">
-                <Image
-                  src={getImage(asset)}
-                  alt={asset.title}
-                  fill
-                  sizes="(min-width: 1024px) 20vw, (min-width: 640px) 33vw, 50vw"
-                  className="object-cover transition-transform duration-300 group-hover:scale-105"
-                />
-              </div>
-
-              {/* Meta */}
-              <div className="p-3">
-                <div className="line-clamp-1 text-sm font-medium">{asset.title}</div>
-                <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">
-                  {asset.category}
-                  {(asset.keywords ?? []).length ? ` · ${(asset.keywords ?? []).slice(0, 2).join(' · ')}` : ''}
-                </div>
-              </div>
-            </Link>
+              aspect="photo"
+              inCart={cartIds.has(asset.id)}
+              onAddToCart={() => addToCart(asset)}
+            />
           ))}
         </div>
       )}
@@ -459,9 +493,5 @@ function StockSearchInner() {
 }
 
 export default function StockSearchPage() {
-  return (
-    <Suspense fallback={<div className="w-full px-4 py-6 text-sm text-muted-foreground">Loading…</div>}>
-      <StockSearchInner />
-    </Suspense>
-  );
+  return <StockSearchInner />;
 }

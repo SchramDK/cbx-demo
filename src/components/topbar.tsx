@@ -21,7 +21,7 @@ import { useCart, useCartUI } from '@/lib/cart/cart';
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import { getTopbarSuggestions } from "@/lib/search/topbarSuggestions";
 import { cn } from "@/lib/utils";
-import { Bell } from "lucide-react";
+import { Bell, User as UserIcon, Settings as SettingsIcon, LogOut, CreditCard } from "lucide-react";
 
 function useDemoMe(mounted: boolean) {
   const [me, setMe] = React.useState<null | {
@@ -350,67 +350,67 @@ export function Topbar({
 
   const hasRightExtras =
     (shouldShowCart && mounted) || (showThemeToggle && mounted) || Boolean(rightSlot);
+  const canOpenProfile = true; // via callback or fallback route
+  const canOpenSettings = true; // via callback or fallback route
 
   const center = centerSlot
     ? centerSlot
     : shouldShowSearch
     ? (
-        <div className="w-full sm:max-w-xl">
-          <SearchBar
-            value={onSearchChange ? (searchValue ?? "") : internalQuery}
-            onChange={onSearchChange ?? setInternalQuery}
-            {...(resolvedSearchPlaceholder ? { placeholder: resolvedSearchPlaceholder } : {})}
-            scope={loggedIn ? searchScope : undefined}
-            scopes={
-              loggedIn
-                ? [
-                    { value: 'stock', label: 'Stock' },
-                    { value: 'drive', label: 'Files' },
-                  ]
-                : undefined
-            }
-            onScopeChange={
-              loggedIn
-                ? (next) => {
-                    const v = next === 'stock' ? 'stock' : 'drive';
-                    setSearchScope(v);
+        <SearchBar
+          value={onSearchChange ? (searchValue ?? "") : internalQuery}
+          onChange={onSearchChange ?? setInternalQuery}
+          {...(resolvedSearchPlaceholder ? { placeholder: resolvedSearchPlaceholder } : {})}
+          scope={loggedIn ? searchScope : undefined}
+          scopes={
+            loggedIn
+              ? [
+                  { value: 'stock', label: 'Stock' },
+                  { value: 'drive', label: 'Files' },
+                ]
+              : undefined
+          }
+          onScopeChange={
+            loggedIn
+              ? (next) => {
+                  const v = next === 'stock' ? 'stock' : 'drive';
+                  setSearchScope(v);
 
-                    // If user toggles scope, keep query and navigate to the right section
-                    const q = (onSearchChange ? (searchValue ?? "") : internalQuery).trim();
-                    if (v === 'stock') {
-                      router.push(q ? `/stock/search?q=${encodeURIComponent(q)}` : '/stock');
-                    } else {
-                      router.push(q ? `/drive?q=${encodeURIComponent(q)}` : '/drive');
-                    }
+                  // If user toggles scope, keep query and navigate to the right section
+                  const q = (onSearchChange ? (searchValue ?? "") : internalQuery).trim();
+                  if (v === 'stock') {
+                    router.push(q ? `/stock/search?q=${encodeURIComponent(q)}` : '/stock');
+                  } else {
+                    router.push(q ? `/drive?q=${encodeURIComponent(q)}` : '/drive');
                   }
-                : undefined
-            }
-            getSuggestions={async (q, scope) =>
-              getTopbarSuggestions({
-                query: q,
-                scope: (scope === 'drive' ? 'drive' : 'stock'),
-                loggedIn,
-              }).map((s) => s.label)
-            }
-            onSelectSuggestion={(v) => {
-              // Update value and navigate immediately
-              if (onSearchChange) onSearchChange(v);
-              else setInternalQuery(v);
+                }
+              : undefined
+          }
+          getSuggestions={async (q, scope) =>
+            getTopbarSuggestions({
+              query: q,
+              scope: (scope === 'drive' ? 'drive' : 'stock'),
+              loggedIn,
+            }).map((s) => s.label)
+          }
+          onSelectSuggestion={(v) => {
+            // Update value and navigate immediately
+            if (onSearchChange) onSearchChange(v);
+            else setInternalQuery(v);
 
-              if (!loggedIn) {
-                router.push(`/stock/search?q=${encodeURIComponent(v)}`);
-                return;
-              }
+            if (!loggedIn) {
+              router.push(`/stock/search?q=${encodeURIComponent(v)}`);
+              return;
+            }
 
-              if (searchScope === 'stock') {
-                router.push(`/stock/search?q=${encodeURIComponent(v)}`);
-              } else {
-                router.push(`/drive?q=${encodeURIComponent(v)}`);
-              }
-            }}
-            onSubmit={submitSearch}
-          />
-        </div>
+            if (searchScope === 'stock') {
+              router.push(`/stock/search?q=${encodeURIComponent(v)}`);
+            } else {
+              router.push(`/drive?q=${encodeURIComponent(v)}`);
+            }
+          }}
+          onSubmit={submitSearch}
+        />
       )
     : null;
 
@@ -513,7 +513,7 @@ export function Topbar({
           </div>
 
           {/* Center (desktop) — always centered in the bar */}
-          <div className="pointer-events-none absolute left-1/2 top-1/2 hidden w-full -translate-x-1/2 -translate-y-1/2 items-center justify-center sm:flex sm:px-2 md:px-3">
+          <div className="pointer-events-none absolute inset-x-0 top-1/2 hidden w-full -translate-y-1/2 items-center justify-center sm:flex sm:px-2 md:px-3">
             <div className="pointer-events-auto w-full max-w-xl md:max-w-2xl">
               <div className="flex h-10 min-w-0 items-center">
                 {isBuiltInSearch ? (
@@ -577,66 +577,56 @@ export function Topbar({
                       variant="ghost"
                       size="sm"
                       className="h-8 px-2 text-xs"
-                      onClick={() => {
-                        // placeholder
-                      }}
+                      disabled
                     >
                       Mark all read
                     </Button>
                   </div>
                   <div className="h-px bg-border" />
 
-                  <div className="max-h-80 overflow-y-auto">
-                    <button
-                      type="button"
-                      className="w-full px-3 py-3 text-left hover:bg-muted/40"
-                      onClick={() => {
-                        // placeholder
-                      }}
+                  <div className="max-h-80 overflow-y-auto p-1">
+                    <DropdownMenuItem
+                      className="flex cursor-pointer flex-col items-start gap-0.5 rounded-md px-2 py-2"
+                      disabled
                     >
                       <div className="text-sm font-medium">New demo assets added</div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">
+                      <div className="text-xs text-muted-foreground">
                         We updated the stock demo set (s-014 → s-018).
                       </div>
-                    </button>
+                    </DropdownMenuItem>
 
-                    <button
-                      type="button"
-                      className="w-full px-3 py-3 text-left hover:bg-muted/40"
-                      onClick={() => {
-                        // placeholder
-                      }}
+                    <DropdownMenuItem
+                      className="flex cursor-pointer flex-col items-start gap-0.5 rounded-md px-2 py-2"
+                      disabled
                     >
                       <div className="text-sm font-medium">Search improvements</div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">
+                      <div className="text-xs text-muted-foreground">
                         Sticky menu is smoother and respects the left nav.
                       </div>
-                    </button>
+                    </DropdownMenuItem>
 
-                    <button
-                      type="button"
-                      className="w-full px-3 py-3 text-left hover:bg-muted/40"
-                      onClick={() => {
-                        // placeholder
-                      }}
+                    <DropdownMenuItem
+                      className="flex cursor-pointer flex-col items-start gap-0.5 rounded-md px-2 py-2"
+                      disabled
                     >
                       <div className="text-sm font-medium">Welcome back</div>
-                      <div className="mt-0.5 text-xs text-muted-foreground">
+                      <div className="text-xs text-muted-foreground">
                         Your personal dashboard is ready.
                       </div>
-                    </button>
+                    </DropdownMenuItem>
                   </div>
 
                   <div className="h-px bg-border" />
-                  <div className="p-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="w-full"
-                      onClick={() => router.push('/notifications')}
+                  <div className="p-1">
+                    <DropdownMenuItem
+                      className="rounded-md"
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        router.push('/notifications');
+                      }}
                     >
                       View all notifications
-                    </Button>
+                    </DropdownMenuItem>
                   </div>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -673,35 +663,84 @@ export function Topbar({
                     </Button>
                   </DropdownMenuTrigger>
 
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuLabel>Account</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onSelect={(e) => {
-                        e.preventDefault();
-                        onProfile?.();
-                      }}
-                    >
-                      Profile
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={(e) => {
-                        e.preventDefault();
-                        onSettings?.();
-                      }}
-                    >
-                      Settings
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      className="text-destructive"
-                      onSelect={(e) => {
-                        e.preventDefault();
-                        void handleLogout();
-                      }}
-                    >
-                      Log out
-                    </DropdownMenuItem>
+                  <DropdownMenuContent align="end" className="w-72 p-0">
+                    <div className="flex items-start gap-3 px-3 py-3">
+                      <Avatar className="h-9 w-9">
+                        {displayUser?.imageUrl ? (
+                          <AvatarImage src={displayUser.imageUrl} alt={displayUser?.name ?? 'User'} />
+                        ) : null}
+                        <AvatarFallback>{userInitials}</AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold">{displayUser?.name}</div>
+                        {displayUser?.email ? (
+                          <div className="truncate text-xs text-muted-foreground">{displayUser.email}</div>
+                        ) : displayUser?.org ? (
+                          <div className="truncate text-xs text-muted-foreground">{displayUser.org}</div>
+                        ) : null}
+                        {displayUser?.org ? (
+                          <div className="mt-1 inline-flex items-center rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground">
+                            {displayUser.org}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="h-px bg-border" />
+
+                    <div className="p-1">
+                      <DropdownMenuItem
+                        className="gap-2"
+                        disabled={!canOpenProfile}
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          if (onProfile) {
+                            onProfile();
+                            return;
+                          }
+                          router.push('/profile');
+                        }}
+                      >
+                        <UserIcon className="h-4 w-4" />
+                        View profile
+                      </DropdownMenuItem>
+
+                      <DropdownMenuItem className="gap-2 opacity-60" disabled>
+                        <CreditCard className="h-4 w-4" />
+                        Billing (coming soon)
+                      </DropdownMenuItem>
+
+                      <DropdownMenuItem
+                        className="gap-2"
+                        disabled={!canOpenSettings}
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          if (onSettings) {
+                            onSettings();
+                            return;
+                          }
+                          router.push('/settings');
+                        }}
+                      >
+                        <SettingsIcon className="h-4 w-4" />
+                        Settings
+                      </DropdownMenuItem>
+                    </div>
+
+                    <div className="h-px bg-border" />
+
+                    <div className="p-1">
+                      <DropdownMenuItem
+                        className="gap-2 font-medium text-destructive hover:bg-destructive/10 hover:text-destructive focus:bg-destructive/10 focus:text-destructive"
+                        onSelect={(e) => {
+                          e.preventDefault();
+                          void handleLogout();
+                        }}
+                      >
+                        <LogOut className="h-4 w-4" />
+                        Log out
+                      </DropdownMenuItem>
+                    </div>
                   </DropdownMenuContent>
                 </DropdownMenu>
               ) : null

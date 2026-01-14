@@ -10,6 +10,8 @@ import { Clock, Search, Sparkles, X } from 'lucide-react';
 import { STOCK_ASSETS as ASSETS, STOCK_FEATURED_IDS } from '@/lib/demo/stock-assets';
 import { useProtoAuth } from '@/lib/proto-auth';
 
+import ImageCard from '@/components/stock/ImageCard';
+
 type Asset = {
   id: string;
   title: string;
@@ -505,7 +507,7 @@ export default function StockPage() {
               <div>
                 <div className="inline-flex items-center gap-2 rounded-full bg-background/60 px-3 py-1 text-xs text-muted-foreground ring-1 ring-border/10 backdrop-blur">
                   <span className="h-1.5 w-1.5 rounded-full bg-foreground/60" />
-                  New: Colourbox Share
+                  New: Files
                 </div>
 
                 <h2 className="mt-4 text-xl font-semibold tracking-tight sm:text-2xl">
@@ -530,7 +532,7 @@ export default function StockPage() {
                 </div>
 
                 <div className="mt-6 inline-flex items-center gap-2 text-sm font-medium">
-                  Explore Share
+                  Explore Files
                   <span className="transition-transform group-hover:translate-x-0.5">→</span>
                 </div>
               </div>
@@ -555,7 +557,7 @@ export default function StockPage() {
                 </div>
 
                 <div className="border-t border-black/5 p-4 text-xs text-muted-foreground dark:border-white/10">
-                  Click to see the Share landing page
+                  Click to see the Files landing page
                 </div>
               </div>
             </div>
@@ -658,14 +660,17 @@ export default function StockPage() {
           {featured.map((a) => {
             const img = getImage(a, fallbackImage);
             return (
-              <AssetCard
+              <ImageCard
                 key={a.id}
-                asset={a}
+                asset={{
+                  id: a.id,
+                  title: a.title,
+                  preview: img,
+                  category: 'Featured',
+                }}
                 href={`/stock/assets/${a.id}`}
-                imageSrc={img}
-                variant="grid"
-                badge="Featured"
-                onAdd={() => addToCart(a)}
+                aspect="photo"
+                onAddToCart={() => addToCart(a)}
               />
             );
           })}
@@ -758,40 +763,18 @@ export default function StockPage() {
           {newest.map((a) => {
             const img = getImage(a, fallbackImage);
             return (
-              <Link
+              <ImageCard
                 key={a.id}
+                asset={{
+                  id: a.id,
+                  title: a.title,
+                  preview: img,
+                  category: 'New',
+                }}
                 href={`/stock/assets/${a.id}`}
-                className="group relative block overflow-hidden rounded-xl bg-muted/10 transition hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-foreground/20"
-              >
-                <AddToCartOverlayButton
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    addToCart(a);
-                  }}
-                />
-                <div className="relative aspect-[16/10] w-full overflow-hidden">
-                  <Image
-                    src={img}
-                    alt={a.title}
-                    fill
-                    sizes="(min-width: 1024px) 260px, (min-width: 768px) 33vw, 100vw"
-                    unoptimized={isLocalDemoImage(img)}
-                    className="object-cover transition-transform duration-300 group-hover:scale-105"
-                  />
-                </div>
-                <div className="p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="line-clamp-1 text-sm font-medium">{a.title}</div>
-                    <span className="shrink-0 rounded-md bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground">
-                      New
-                    </span>
-                  </div>
-                  <div className="mt-2 line-clamp-2 text-xs text-muted-foreground">
-                    {a.description ?? 'Ready to license and use across channels.'}
-                  </div>
-                </div>
-              </Link>
+                aspect="wide"
+                onAddToCart={() => addToCart(a)}
+              />
             );
           })}
         </div>

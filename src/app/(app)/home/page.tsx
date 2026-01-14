@@ -31,7 +31,7 @@ const newsItems = [
   {
     date: '2026-01-12',
     title: 'New Home & navigation',
-    description: 'A new Home experience plus a simplified left navigation to switch between Share and Stock.',
+    description: 'A new Home experience plus a simplified left navigation to switch between Files and Stock.',
     badge: 'UI',
   },
   {
@@ -46,7 +46,7 @@ const suggestions = [
   {
     key: 'organize',
     title: 'Organize uploads',
-    description: 'Keep “Campaign uploads” tidy with a folder + naming routine.',
+    description: 'Keep “Campaign uploads” tidy with folders + a naming routine.',
     href: '/drive',
     icon: Folder,
   },
@@ -60,7 +60,7 @@ const suggestions = [
 ];
 
 const quickActions = [
-  { label: 'Upload files', href: '/drive', hint: 'Start in Share', icon: UploadCloud },
+  { label: 'Upload files', href: '/drive', hint: 'Start in Files', icon: UploadCloud },
   { label: 'Find images', href: '/stock', hint: 'Search Stock', icon: Search },
 ];
 
@@ -218,7 +218,7 @@ export default function HomePage() {
   const isReturning = visitCount >= 2;
 
   const greetingLine = useMemo(() => {
-    if (!isReturning) return 'Let’s set up your flow — Share for uploads, Stock for visuals.';
+    if (!isReturning) return 'Let’s set up your flow — Files for uploads, Stock for visuals.';
     if (cartCount > 0) return `You’ve got ${cartCount} item${cartCount === 1 ? '' : 's'} waiting in your cart.`;
     if (recentSearches.length > 0) return `Pick up where you left off — your recent searches are ready.`;
     return 'Welcome back — here’s your quick way into today’s work.';
@@ -230,7 +230,7 @@ export default function HomePage() {
     const code = dailySeed.split('-').join('');
     const n = Number(code.slice(-2)) || 0;
     const pick = n % 3;
-    if (pick === 0) return 'Daily tip: Name folders by campaign + date to keep Share clean.';
+    if (pick === 0) return 'Daily tip: Name folders by campaign + date to keep Files clean.';
     if (pick === 1) return 'Daily tip: Save your best Stock search query as a habit.';
     return 'Daily tip: Add to cart as you browse — license when you’re ready.';
   }, [dailySeed]);
@@ -263,11 +263,11 @@ export default function HomePage() {
 
     return {
       icon: UploadCloud,
-      title: isReturning ? 'Today’s focus: Keep Share tidy' : 'Today’s focus: Start with Share',
+      title: isReturning ? 'Today’s focus: Keep Files tidy' : 'Today’s focus: Start with Files',
       description: 'Upload files, create a folder, and keep today’s work organized.',
       reason: isReturning ? 'Because you’re back today' : 'Because this is your first visit',
       steps: ['Upload files', 'Create a folder'],
-      primary: { label: 'Open Share', href: '/drive' },
+      primary: { label: 'Open Files', href: '/drive' },
       secondary: { label: 'Open Stock', href: '/stock' },
     };
   }, [cartCount, isReturning, recentSearches]);
@@ -376,7 +376,7 @@ export default function HomePage() {
                     onClick={() => router.push('/drive')}
                     className="group inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-sm font-medium text-background transition hover:bg-foreground/90 sm:w-auto"
                   >
-                    Open Share <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                    Open Files <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                   </button>
                   <button
                     onClick={() => router.push('/stock')}
@@ -473,14 +473,14 @@ export default function HomePage() {
           <div className="rounded-2xl bg-muted/10 p-5 sm:p-6 ring-1 ring-border/50">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h2 className="text-base font-semibold">Newest uploads in Drive</h2>
+                <h2 className="text-base font-semibold">Newest uploads in Files</h2>
                 <p className="mt-1 text-sm text-muted-foreground">A quick scroll of your latest files</p>
               </div>
               <button
                 onClick={() => router.push('/drive')}
                 className="inline-flex items-center gap-2 rounded-full bg-background/60 px-5 py-2.5 text-sm font-medium transition hover:bg-background/80"
               >
-                Open Drive <ArrowRight className="h-4 w-4" />
+                Open Files <ArrowRight className="h-4 w-4" />
               </button>
             </div>
 
@@ -507,7 +507,7 @@ export default function HomePage() {
                           <div className="truncate text-sm font-semibold sm:text-base">Upload {idx + 1}</div>
                           <span className="hidden sm:inline-flex rounded-full bg-muted/30 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">New</span>
                         </div>
-                        <div className="mt-1 truncate text-xs text-muted-foreground sm:mt-1.5 sm:text-sm">Drive • just now</div>
+                        <div className="mt-1 truncate text-xs text-muted-foreground sm:mt-1.5 sm:text-sm">Files • just now</div>
                       </div>
                     </button>
                   ))}
@@ -641,19 +641,19 @@ export default function HomePage() {
                   <Folder className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-base font-semibold leading-tight">Share</h2>
+                  <h2 className="text-base font-semibold leading-tight">Files</h2>
                   <p className="mt-0.5 text-xs text-muted-foreground">Your folders, uploads and shared links</p>
                 </div>
               </div>
 
               <div className="mt-3 flex items-center justify-between rounded-xl bg-background/40 px-3 py-2 ring-1 ring-border/30">
-                <div className="text-xs text-muted-foreground">Recent in Share</div>
+                  <div className="text-xs text-muted-foreground">Recent in Files</div>
                 <ThumbStack seed="get-started:share" count={4} />
               </div>
 
-              <p className="mt-3 text-sm text-muted-foreground">
-                Continue in Share — jump back to folders, uploads and team handoff.
-              </p>
+                <p className="mt-3 text-sm text-muted-foreground">
+                  Continue in Files — jump back to folders, uploads and team handoff.
+                </p>
 
               <div className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-foreground">
                 Continue <ArrowRight className="h-4 w-4" />
@@ -872,7 +872,7 @@ export default function HomePage() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-xs font-semibold">What’s new</h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">Updates and changes across Share and Stock.</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">Updates and changes across Files and Stock.</p>
               </div>
               <div className="flex items-center gap-3">
                 <button

@@ -70,7 +70,7 @@ export function SearchBar({
   onScopeChange,
   scopes = [
     { value: "stock", label: "Stock" },
-    { value: "drive", label: "Drive" },
+    { value: "drive", label: "Files" },
   ],
   className,
 }: SearchBarProps) {
@@ -346,7 +346,7 @@ export function SearchBar({
 
       if (isSlashKey) {
         e.preventDefault();
-        // Scope-aware shortcuts: / = Stock, ⇧/ = Drive
+        // Scope-aware shortcuts: / = Stock, ⇧/ = Files
         if (onScopeChange) {
           const target = e.shiftKey ? "drive" : "stock";
           setScope(target);
@@ -646,7 +646,7 @@ export function SearchBar({
                     <CommandGroup
                       heading={
                         <div className="flex items-center justify-between">
-                          <span>Recent {onScopeChange ? (scope === 'drive' ? 'Drive' : 'Stock') : ''} searches</span>
+                          <span>Recent {onScopeChange ? (scope === 'drive' ? 'Files' : 'Stock') : ''} searches</span>
                           <button
                             type="button"
                             onClick={clearRecents}

@@ -34,7 +34,7 @@ function applyTheme(mode: ThemeMode) {
 }
 
 export default function ThemeToggle() {
-  const [mode, setMode] = React.useState<ThemeMode>("system");
+  const [mode, setMode] = React.useState<ThemeMode>("dark");
 
   React.useEffect(() => {
     try {
@@ -43,12 +43,12 @@ export default function ThemeToggle() {
         setMode(saved);
         applyTheme(saved);
       } else {
-        setMode("system");
-        applyTheme("system");
+        setMode("dark");
+        applyTheme("dark");
       }
     } catch {
-      setMode("system");
-      applyTheme("system");
+      setMode("dark");
+      applyTheme("dark");
     }
 
     const mql = window.matchMedia?.("(prefers-color-scheme: dark)");

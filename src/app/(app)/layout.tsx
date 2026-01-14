@@ -22,7 +22,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  // Never show Share landing to logged-in users (avoid routing during render)
+  // Never show Files landing to logged-in users (avoid routing during render)
   useEffect(() => {
     if (!isReady || !pathname) return;
     if (isLoggedIn && pathname === '/drive/landing') {
@@ -52,7 +52,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     if (!pathname) return 'CBX';
     if (pathname.startsWith('/home')) return 'Home';
     if (pathname.startsWith('/stock')) return 'Stock';
-    if (pathname.startsWith('/drive')) return 'Drive';
+    if (pathname.startsWith('/drive')) return 'Files';
     return 'CBX';
   }, [pathname]);
 
@@ -60,6 +60,21 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     <CartProvider>
       <CartUIProvider>
         <div className="min-h-screen bg-background text-foreground" style={shellStyle}>
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `(() => {
+  try {
+    const stored = localStorage.getItem('theme');
+    const theme = stored || 'dark';
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else if (theme === 'light') {
+      document.documentElement.classList.remove('dark');
+    }
+  } catch {}
+})();`,
+            }}
+          />
           <CartDrawerMount />
 
           <div className="md:flex md:min-h-screen">
