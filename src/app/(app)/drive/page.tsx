@@ -23,6 +23,12 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ImageGrid } from "../../../components/drive/image-grid";
 import { demoAssets } from "@/lib/demo/assets";
 import { FolderSidebar, demoFolders } from "../../../components/FolderSidebar";
@@ -663,11 +669,27 @@ function DrivePageInner() {
     return { selectedLinks: links, previewSrcs: previews };
   }, [selectedIdList, allById]);
 
+  const isFavoritesView = selectedFolder === "favorites";
+  const isTrashView = selectedFolder === "trash";
   const crumbNodes = useMemo(() => {
     return folderPathIndex.get(selectedFolder) ?? [];
   }, [selectedFolder, folderPathIndex]);
-  const isFavoritesView = selectedFolder === "favorites";
-  const isTrashView = selectedFolder === "trash";
+  const breadcrumbNodes = useMemo<FolderNode[]>(() => {
+    // For real folders: show first + … + last two when deep.
+    if (isFavoritesView || isTrashView) return [];
+    if (crumbNodes.length <= 3) return crumbNodes;
+
+    const first = crumbNodes[0];
+    const lastTwo = crumbNodes.slice(-2);
+    const ellipsis = { id: "__ellipsis__", name: "…" } as FolderNode;
+    return [first, ellipsis, ...lastTwo];
+  }, [crumbNodes, isFavoritesView, isTrashView]);
+  const hiddenBreadcrumbNodes = useMemo<FolderNode[]>(() => {
+    if (isFavoritesView || isTrashView) return [];
+    if (crumbNodes.length <= 3) return [];
+    // Hidden = everything between first and last two
+    return crumbNodes.slice(1, -2);
+  }, [crumbNodes, isFavoritesView, isTrashView]);
   const isFolderView =
     selectedFolder !== "all" && selectedFolder !== "favorites" && selectedFolder !== "trash";
   const isRealFolder = useMemo(() => {
@@ -1010,69 +1032,101 @@ function DrivePageInner() {
                         : "All files"}
                 </h1>
                 {selectedFolder !== "all" ? (
-                  <div className="mt-1">
-                    <Breadcrumb>
-                      <BreadcrumbList className="flex-nowrap overflow-x-auto text-xs text-muted-foreground">
-                      <BreadcrumbItem>
-                        {selectedFolder === "all" ? (
-                          <BreadcrumbPage>All files</BreadcrumbPage>
-                        ) : (
-                          <BreadcrumbLink asChild>
-                            <button
-                              type="button"
-                              onClick={() => navigateToFolder("all")}
-                              className="text-left"
-                            >
-                              All files
-                            </button>
-                          </BreadcrumbLink>
-                        )}
-                      </BreadcrumbItem>
-
-                      {isFavoritesView && (
-                        <span className="flex items-center">
-                          <BreadcrumbSeparator />
+                  <div className="mt-1 relative max-w-[80%]">
+                    <div className="overflow-hidden">
+                      <Breadcrumb>
+                        <BreadcrumbList className="flex-nowrap whitespace-nowrap overflow-hidden text-xs text-muted-foreground">
                           <BreadcrumbItem>
-                            <BreadcrumbPage>Favorites</BreadcrumbPage>
+                            {selectedFolder === "all" ? (
+                              <BreadcrumbPage>All files</BreadcrumbPage>
+                            ) : (
+                              <BreadcrumbLink asChild>
+                                <button
+                                  type="button"
+                                  onClick={() => navigateToFolder("all")}
+                                  className="text-left"
+                                >
+                                  All files
+                                </button>
+                              </BreadcrumbLink>
+                            )}
                           </BreadcrumbItem>
-                        </span>
-                      )}
-                      {isTrashView && (
-                        <span className="flex items-center">
-                          <BreadcrumbSeparator />
-                          <BreadcrumbItem>
-                            <BreadcrumbPage>Trash</BreadcrumbPage>
-                          </BreadcrumbItem>
-                        </span>
-                      )}
 
-                      {!isFavoritesView &&
-                        !isTrashView &&
-                        crumbNodes.map((n, idx) => {
-                          const isLast = idx === crumbNodes.length - 1;
-                          return (
-                            <span key={n.id} className="flex items-center">
+                          {isFavoritesView && (
+                            <span className="flex items-center">
                               <BreadcrumbSeparator />
                               <BreadcrumbItem>
-                                {isLast ? (
-                                  <BreadcrumbPage>{n.name}</BreadcrumbPage>
-                                ) : (
-                                  <BreadcrumbLink asChild>
-                                    <button
-                                      type="button"
-                                      onClick={() => navigateToFolder(n.id)}
-                                      className="text-left"
-                                    >
-                                      {n.name}
-                                    </button>
-                                  </BreadcrumbLink>
-                                )}
+                                <BreadcrumbPage>Favorites</BreadcrumbPage>
                               </BreadcrumbItem>
                             </span>
-                          );
-                        })}
-                      </BreadcrumbList>
-                    </Breadcrumb>
+                          )}
+                          {isTrashView && (
+                            <span className="flex items-center">
+                              <BreadcrumbSeparator />
+                              <BreadcrumbItem>
+                                <BreadcrumbPage>Trash</BreadcrumbPage>
+                              </BreadcrumbItem>
+                            </span>
+                          )}
+
+                          {!isFavoritesView &&
+                            !isTrashView &&
+                            breadcrumbNodes.map((n, idx) => {
+                              const isEllipsis = n.id === "__ellipsis__";
+                              const isLast = idx === breadcrumbNodes.length - 1;
+                              return (
+                                <span key={`${n.id}-${idx}`} className="flex items-center">
+                                  <BreadcrumbSeparator />
+                                  <BreadcrumbItem>
+                                    {isEllipsis ? (
+                                      <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                          <button
+                                            type="button"
+                                            className="rounded px-1 text-xs text-muted-foreground hover:text-foreground"
+                                            aria-label="Show full path"
+                                          >
+                                            …
+                                          </button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="start" className="min-w-[220px]">
+                                          {hiddenBreadcrumbNodes.length ? (
+                                            hiddenBreadcrumbNodes.map((hn) => (
+                                              <DropdownMenuItem
+                                                key={hn.id}
+                                                onSelect={() => navigateToFolder(hn.id)}
+                                              >
+                                                {hn.name}
+                                              </DropdownMenuItem>
+                                            ))
+                                          ) : (
+                                            <DropdownMenuItem disabled>No more folders</DropdownMenuItem>
+                                          )}
+                                        </DropdownMenuContent>
+                                      </DropdownMenu>
+                                    ) : isLast ? (
+                                      <BreadcrumbPage>{n.name}</BreadcrumbPage>
+                                    ) : (
+                                      <BreadcrumbLink asChild>
+                                        <button
+                                          type="button"
+                                          onClick={() => navigateToFolder(n.id)}
+                                          className="text-left"
+                                        >
+                                          {n.name}
+                                        </button>
+                                      </BreadcrumbLink>
+                                    )}
+                                  </BreadcrumbItem>
+                                </span>
+                              );
+                            })}
+                        </BreadcrumbList>
+                      </Breadcrumb>
+                    </div>
+
+                    {/* Right-side fade (indicates overflow) */}
+                    <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-background to-transparent" />
                   </div>
                 ) : null}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
