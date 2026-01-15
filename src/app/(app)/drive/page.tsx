@@ -65,6 +65,131 @@ type FolderNode = {
   children?: FolderNode[];
 };
 
+// --- Extracted types for derived folder/asset data ---
+type FolderAsset = { id: number; title: string; src: string };
+
+type DriveFolderDataArgs = {
+  allImages: (typeof baseDemoImages)[number][];
+  selectedFolder: string;
+  assetFolderOverrides: Record<number, string>;
+  favoriteAssetIds: Set<number>;
+  folderCovers: Record<string, number>;
+  allById: Map<number, (typeof baseDemoImages)[number]>;
+  folderIndex: Map<string, FolderNode>;
+  isRealFolderView: boolean;
+};
+
+type DriveFolderData = {
+  coverAssetId: number | undefined;
+  folderCounts: Record<string, number>;
+  assetsByFolder: Record<string, FolderAsset[]>;
+  folderAssets: FolderAsset[];
+  subfolders: FolderNode[];
+  subfolderItems: { id: string; name: string; coverSrc?: string; count: number }[];
+  trashCount: number;
+  showTrashEmptyState: boolean;
+};
+// --- Local hook for derived folder/asset data ---
+function useDriveFolderData(args: DriveFolderDataArgs & { isTrashView: boolean; query: string }): DriveFolderData {
+  const {
+    allImages,
+    selectedFolder,
+    assetFolderOverrides,
+    favoriteAssetIds,
+    folderCovers,
+    allById,
+    folderIndex,
+    isRealFolderView,
+    isTrashView,
+    query,
+  } = args;
+
+  const coverAssetId = isRealFolderView ? folderCovers[selectedFolder] : undefined;
+
+  const { folderCounts, assetsByFolder } = useMemo(() => {
+    const counts: Record<string, number> = {};
+    const map: Record<string, FolderAsset[]> = {};
+
+    // Ensure smart folders exist even when empty
+    counts["favorites"] = 0;
+    counts["trash"] = 0;
+    counts["all"] = 0;
+    map["favorites"] = [];
+    map["trash"] = [];
+    map["all"] = [];
+
+    for (const img of allImages) {
+      const fid = assetFolderOverrides[img.id] ?? img.folderId ?? "all";
+
+      // Physical folder
+      counts[fid] = (counts[fid] ?? 0) + 1;
+      (map[fid] ??= []).push({ id: img.id, title: img.title, src: img.src });
+
+      // "All" includes everything except trash
+      if (fid !== "trash") {
+        counts["all"] += 1;
+        map["all"].push({ id: img.id, title: img.title, src: img.src });
+      }
+
+      // Favorites is a smart folder (exclude trash)
+      if (fid !== "trash" && favoriteAssetIds.has(img.id)) {
+        counts["favorites"] += 1;
+        map["favorites"].push({ id: img.id, title: img.title, src: img.src });
+      }
+    }
+
+    // Ensure cover asset is first when viewing a folder (visual priority)
+    if (isRealFolderView && typeof coverAssetId === "number") {
+      const arr = map[selectedFolder];
+      if (Array.isArray(arr) && arr.length > 1) {
+        const idx = arr.findIndex((a) => a.id === coverAssetId);
+        if (idx > 0) {
+          const next = arr.slice();
+          const [cover] = next.splice(idx, 1);
+          next.unshift(cover);
+          map[selectedFolder] = next;
+        }
+      }
+    }
+
+    return { folderCounts: counts, assetsByFolder: map };
+  }, [allImages, assetFolderOverrides, favoriteAssetIds, isRealFolderView, coverAssetId, selectedFolder]);
+
+  const folderAssets = useMemo(() => {
+    // Smart folders
+    if (selectedFolder === "favorites") return assetsByFolder["favorites"] ?? [];
+    if (selectedFolder === "trash") return assetsByFolder["trash"] ?? [];
+    if (selectedFolder === "all") return assetsByFolder["all"] ?? [];
+
+    // Real folders only
+    if (!isRealFolderView) return [];
+    return assetsByFolder[selectedFolder] ?? [];
+  }, [assetsByFolder, isRealFolderView, selectedFolder]);
+
+  const subfolders = useMemo<FolderNode[]>(() => {
+    if (!isRealFolderView) return [];
+    return folderIndex.get(selectedFolder)?.children ?? [];
+  }, [isRealFolderView, selectedFolder, folderIndex]);
+
+  const subfolderItems = useMemo(() => {
+    return subfolders.map((sf) => {
+      const coverId = folderCovers[sf.id];
+      const coverSrc = typeof coverId === "number" ? allById.get(coverId)?.src : undefined;
+      return {
+        id: sf.id,
+        name: sf.name ?? "Folder",
+        coverSrc,
+        count: folderCounts[sf.id] ?? 0,
+      };
+    });
+  }, [subfolders, folderCovers, folderCounts, allById]);
+
+  const trashCount = folderCounts["trash"] ?? 0;
+  const showTrashEmptyState = isTrashView && query.trim() === "" && trashCount === 0;
+
+  return { coverAssetId, folderCounts, assetsByFolder, folderAssets, subfolders, subfolderItems, trashCount, showTrashEmptyState };
+}
+
 const LS_KEYS = {
   filters: "CBX_ASSET_FILTERS_V1",
   oldColors: "CBX_COLOR_FILTER_V1",
@@ -98,6 +223,18 @@ export default function Page() {
 
 function DrivePageInner() {
   const [mounted, setMounted] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  useEffect(() => {
+    if (!mounted) return;
+
+    const onScroll = () => {
+      setIsScrolled(window.scrollY > 4);
+    };
+
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [mounted]);
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -674,6 +811,12 @@ function DrivePageInner() {
   const crumbNodes = useMemo(() => {
     return folderPathIndex.get(selectedFolder) ?? [];
   }, [selectedFolder, folderPathIndex]);
+  const fullBreadcrumbLabel = useMemo(() => {
+    if (isFavoritesView) return "All files / Favorites";
+    if (isTrashView) return "All files / Trash";
+    if (!crumbNodes.length) return "All files";
+    return ["All files", ...crumbNodes.map((n) => n.name ?? "")].filter(Boolean).join(" / ");
+  }, [crumbNodes, isFavoritesView, isTrashView]);
   const breadcrumbNodes = useMemo<FolderNode[]>(() => {
     // For real folders: show first + … + last two when deep.
     if (isFavoritesView || isTrashView) return [];
@@ -701,96 +844,27 @@ function DrivePageInner() {
     ? crumbNodes[crumbNodes.length - 1]?.name ?? "Folder"
     : "";
 
-  const coverAssetId = isRealFolderView ? folderCovers[selectedFolder] : undefined;
 
-  const { folderCounts, assetsByFolder } = useMemo(() => {
-    const counts: Record<string, number> = {};
-    const map: Record<string, { id: number; title: string; src: string }[]> = {};
-
-    // Ensure smart folders exist even when empty
-    counts["favorites"] = 0;
-    counts["trash"] = 0;
-    counts["all"] = 0;
-    map["favorites"] = [];
-    map["trash"] = [];
-    map["all"] = [];
-
-    for (const img of allImages) {
-      const fid = assetFolderOverrides[img.id] ?? img.folderId ?? "all";
-
-      // Physical folder
-      counts[fid] = (counts[fid] ?? 0) + 1;
-      (map[fid] ??= []).push({ id: img.id, title: img.title, src: img.src });
-
-      // "All" includes everything except trash
-      if (fid !== "trash") {
-        counts["all"] += 1;
-        map["all"].push({ id: img.id, title: img.title, src: img.src });
-      }
-
-      // Favorites is a smart folder (also exclude trash)
-      if (fid !== "trash" && favoriteAssetIds.has(img.id)) {
-        counts["favorites"] += 1;
-        map["favorites"].push({ id: img.id, title: img.title, src: img.src });
-      }
-    }
-
-    // Ensure cover asset is first when viewing a folder (visual priority)
-    if (isRealFolderView && typeof coverAssetId === "number") {
-      const arr = map[selectedFolder];
-      if (Array.isArray(arr) && arr.length > 1) {
-        const idx = arr.findIndex((a) => a.id === coverAssetId);
-        if (idx > 0) {
-          const next = arr.slice();
-          const [cover] = next.splice(idx, 1);
-          next.unshift(cover);
-          map[selectedFolder] = next;
-        }
-      }
-    }
-
-    return { folderCounts: counts, assetsByFolder: map };
-  }, [assetFolderOverrides, allImages, favoriteAssetIds, isRealFolderView, coverAssetId, selectedFolder]);
-
-  const folderAssets = useMemo(() => {
-    // Smart folders
-    if (selectedFolder === "favorites") return assetsByFolder["favorites"] ?? [];
-    if (selectedFolder === "trash") return assetsByFolder["trash"] ?? [];
-    if (selectedFolder === "all") return assetsByFolder["all"] ?? [];
-
-    // Real folders only
-    if (!isRealFolderView) return [];
-    return assetsByFolder[selectedFolder] ?? [];
-  }, [isRealFolderView, selectedFolder, assetsByFolder]);
-
-  const subfolders = useMemo<FolderNode[]>(() => {
-    if (!isRealFolderView) return [];
-    return folderIndex.get(selectedFolder)?.children ?? [];
-  }, [isRealFolderView, selectedFolder, folderIndex]);
-
-  const subfolderItems = useMemo(() => {
-    return subfolders.map((sf) => {
-      const coverId = folderCovers[sf.id];
-      const coverSrc =
-        typeof coverId === "number"
-          ? allById.get(coverId)?.src
-          : undefined;
-      return {
-        id: sf.id,
-        name: sf.name ?? "Folder",
-        coverSrc,
-        count: folderCounts[sf.id] ?? 0,
-      };
-    });
-  }, [subfolders, folderCovers, folderCounts, allById]);
-
-  // (folderAssetsOrdered removed: now handled in assetsByFolder)
-
-  const trashCount = useMemo(() => {
-    return folderCounts["trash"] ?? 0;
-  }, [folderCounts]);
-
-  const showTrashEmptyState = isTrashView && query.trim() === "" && trashCount === 0;
+  const {
+    coverAssetId,
+    folderCounts,
+    folderAssets,
+    subfolders,
+    subfolderItems,
+    trashCount,
+    showTrashEmptyState,
+  } = useDriveFolderData({
+    allImages,
+    selectedFolder,
+    assetFolderOverrides,
+    favoriteAssetIds,
+    folderCovers,
+    allById,
+    folderIndex,
+    isRealFolderView,
+    isTrashView,
+    query,
+  });
 
   if (!isReady) return null;
   if (!isLoggedIn) return null;
@@ -880,7 +954,14 @@ function DrivePageInner() {
         </Sheet>
 
         <div className="flex-1 flex flex-col">
-          <header className="sticky top-14 z-20 border-b bg-background/70 px-4 lg:px-6 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <header
+            className={
+              "sticky top-14 z-20 px-4 lg:px-6 py-2 transition-shadow transition-colors " +
+              (isScrolled
+                ? "border-b bg-background/90 shadow-sm supports-[backdrop-filter]:bg-background/80"
+                : "bg-background/70 supports-[backdrop-filter]:bg-background/60")
+            }
+          >
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
                 <Button
@@ -937,11 +1018,11 @@ function DrivePageInner() {
 
               {/* Row 2: Controls */}
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                {/* Left: Filters */}
-                <div className="flex items-center gap-2">
+                {/* Left: Primary actions (Filters + Sort) */}
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="default"
                     className="h-10 transition-transform duration-150 active:scale-[0.98]"
                     onClick={openFilters}
                   >
@@ -952,10 +1033,7 @@ function DrivePageInner() {
                       </Badge>
                     ) : null}
                   </Button>
-                </div>
 
-                {/* Right: Sort + View */}
-                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                   <Select
                     value={assetSort}
                     onValueChange={(v) => {
@@ -974,52 +1052,59 @@ function DrivePageInner() {
                       <SelectItem value="color_desc">Color (Hue rev)</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
 
-                  <div className="flex items-center gap-2">
-                    {assetView === "grid" ? (
-                      <div className="hidden sm:flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">Size</span>
-                        <div className="w-32">
-                          <Slider
-                            value={[thumbSize]}
-                            min={140}
-                            max={520}
-                            step={10}
-                            onValueChange={(v) => setThumbSize(v[0] ?? 220)}
-                          />
-                        </div>
+                {/* Right: View + Size */}
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  {assetView === "grid" ? (
+                    <div className="hidden sm:flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">Size</span>
+                      <div className="w-32">
+                        <Slider
+                          value={[thumbSize]}
+                          min={140}
+                          max={520}
+                          step={10}
+                          onValueChange={(v) => setThumbSize(v[0] ?? 220)}
+                        />
                       </div>
-                    ) : null}
-
-                    <div className="flex h-10 shrink-0 items-stretch overflow-hidden rounded-md border border-border">
-                      <Button
-                        type="button"
-                        variant={assetView === "grid" ? "secondary" : "ghost"}
-                        size="icon"
-                        className="h-10 w-10 rounded-none"
-                        aria-label="Grid view"
-                        onClick={() => setAssetView("grid")}
-                      >
-                        <LayoutGrid className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        type="button"
-                        variant={assetView === "list" ? "secondary" : "ghost"}
-                        size="icon"
-                        className="h-10 w-10 rounded-none"
-                        aria-label="List view"
-                        onClick={() => setAssetView("list")}
-                      >
-                        <List className="h-4 w-4" />
-                      </Button>
                     </div>
+                  ) : null}
+
+                  <div className="flex h-10 shrink-0 items-stretch overflow-hidden rounded-md border border-border">
+                    <Button
+                      type="button"
+                      variant={assetView === "grid" ? "secondary" : "ghost"}
+                      size="icon"
+                      className="h-10 w-10 rounded-none"
+                      aria-label="Grid view"
+                      onClick={() => setAssetView("grid")}
+                    >
+                      <LayoutGrid className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={assetView === "list" ? "secondary" : "ghost"}
+                      size="icon"
+                      className="h-10 w-10 rounded-none"
+                      aria-label="List view"
+                      onClick={() => setAssetView("list")}
+                    >
+                      <List className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
               </div>
             </div>
           </header>
 
-          <div key={selectedFolder} className="flex-1 px-4 lg:px-6 py-4">
+          <div
+            key={selectedFolder}
+            className={
+              "flex-1 px-4 lg:px-6 py-4 " +
+              (selectedIds.size > 0 ? "selection-active" : "")
+            }
+          >
             <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <h1 className="text-2xl font-semibold">
@@ -1032,7 +1117,7 @@ function DrivePageInner() {
                         : "All files"}
                 </h1>
                 {selectedFolder !== "all" ? (
-                  <div className="mt-1 relative max-w-[80%]">
+                  <div className="mt-1 relative max-w-[80%]" title={fullBreadcrumbLabel} aria-label={fullBreadcrumbLabel}>
                     <div className="overflow-hidden">
                       <Breadcrumb>
                         <BreadcrumbList className="flex-nowrap whitespace-nowrap overflow-hidden text-xs text-muted-foreground">
