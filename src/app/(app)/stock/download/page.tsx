@@ -305,7 +305,7 @@ useEffect(() => {
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button asChild>
-                  <Link href="/drive">Open Files</Link>
+                  <Link href="/drive?selectedId=purchases">Open Files</Link>
                 </Button>
                 <Button asChild variant="secondary">
                   <Link href="/stock">Browse Stock</Link>
@@ -349,7 +349,7 @@ useEffect(() => {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button asChild size="sm">
-                      <Link href="/drive">Open Files</Link>
+                      <Link href="/drive?selectedId=purchases">Open Files</Link>
                     </Button>
                   </div>
                 </div>
@@ -436,7 +436,7 @@ useEffect(() => {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button asChild size="sm">
-                      <Link href="/drive">Open Files</Link>
+                      <Link href="/drive?selectedId=purchases">Open Files</Link>
                     </Button>
                   </div>
                 </div>
@@ -468,7 +468,7 @@ useEffect(() => {
 
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                 <Button asChild>
-                  <Link href="/drive">Open Files</Link>
+                  <Link href="/drive?selectedId=purchases">Open Files</Link>
                 </Button>
                 <Button asChild variant="secondary">
                   <Link href="/stock">Browse Stock</Link>
@@ -583,7 +583,7 @@ useEffect(() => {
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <Button asChild>
-                <Link href="/drive">Open Files</Link>
+                <Link href="/drive?selectedId=purchases">Open Files</Link>
               </Button>
               <Button asChild variant="secondary">
                 <Link href="/stock">Browse Stock</Link>

@@ -14,6 +14,7 @@ import {
   Star,
   Trash2,
   X,
+  Receipt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -197,7 +198,12 @@ function isSmartFolderId(id?: string) {
   return Boolean(id && id.startsWith("smart:"));
 }
 
-
+const SYSTEM_VIEWS = new Set<string>([
+  "all",
+  "favorites",
+  "purchases",
+  "trash",
+]);
 
 function buildFolderIndex(nodes: FolderNode[]) {
   const map = new Map<string, FolderNode>();
@@ -306,6 +312,14 @@ function CommandPalette({
           <CommandItem value="Favorites" onSelect={() => run("favorites")}>
             Favorites
           </CommandItem>
+          <CommandItem value="Purchases" onSelect={() => run("purchases")}>
+            <div className="flex w-full items-center justify-between gap-2">
+              <span>Purchases</span>
+              <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                Stock
+              </span>
+            </div>
+          </CommandItem>
           <CommandItem value="Trash" onSelect={() => run("trash")}>
             Trash
           </CommandItem>
@@ -379,8 +393,6 @@ export function FolderSidebar({
   // Avoid SSR hydration mismatch: start empty and hydrate from localStorage after mount
   const [favoriteIds, setFavoriteIds] = React.useState<Set<string>>(() => new Set());
   const [favoritesReady, setFavoritesReady] = React.useState(false);
-
-
   React.useEffect(() => {
     try {
       const raw = window.localStorage.getItem(LS_KEYS.favorites);
@@ -500,7 +512,6 @@ export function FolderSidebar({
     setSmartFolderDefs((prev) => prev.filter((s) => s.id !== id));
     if (selectedId === id) onSelectAction?.("all");
   };
-
 
   // Collapsible sections (persisted)
   const [sectionsOpen, setSectionsOpen] = React.useState<{
@@ -634,9 +645,7 @@ export function FolderSidebar({
 
   const isRealFolder =
     selectedId &&
-    selectedId !== "all" &&
-    selectedId !== "favorites" &&
-    selectedId !== "trash" &&
+    !SYSTEM_VIEWS.has(selectedId) &&
     !isSmartFolderId(selectedId);
 
   const addChildFolder = (
@@ -919,6 +928,7 @@ export function FolderSidebar({
           type="button"
           onClick={() => onSelectAction?.("all")}
           className={cn(navRowBase, selectedId === "all" && navRowActive)}
+          aria-current={selectedId === "all" ? "page" : undefined}
         >
           <Folder className="h-4 w-4 text-muted-foreground" />
           <span className="truncate">All files</span>
@@ -928,14 +938,25 @@ export function FolderSidebar({
           type="button"
           onClick={() => onSelectAction?.("favorites")}
           className={cn(navRowBase, selectedId === "favorites" && navRowActive)}
+          aria-current={selectedId === "favorites" ? "page" : undefined}
         >
           <Heart className="h-4 w-4 text-muted-foreground" />
           <span className="truncate">Favorites</span>
         </button>
         <button
           type="button"
+          onClick={() => onSelectAction?.("purchases")}
+          className={cn(navRowBase, selectedId === "purchases" && navRowActive)}
+          aria-current={selectedId === "purchases" ? "page" : undefined}
+        >
+          <Receipt className="h-4 w-4 text-muted-foreground" />
+          <span className="truncate">Purchases</span>
+        </button>
+        <button
+          type="button"
           onClick={() => onSelectAction?.("trash")}
           className={cn(navRowBase, selectedId === "trash" && navRowActive)}
+          aria-current={selectedId === "trash" ? "page" : undefined}
         >
           <Trash2 className="h-4 w-4 text-muted-foreground" />
           <span className="truncate">Trash</span>
@@ -1492,9 +1513,7 @@ export function getFolderPathById(
 ): FolderNode[] {
   if (
     !targetId ||
-    targetId === "all" ||
-    targetId === "favorites" ||
-    targetId === "trash" ||
+    SYSTEM_VIEWS.has(targetId) ||
     targetId.startsWith("smart:")
   )
     return [];

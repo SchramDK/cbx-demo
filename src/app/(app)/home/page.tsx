@@ -16,6 +16,7 @@ import {
   Folder,
   Images,
   CheckCircle2,
+  Receipt,
 } from 'lucide-react';
 
 import NextImage from 'next/image';
@@ -57,11 +58,19 @@ const suggestions = [
     href: '/stock',
     icon: Images,
   },
+  {
+    key: 'purchases',
+    title: 'Review purchases',
+    description: 'Access your licensed Stock images — separate from Drive downloads.',
+    href: '/drive?selectedId=purchases',
+    icon: Receipt,
+  },
 ];
 
 const quickActions = [
   { label: 'Upload files', href: '/drive', hint: 'Start in Files', icon: UploadCloud },
   { label: 'Find images', href: '/stock', hint: 'Search Stock', icon: Search },
+  { label: 'Open purchases', href: '/drive?selectedId=purchases', hint: 'Stock licenses', icon: Receipt },
 ];
 
 export default function HomePage() {
@@ -647,13 +656,13 @@ export default function HomePage() {
               </div>
 
               <div className="mt-3 flex items-center justify-between rounded-xl bg-background/40 px-3 py-2 ring-1 ring-border/30">
-                  <div className="text-xs text-muted-foreground">Recent in Files</div>
+                <div className="text-xs text-muted-foreground">Recent in Files</div>
                 <ThumbStack seed="get-started:share" count={4} />
               </div>
 
-                <p className="mt-3 text-sm text-muted-foreground">
-                  Continue in Files — jump back to folders, uploads and team handoff.
-                </p>
+              <p className="mt-3 text-sm text-muted-foreground">
+                Continue in Files — jump back to folders, uploads and team handoff.
+              </p>
 
               <div className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-foreground">
                 Continue <ArrowRight className="h-4 w-4" />
