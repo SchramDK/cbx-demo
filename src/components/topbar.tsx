@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { SearchBar } from "@/components/SearchBar";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { CartButton } from "@/components/cart-button";
@@ -222,6 +222,14 @@ export function Topbar({
 }: TopbarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const urlQ = (
+    searchParams.get("q") ??
+    searchParams.get("query") ??
+    searchParams.get("search") ??
+    ""
+  ).trim();
   const { open: openCart } = useCartUI();
   const { count: liveCartCount } = useCart();
 
@@ -243,6 +251,7 @@ export function Topbar({
 
   const derivedActiveProduct: 'drive' | 'stock' =
     activeProduct ?? (pathname?.startsWith('/stock') ? 'stock' : 'drive');
+  const [searchScope, setSearchScope] = React.useState<'drive' | 'stock'>(derivedActiveProduct);
 
   const displayUser = (resolvedUser ?? { name: "Account" }) as {
     name: string;
@@ -255,12 +264,112 @@ export function Topbar({
   const userInitials = React.useMemo(() => initials(displayUser?.name ?? ""), [displayUser?.name]);
 
   const [internalQuery, setInternalQuery] = React.useState(initialSearchQuery ?? "");
+  const liveSyncTimerRef = React.useRef<number | null>(null);
   React.useEffect(() => {
     // Keep internal query in sync if the prop changes (only when uncontrolled)
     if (onSearchChange) return;
     setInternalQuery(initialSearchQuery ?? "");
   }, [initialSearchQuery, onSearchChange]);
-  const [searchScope, setSearchScope] = React.useState<'drive' | 'stock'>(derivedActiveProduct);
+
+  React.useEffect(() => {
+    // On Drive: keep the Topbar input in sync with URL `q` (e.g. back/forward, folder -> search)
+    if (!mounted) return;
+    if (!loggedIn) return;
+    if (!(pathname ?? "").startsWith("/drive")) return;
+
+    const next = urlQ;
+
+    if (onSearchChange) {
+      // Controlled input: inform parent
+      if ((searchValue ?? "").trim() !== next) onSearchChange(next);
+    } else {
+      // Uncontrolled: update internal state
+      setInternalQuery((prev) => (prev.trim() === next ? prev : next));
+    }
+  }, [mounted, loggedIn, pathname, urlQ, onSearchChange, searchValue]);
+
+  React.useEffect(() => {
+    if (!mounted) return;
+
+    const onSync = (e: Event) => {
+      const ce = e as CustomEvent<string>;
+      const next = (typeof ce.detail === "string" ? ce.detail : "").trim();
+
+      if (onSearchChange) {
+        if ((searchValue ?? "").trim() !== next) onSearchChange(next);
+      } else {
+        setInternalQuery((prev) => (prev.trim() === next ? prev : next));
+      }
+
+      // If we're in Drive, keep scope aligned
+      if ((pathname ?? "").startsWith("/drive")) {
+        setSearchScope("drive");
+      }
+    };
+
+    window.addEventListener("CBX_SEARCH_SYNC", onSync as EventListener);
+    return () => window.removeEventListener("CBX_SEARCH_SYNC", onSync as EventListener);
+  }, [mounted, onSearchChange, searchValue, pathname]);
+
+  React.useEffect(() => {
+    if (!mounted) return;
+    if (!loggedIn) return;
+    if (!(pathname ?? "").startsWith("/drive")) return;
+    if (searchScope !== "drive") return;
+
+    const q = (onSearchChange ? (searchValue ?? "") : internalQuery).trim();
+
+    const hasFolder = Boolean(searchParams.get("folder"));
+    const hasLegacy = Boolean(searchParams.get("query") || searchParams.get("search"));
+
+    if (q === urlQ) {
+      if (!(q && (hasFolder || hasLegacy))) return;
+    }
+
+    if (liveSyncTimerRef.current) {
+      window.clearTimeout(liveSyncTimerRef.current);
+      liveSyncTimerRef.current = null;
+    }
+
+    liveSyncTimerRef.current = window.setTimeout(() => {
+      try {
+        const params = new URLSearchParams(Array.from(searchParams.entries()));
+
+        if (q) {
+          params.set("q", q);
+          params.delete("folder");
+        } else {
+          params.delete("q");
+        }
+
+        params.delete("query");
+        params.delete("search");
+
+        const next = params.toString();
+        router.replace(`/drive${next ? `?${next}` : ""}`);
+      } catch {
+        router.replace(q ? `/drive?q=${encodeURIComponent(q)}` : "/drive");
+      }
+    }, 250);
+
+    return () => {
+      if (liveSyncTimerRef.current) {
+        window.clearTimeout(liveSyncTimerRef.current);
+        liveSyncTimerRef.current = null;
+      }
+    };
+  }, [
+    mounted,
+    loggedIn,
+    pathname,
+    searchScope,
+    onSearchChange,
+    searchValue,
+    internalQuery,
+    urlQ,
+    router,
+    searchParams,
+  ]);
 
   React.useEffect(() => {
     // Keep search scope aligned with current section unless user explicitly toggles
@@ -276,15 +385,33 @@ export function Topbar({
     const q = (onSearchChange ? (searchValue ?? "") : internalQuery).trim();
     if (!q) return;
 
+    const inDrive = (pathname ?? "").startsWith("/drive");
+
+    // If we're already in Drive and searching Drive, update the URL in-place and clear folder context.
+    if (loggedIn && inDrive && searchScope === "drive") {
+      try {
+        const params = new URLSearchParams(Array.from(searchParams.entries()));
+        params.set("q", q);
+        params.delete("folder");
+        params.delete("query");
+        params.delete("search");
+        router.replace(`/drive?${params.toString()}`);
+        return;
+      } catch {
+        router.replace(`/drive?q=${encodeURIComponent(q)}`);
+        return;
+      }
+    }
+
     const base = !loggedIn
-      ? '/stock/search'
-      : searchScope === 'stock'
-      ? '/stock/search'
-      : '/drive';
+      ? "/stock/search"
+      : searchScope === "stock"
+      ? "/stock/search"
+      : "/drive";
 
     const href = `${base}?q=${encodeURIComponent(q)}`;
     router.push(href);
-  }, [router, internalQuery, onSearchChange, searchValue, loggedIn, searchScope]);
+  }, [router, internalQuery, onSearchChange, searchValue, loggedIn, searchScope, pathname, searchParams]);
 
   const handleLogout = React.useCallback(async () => {
     // Prefer app-provided logout (usually proto-auth). It may be async.
@@ -406,6 +533,21 @@ export function Topbar({
             if (searchScope === 'stock') {
               router.push(`/stock/search?q=${encodeURIComponent(v)}`);
             } else {
+              // If already in Drive, clear folder context
+              if ((pathname ?? "").startsWith("/drive")) {
+                try {
+                  const params = new URLSearchParams(Array.from(searchParams.entries()));
+                  params.set("q", v);
+                  params.delete("folder");
+                  params.delete("query");
+                  params.delete("search");
+                  router.replace(`/drive?${params.toString()}`);
+                } catch {
+                  router.replace(`/drive?q=${encodeURIComponent(v)}`);
+                }
+                return;
+              }
+
               router.push(`/drive?q=${encodeURIComponent(v)}`);
             }
           }}

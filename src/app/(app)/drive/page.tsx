@@ -134,8 +134,13 @@ function DrivePageInner() {
           // Mark as local URL write so URL-sync effect won't fight the user's typing.
           suppressNextUrlQuerySyncRef.current = trimmed;
 
-          if (trimmed) params.set("q", trimmed);
-          else params.delete("q");
+          if (trimmed) {
+            params.set("q", trimmed);
+            // Search is global: clear explicit folder context
+            params.delete("folder");
+          } else {
+            params.delete("q");
+          }
           params.delete("query");
           params.delete("search");
           routerRef.current.replace(
@@ -188,6 +193,21 @@ function DrivePageInner() {
       // If search comes from the URL (Topbar), search should apply across Drive
       if (next.length > 0) {
         setSelectedFolder("all");
+
+        // Normalize URL: search implies no folder
+        try {
+          const params = new URLSearchParams(
+            Array.from(searchParamsRef.current.entries())
+          );
+          if (params.get("folder")) {
+            params.delete("folder");
+            routerRef.current.replace(
+              `/drive${params.toString() ? `?${params.toString()}` : ""}`
+            );
+          }
+        } catch {
+          // ignore
+        }
       }
 
       return next;
@@ -838,8 +858,8 @@ function DrivePageInner() {
         </Sheet>
 
         <div className="flex-1 flex flex-col">
-          <header className="sticky top-14 z-20 border-b bg-background/70 px-4 lg:px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <div className="flex flex-col gap-2">
+          <header className="sticky top-14 z-20 border-b bg-background/70 px-4 lg:px-6 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+            <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
                 <Button
                   variant="ghost"
@@ -854,12 +874,12 @@ function DrivePageInner() {
                 <div className="min-w-0 flex-1">
                   {query.trim().length > 0 ? (
                     <div className="flex items-center gap-2">
-                      <span className="max-w-[520px] truncate rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
-                        <span className="inline-flex items-center gap-1">
-                          <Search className="h-3.5 w-3.5" />
-                          <span className="text-foreground">{query.trim()}</span>
-                        </span>
-                      </span>
+                      <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border bg-background px-2">
+                        <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1 truncate text-sm">
+                          {query.trim()}
+                        </div>
+                      </div>
                       <Button
                         type="button"
                         variant="ghost"
@@ -872,14 +892,14 @@ function DrivePageInner() {
                           clearPendingQueryUrlUpdate();
                           try {
                             const params = getCurrentSearchParams();
-                            // Mark as local URL write
                             suppressNextUrlQuerySyncRef.current = "";
-
                             params.delete("q");
                             params.delete("query");
                             params.delete("search");
                             params.delete("folder");
-                            routerRef.current.replace(`/drive${params.toString() ? `?${params.toString()}` : ""}`);
+                            routerRef.current.replace(
+                              `/drive${params.toString() ? `?${params.toString()}` : ""}`
+                            );
                           } catch {
                             // ignore
                           }
@@ -891,71 +911,6 @@ function DrivePageInner() {
                   ) : null}
                 </div>
 
-                {/* Breadcrumb in sticky header, only on lg+ screens */}
-                <div className="hidden lg:block min-w-0 flex-1">
-                  <Breadcrumb>
-                    <BreadcrumbList className="flex-nowrap overflow-x-auto">
-                      <BreadcrumbItem>
-                        {selectedFolder === "all" ? (
-                          <BreadcrumbPage>All files</BreadcrumbPage>
-                        ) : (
-                          <BreadcrumbLink asChild>
-                            <button
-                              type="button"
-                              onClick={() => navigateToFolder("all")}
-                              className="text-left"
-                            >
-                              All files
-                            </button>
-                          </BreadcrumbLink>
-                        )}
-                      </BreadcrumbItem>
-
-                      {isFavoritesView && (
-                        <span className="flex items-center">
-                          <BreadcrumbSeparator />
-                          <BreadcrumbItem>
-                            <BreadcrumbPage>Favorites</BreadcrumbPage>
-                          </BreadcrumbItem>
-                        </span>
-                      )}
-                      {isTrashView && (
-                        <span className="flex items-center">
-                          <BreadcrumbSeparator />
-                          <BreadcrumbItem>
-                            <BreadcrumbPage>Trash</BreadcrumbPage>
-                          </BreadcrumbItem>
-                        </span>
-                      )}
-
-                      {!isFavoritesView &&
-                        !isTrashView &&
-                        crumbNodes.map((n, idx) => {
-                          const isLast = idx === crumbNodes.length - 1;
-                          return (
-                            <span key={n.id} className="flex items-center">
-                              <BreadcrumbSeparator />
-                              <BreadcrumbItem>
-                                {isLast ? (
-                                  <BreadcrumbPage>{n.name}</BreadcrumbPage>
-                                ) : (
-                                  <BreadcrumbLink asChild>
-                                    <button
-                                      type="button"
-                                      onClick={() => navigateToFolder(n.id)}
-                                      className="text-left"
-                                    >
-                                      {n.name}
-                                    </button>
-                                  </BreadcrumbLink>
-                                )}
-                              </BreadcrumbItem>
-                            </span>
-                          );
-                        })}
-                    </BreadcrumbList>
-                  </Breadcrumb>
-                </div>
               </div>
 
               {/* Row 2: Controls */}
@@ -1054,6 +1009,72 @@ function DrivePageInner() {
                         ? folderName
                         : "All files"}
                 </h1>
+                {selectedFolder !== "all" ? (
+                  <div className="mt-1">
+                    <Breadcrumb>
+                      <BreadcrumbList className="flex-nowrap overflow-x-auto text-xs text-muted-foreground">
+                      <BreadcrumbItem>
+                        {selectedFolder === "all" ? (
+                          <BreadcrumbPage>All files</BreadcrumbPage>
+                        ) : (
+                          <BreadcrumbLink asChild>
+                            <button
+                              type="button"
+                              onClick={() => navigateToFolder("all")}
+                              className="text-left"
+                            >
+                              All files
+                            </button>
+                          </BreadcrumbLink>
+                        )}
+                      </BreadcrumbItem>
+
+                      {isFavoritesView && (
+                        <span className="flex items-center">
+                          <BreadcrumbSeparator />
+                          <BreadcrumbItem>
+                            <BreadcrumbPage>Favorites</BreadcrumbPage>
+                          </BreadcrumbItem>
+                        </span>
+                      )}
+                      {isTrashView && (
+                        <span className="flex items-center">
+                          <BreadcrumbSeparator />
+                          <BreadcrumbItem>
+                            <BreadcrumbPage>Trash</BreadcrumbPage>
+                          </BreadcrumbItem>
+                        </span>
+                      )}
+
+                      {!isFavoritesView &&
+                        !isTrashView &&
+                        crumbNodes.map((n, idx) => {
+                          const isLast = idx === crumbNodes.length - 1;
+                          return (
+                            <span key={n.id} className="flex items-center">
+                              <BreadcrumbSeparator />
+                              <BreadcrumbItem>
+                                {isLast ? (
+                                  <BreadcrumbPage>{n.name}</BreadcrumbPage>
+                                ) : (
+                                  <BreadcrumbLink asChild>
+                                    <button
+                                      type="button"
+                                      onClick={() => navigateToFolder(n.id)}
+                                      className="text-left"
+                                    >
+                                      {n.name}
+                                    </button>
+                                  </BreadcrumbLink>
+                                )}
+                              </BreadcrumbItem>
+                            </span>
+                          );
+                        })}
+                      </BreadcrumbList>
+                    </Breadcrumb>
+                  </div>
+                ) : null}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   {isRealFolderView ? (
                     <span className="rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
@@ -1162,6 +1183,7 @@ function DrivePageInner() {
                           onClick={() => {
                             setQuery("deleted");
                             setSelectedFolder("all");
+                            scheduleQueryUrlUpdate("deleted");
                           }}
                         >
                           Search for “deleted”
