@@ -965,7 +965,7 @@ export default function StockAssetPage() {
                   href={`/stock/assets/${a.id}`}
                   aspect="photo"
                   inCart={cartIds.has(a.id)}
-                  onAddToCart={() => addQuick(a)}
+                  onAddToCartAction={() => addQuick(a)}
                 />
               </div>
             ))}
@@ -1002,7 +1002,7 @@ export default function StockAssetPage() {
                 href={`/stock/assets/${a.id}`}
                 aspect="photo"
                 inCart={cartIds.has(a.id)}
-                onAddToCart={() => addQuick(a)}
+                onAddToCartAction={() => addQuick(a)}
               />
             </div>
           ))}
@@ -1039,7 +1039,7 @@ export default function StockAssetPage() {
               href={`/stock/assets/${a.id}`}
               aspect="photo"
               inCart={cartIds.has(a.id)}
-              onAddToCart={() => addQuick(a)}
+              onAddToCartAction={() => addQuick(a)}
             />
           ))}
         </div>

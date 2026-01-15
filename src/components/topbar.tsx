@@ -540,7 +540,7 @@ export function Topbar({
                 count={resolvedCartCount}
                 href={cartHref}
                 label="Open cart"
-                onClick={(e) => {
+                onClickAction={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
                   openCart();

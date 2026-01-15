@@ -25,7 +25,7 @@ export type ImageCardProps = {
   aspect?: 'square' | 'photo' | 'wide'; // default: photo (4/3)
   showActions?: boolean; // hover actions
   inCart?: boolean;
-  onAddToCart?: () => void;
+  onAddToCartAction?: () => void;
   priority?: boolean; // next/image priority
   className?: string;
 };
@@ -42,11 +42,11 @@ export default function ImageCard({
   aspect = 'photo',
   showActions = true,
   inCart,
-  onAddToCart,
+  onAddToCartAction,
   priority,
   className,
 }: ImageCardProps) {
-  const hasAction = Boolean(onAddToCart);
+  const hasAction = Boolean(onAddToCartAction);
 
   const cardClassName = cn(
     'relative block overflow-hidden rounded-xl border border-border bg-card',
@@ -117,7 +117,7 @@ export default function ImageCard({
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              onAddToCart?.();
+              onAddToCartAction?.();
             }}
             aria-label={inCart ? 'Added to cart' : 'Add to cart'}
           >

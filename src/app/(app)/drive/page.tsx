@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { ImageGrid } from "../../../components/drive/image-grid";
 import { demoAssets } from "@/lib/demo/assets";
-import { FolderSidebar, getFolderPathById, demoFolders } from "../../../components/FolderSidebar";
+import { FolderSidebar, demoFolders } from "../../../components/FolderSidebar";
 import { SelectionBar } from "../../../components/selection-bar";
 import { FolderHeader } from "../../../components/folder-header";
 import { SubfolderStrip } from "@/components/SubfolderStrip";
@@ -89,6 +89,24 @@ function writeLSString(key: string, value: string) {
   }
 }
 
+function readLSJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return fallback;
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeLSJson(key: string, value: unknown) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore
+  }
+}
+
 function readLSNumber(key: string): number | null {
   const raw = readLSString(key);
   if (!raw) return null;
@@ -105,10 +123,6 @@ const baseDemoImages = demoAssets.map((a, idx) => ({
   folderId: a.folderId ?? "all",
   color: a.color ?? "neutral",
 }));
-
-const baseDemoById = new Map<number, (typeof baseDemoImages)[number]>(
-  baseDemoImages.map((a) => [a.id, a])
-);
 
 export default function Page() {
   return (
@@ -137,6 +151,42 @@ function DrivePageInner() {
   useEffect(() => {
     searchParamsRef.current = searchParams;
   }, [searchParams]);
+  const getCurrentSearchParams = useCallback(() => {
+    return new URLSearchParams(Array.from(searchParamsRef.current.entries()));
+  }, []);
+  const queryUrlUpdateTimeoutRef = useRef<number | null>(null);
+  const clearPendingQueryUrlUpdate = useCallback(() => {
+    if (queryUrlUpdateTimeoutRef.current !== null) {
+      window.clearTimeout(queryUrlUpdateTimeoutRef.current);
+      queryUrlUpdateTimeoutRef.current = null;
+    }
+  }, []);
+  const scheduleQueryUrlUpdate = useCallback(
+    (nextValue: string) => {
+      const trimmed = nextValue.trim();
+      clearPendingQueryUrlUpdate();
+
+      queryUrlUpdateTimeoutRef.current = window.setTimeout(() => {
+        try {
+          const params = getCurrentSearchParams();
+          // Mark as local URL write so URL-sync effect won't fight the user's typing.
+          suppressNextUrlQuerySyncRef.current = trimmed;
+
+          if (trimmed) params.set("q", trimmed);
+          else params.delete("q");
+          params.delete("query");
+          params.delete("search");
+          routerRef.current.replace(
+            `/drive${params.toString() ? `?${params.toString()}` : ""}`
+          );
+        } catch {
+          // ignore
+        }
+      }, 200);
+    },
+    [clearPendingQueryUrlUpdate, getCurrentSearchParams]
+  );
+  useEffect(() => clearPendingQueryUrlUpdate, [clearPendingQueryUrlUpdate]);
 
   // Prevent URL -> state sync from overwriting local typing.
   // Whenever this page itself updates the URL `q`, we store the value here.
@@ -197,9 +247,10 @@ function DrivePageInner() {
       // Folder navigation should exit search context
       setQuery("");
       suppressNextUrlQuerySyncRef.current = "";
+      clearPendingQueryUrlUpdate();
 
       try {
-        const params = new URLSearchParams(Array.from(searchParamsRef.current.entries()));
+        const params = getCurrentSearchParams();
         // Clear any search params
         params.delete("q");
         params.delete("query");
@@ -214,7 +265,7 @@ function DrivePageInner() {
         // ignore
       }
     },
-    []
+    [clearPendingQueryUrlUpdate, getCurrentSearchParams]
   );
 
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -222,7 +273,11 @@ function DrivePageInner() {
   const shareFolder = useCallback(async () => {
     if (!mounted) return;
 
-    const url = `${window.location.origin}/drive?folder=${encodeURIComponent(selectedFolder)}`;
+    const folderParam =
+      selectedFolder && selectedFolder !== "all"
+        ? `?folder=${encodeURIComponent(selectedFolder)}`
+        : "";
+    const url = `${window.location.origin}/drive${folderParam}`;
 
     try {
       await navigator.clipboard.writeText(url);
@@ -252,20 +307,7 @@ function DrivePageInner() {
       const next = typeof ce.detail === "string" ? ce.detail : "";
       setQuery(next);
       setSelectedFolder("all");
-      try {
-        const params = new URLSearchParams(Array.from(searchParamsRef.current.entries()));
-        const trimmed = next.trim();
-        // Mark as local URL write so URL-sync effect won't overwrite typing.
-        suppressNextUrlQuerySyncRef.current = trimmed;
-
-        if (trimmed) params.set("q", trimmed);
-        else params.delete("q");
-        params.delete("query");
-        params.delete("search");
-        routerRef.current.replace(`/drive${params.toString() ? `?${params.toString()}` : ""}`);
-      } catch {
-        // ignore
-      }
+      scheduleQueryUrlUpdate(next);
     };
 
     const onFiltersClear = () => {
@@ -281,7 +323,7 @@ function DrivePageInner() {
       window.removeEventListener("CBX_SEARCH_SET", onSearchSet as EventListener);
       window.removeEventListener("CBX_FILTERS_CLEAR", onFiltersClear as EventListener);
     };
-  }, [mounted]);
+  }, [mounted, scheduleQueryUrlUpdate]);
   const [assetView, setAssetView] = useState<"grid" | "list">("grid");
   const [thumbSize, setThumbSize] = useState(220);
 
@@ -413,16 +455,21 @@ function DrivePageInner() {
 
   const [folderTree, setFolderTree] = useState<FolderNode[]>(() => demoFolders as unknown as FolderNode[]);
 
-  const folderIndex = useMemo(() => {
+  const { folderIndex, folderPathIndex } = useMemo(() => {
     const map = new Map<string, FolderNode>();
-    const walk = (nodes: FolderNode[]) => {
+    const pathMap = new Map<string, FolderNode[]>();
+
+    const walk = (nodes: FolderNode[], path: FolderNode[]) => {
       for (const n of nodes) {
         map.set(n.id, n);
-        if (Array.isArray(n.children) && n.children.length) walk(n.children);
+        const nextPath = [...path, n];
+        pathMap.set(n.id, nextPath);
+        if (Array.isArray(n.children) && n.children.length) walk(n.children, nextPath);
       }
     };
-    walk(folderTree);
-    return map;
+
+    walk(folderTree, []);
+    return { folderIndex: map, folderPathIndex: pathMap };
   }, [folderTree]);
 
   // --- Imported assets state and logic ---
@@ -431,8 +478,7 @@ function DrivePageInner() {
   useEffect(() => {
     if (!mounted) return;
     try {
-      const raw = readLSString(LS_KEYS.importedAssets);
-      const arr = raw ? (JSON.parse(raw) as any[]) : [];
+      const arr = readLSJson<any[]>(LS_KEYS.importedAssets, []);
       if (!Array.isArray(arr) || arr.length === 0) {
         setImportedImages([]);
         return;
@@ -534,8 +580,7 @@ function DrivePageInner() {
   useEffect(() => {
     if (!mounted) return;
     try {
-      const raw = window.localStorage.getItem(LS_KEYS.favorites);
-      const arr = raw ? (JSON.parse(raw) as number[]) : [];
+      const arr = readLSJson<number[]>(LS_KEYS.favorites, []);
       setFavoriteAssetIds(new Set(Array.isArray(arr) ? arr : []));
     } catch {
       setFavoriteAssetIds(new Set());
@@ -545,10 +590,7 @@ function DrivePageInner() {
   useEffect(() => {
     if (!mounted) return;
     try {
-      window.localStorage.setItem(
-        LS_KEYS.favorites,
-        JSON.stringify(Array.from(favoriteAssetIds))
-      );
+      writeLSJson(LS_KEYS.favorites, Array.from(favoriteAssetIds));
     } catch {
       // ignore
     }
@@ -568,8 +610,7 @@ function DrivePageInner() {
   useEffect(() => {
     if (!mounted) return;
     try {
-      const raw = window.localStorage.getItem(LS_KEYS.folderCovers);
-      const obj = raw ? (JSON.parse(raw) as Record<string, number>) : {};
+      const obj = readLSJson<Record<string, number>>(LS_KEYS.folderCovers, {});
       if (obj && typeof obj === "object") setFolderCovers(obj as Record<string, number>);
     } catch {
       setFolderCovers({});
@@ -579,7 +620,7 @@ function DrivePageInner() {
   useEffect(() => {
     if (!mounted) return;
     try {
-      window.localStorage.setItem(LS_KEYS.folderCovers, JSON.stringify(folderCovers));
+      writeLSJson(LS_KEYS.folderCovers, folderCovers);
     } catch {
       // ignore
     }
@@ -594,8 +635,7 @@ function DrivePageInner() {
   useEffect(() => {
     if (!mounted) return;
     try {
-      const raw = window.localStorage.getItem(LS_KEYS.assetFolders);
-      const obj = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+      const obj = readLSJson<Record<string, string>>(LS_KEYS.assetFolders, {});
       const next: Record<number, string> = {};
       Object.entries(obj || {}).forEach(([k, v]) => {
         const id = Number(k);
@@ -610,13 +650,13 @@ function DrivePageInner() {
   useEffect(() => {
     if (!mounted) return;
     try {
-      window.localStorage.setItem(LS_KEYS.assetFolders, JSON.stringify(assetFolderOverrides));
+      writeLSJson(LS_KEYS.assetFolders, assetFolderOverrides);
     } catch {
       // ignore
     }
   }, [mounted, assetFolderOverrides]);
 
-  const moveAssetToFolder = (assetId: number, folderId: string) => {
+  const moveAssetToFolder = useCallback((assetId: number, folderId: string) => {
     const idsToMove = selectedIds.has(assetId) ? Array.from(selectedIds) : [assetId];
 
     setAssetFolderOverrides((prev) => {
@@ -626,37 +666,38 @@ function DrivePageInner() {
       });
       return next;
     });
-  };
+  }, [selectedIds]);
 
-  const toggleSelected = (id: number) => {
+  const toggleSelected = useCallback((id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  };
+  }, []);
 
-  const clearSelection = () => setSelectedIds(new Set());
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
 
   const selectedIdList = useMemo(() => Array.from(selectedIds), [selectedIds]);
 
-  const selectedLinks = useMemo(() => {
-    return selectedIdList
-      .map((id) => allById.get(id)?.src)
-      .filter((s): s is string => Boolean(s));
+  const { selectedLinks, previewSrcs } = useMemo(() => {
+    const links: string[] = [];
+    const previews: string[] = [];
+
+    for (const id of selectedIdList) {
+      const src = allById.get(id)?.src;
+      if (!src) continue;
+      links.push(src);
+      if (previews.length < 3) previews.push(src);
+    }
+
+    return { selectedLinks: links, previewSrcs: previews };
   }, [selectedIdList, allById]);
 
-  const previewSrcs = useMemo(() => {
-    return Array.from(selectedIds)
-      .map((id) => allById.get(id)?.src)
-      .filter((s): s is string => Boolean(s))
-      .slice(0, 3);
-  }, [selectedIds, allById]);
-
   const crumbNodes = useMemo(() => {
-    return getFolderPathById(selectedFolder, folderTree);
-  }, [selectedFolder, folderTree]);
+    return folderPathIndex.get(selectedFolder) ?? [];
+  }, [selectedFolder, folderPathIndex]);
   const isFavoritesView = selectedFolder === "favorites";
   const isTrashView = selectedFolder === "trash";
   const isFolderView =
@@ -670,22 +711,15 @@ function DrivePageInner() {
     ? crumbNodes[crumbNodes.length - 1]?.name ?? "Folder"
     : "";
 
-  const folderCounts = useMemo(() => {
+  const { folderCounts, assetsByFolder } = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const img of allImages) {
-      const fid = assetFolderOverrides[img.id] ?? img.folderId ?? "all";
-      counts[fid] = (counts[fid] ?? 0) + 1;
-    }
-    return counts;
-  }, [assetFolderOverrides, allImages]);
-
-  const assetsByFolder = useMemo(() => {
     const map: Record<string, { id: number; title: string; src: string }[]> = {};
     for (const img of allImages) {
       const fid = assetFolderOverrides[img.id] ?? img.folderId ?? "all";
+      counts[fid] = (counts[fid] ?? 0) + 1;
       (map[fid] ??= []).push({ id: img.id, title: img.title, src: img.src });
     }
-    return map;
+    return { folderCounts: counts, assetsByFolder: map };
   }, [assetFolderOverrides, allImages]);
 
   const folderAssets = useMemo(() => {
@@ -810,7 +844,7 @@ function DrivePageInner() {
         </Sheet>
 
         <div className="flex-1 flex flex-col">
-          <header className="sticky top-14 z-20 border-b bg-background/70 px-0 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <header className="sticky top-14 z-20 border-b bg-background/70 px-4 lg:px-6 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
                 <Button
@@ -841,8 +875,9 @@ function DrivePageInner() {
                         onClick={() => {
                           setQuery("");
                           setSelectedFolder("all");
+                          clearPendingQueryUrlUpdate();
                           try {
-                            const params = new URLSearchParams(Array.from(searchParamsRef.current.entries()));
+                            const params = getCurrentSearchParams();
                             // Mark as local URL write
                             suppressNextUrlQuerySyncRef.current = "";
 
@@ -859,9 +894,7 @@ function DrivePageInner() {
                         <X className="h-4 w-4" />
                       </Button>
                     </div>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">Search in the top bar</span>
-                  )}
+                  ) : null}
                 </div>
 
                 {/* Breadcrumb in sticky header, only on lg+ screens */}
@@ -1015,7 +1048,7 @@ function DrivePageInner() {
             </div>
           </header>
 
-          <div key={selectedFolder} className="flex-1 px-0 py-6">
+          <div key={selectedFolder} className="flex-1 px-4 lg:px-6 py-6">
             <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <h1 className="text-2xl font-semibold">
@@ -1172,24 +1205,7 @@ function DrivePageInner() {
                   const trimmed = (next ?? "").trim();
                   setQuery(trimmed);
                   setSelectedFolder("all");
-
-                  try {
-                    const params = new URLSearchParams(
-                      Array.from(searchParamsRef.current.entries())
-                    );
-                    // Mark as local URL write so URL-sync effect won't fight the user's typing.
-                    suppressNextUrlQuerySyncRef.current = trimmed;
-
-                    if (trimmed) params.set("q", trimmed);
-                    else params.delete("q");
-                    params.delete("query");
-                    params.delete("search");
-                    routerRef.current.replace(
-                      `/drive${params.toString() ? `?${params.toString()}` : ""}`
-                    );
-                  } catch {
-                    // ignore
-                  }
+                  scheduleQueryUrlUpdate(trimmed);
                 }}
                 onRequestClearFilters={clearAllFilters}
                 thumbSize={effectiveThumbSize}

@@ -15,18 +15,18 @@ export type CartButtonProps = {
   /** Accessible label. */
   label?: string;
   /** Optional click handler (e.g. open cart drawer). */
-  onClick?: (e: React.MouseEvent<HTMLElement>) => void;
+  onClickAction?: (e: React.MouseEvent<HTMLElement>) => void;
 };
 
 export function CartButton({
   count = 0,
   href = '/stock/cart',
   label = 'Open cart',
-  onClick,
+  onClickAction,
 }: CartButtonProps) {
   return (
     <Button type="button" variant="ghost" size="sm" className="relative h-10 w-10 p-0">
-      <Link href={href} aria-label={label} onClick={onClick}>
+      <Link href={href} aria-label={label} onClick={onClickAction}>
         <ShoppingCart className="h-5 w-5" />
         {count > 0 ? (
           <span

@@ -526,7 +526,7 @@ function StockSearchInner() {
                 href={`/stock/assets/${asset.id}`}
                 aspect="photo"
                 inCart={cartIds.has(asset.id)}
-                onAddToCart={() => addToCart(asset)}
+                onAddToCartAction={() => addToCart(asset)}
               />
             ))}
           </div>

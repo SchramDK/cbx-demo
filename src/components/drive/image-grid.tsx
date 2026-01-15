@@ -1262,7 +1262,7 @@ export function ImageGrid({
                   ratio={img.ratio as any}
                   src={img.src}
                   selected={isSelected(img.id)}
-                  onToggleSelect={toggleSelected}
+                  onToggleSelectAction={toggleSelected}
                   favorited={isFavorited(img.id)}
                   onToggleFavorite={toggleFavorite}
                   onOpen={(_id) => setActive(img)}

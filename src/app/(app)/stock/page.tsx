@@ -696,7 +696,7 @@ export default function StockPage() {
                 }}
                 href={`/stock/assets/${a.id}`}
                 aspect="photo"
-                onAddToCart={() => {
+                onAddToCartAction={() => {
                   if (cartIds.has(a.id)) {
                     if (typeof openCart === 'function') openCart();
                     return;
@@ -806,7 +806,7 @@ export default function StockPage() {
                 }}
                 href={`/stock/assets/${a.id}`}
                 aspect="wide"
-                onAddToCart={() => {
+                onAddToCartAction={() => {
                   if (cartIds.has(a.id)) {
                     if (typeof openCart === 'function') openCart();
                     return;

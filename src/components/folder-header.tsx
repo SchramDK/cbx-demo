@@ -1,17 +1,17 @@
-"use client";
+'use client';
 
-import * as React from "react";
-import { Pencil, Image as ImageIcon, Check } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import { useMemo, useState } from 'react';
+import { Pencil, Image as ImageIcon, Check } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
+} from '@/components/ui/dialog';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 export type FolderHeaderAsset = {
   id: number;
@@ -36,20 +36,25 @@ export function FolderHeader({
   onSetCoverAction,
   className,
 }: FolderHeaderProps) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = useState(false);
 
   const hasAssets = assets.length > 0;
 
-  const fallback = hasAssets ? assets[0] : undefined;
-  const cover =
-    (coverAssetId ? assets.find((a) => a.id === coverAssetId) : undefined) ?? fallback;
+  const cover = useMemo(() => {
+    if (!hasAssets) return undefined;
+    const fallback = assets[0];
+    if (!coverAssetId) return fallback;
+    return assets.find((a) => a.id === coverAssetId) ?? fallback;
+  }, [assets, coverAssetId, hasAssets]);
 
-  const countLabel = hasAssets
-    ? `${assets.length} file${assets.length === 1 ? "" : "s"}`
-    : "No files";
+  const countLabel = useMemo(() => {
+    if (!hasAssets) return 'No files';
+    const n = assets.length;
+    return `${n} file${n === 1 ? '' : 's'}`;
+  }, [assets.length, hasAssets]);
 
   return (
-    <div className={cn("mb-3 sm:mb-4", className)} data-folder-id={folderId}>
+    <div className={cn('mb-3 sm:mb-4', className)} data-folder-id={folderId}>
       <div className="relative overflow-hidden rounded-2xl border border-border bg-muted/40">
         {/* Cover */}
         <div className="relative h-[150px] w-full">
@@ -102,7 +107,7 @@ export function FolderHeader({
                 <ScrollArea className="h-[60vh] pr-2">
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                     {assets.map((a) => {
-                      const isActive = Boolean(coverAssetId && a.id === coverAssetId);
+                      const isActive = coverAssetId != null && a.id === coverAssetId;
                       return (
                         <button
                           key={a.id}
@@ -113,9 +118,9 @@ export function FolderHeader({
                           }}
                           aria-pressed={isActive}
                           className={cn(
-                            "group relative overflow-hidden rounded-xl border border-border bg-muted/40 text-left",
-                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                            isActive && "ring-2 ring-ring"
+                            'group relative overflow-hidden rounded-xl border border-border bg-muted/40 text-left',
+                            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                            isActive && 'ring-2 ring-ring'
                           )}
                         >
                           <div className="relative aspect-[4/3] w-full">

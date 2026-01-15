@@ -1,6 +1,5 @@
 /* stylelint-disable at-rule-no-unknown */
 @import "tailwindcss";
-@plugin "tailwindcss-animate";
 
 @custom-variant dark (&:is(.dark *));
 

@@ -36,7 +36,7 @@ export type ImageCardProps = {
   ratio: ImageCardRatio;
   src?: string;
   selected?: boolean;
-  onToggleSelect?: (id: number) => void;
+  onToggleSelectAction?: (id: number) => void;
   onOpen?: (id: number) => void;
   favorited?: boolean;
   onToggleFavorite?: (id: number) => void;
@@ -50,7 +50,7 @@ export function ImageCard({
   src,
   selected = false,
   favorited = false,
-  onToggleSelect,
+  onToggleSelectAction,
   onOpen,
   onToggleFavorite,
   onDelete,
@@ -67,7 +67,7 @@ export function ImageCard({
     }
   };
 
-  const toggle = () => onToggleSelect?.(id);
+  const toggle = () => onToggleSelectAction?.(id);
   const toggleFavorite = () => {
     onToggleFavorite?.(id);
   };
