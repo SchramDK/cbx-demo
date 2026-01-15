@@ -5,6 +5,7 @@ import * as React from "react";
 import {
   ArrowUpDown,
   ChevronRight,
+  ChevronLeft,
   Folder,
   FolderOpen,
   Heart,
@@ -15,6 +16,7 @@ import {
   Trash2,
   X,
   Receipt,
+  GripVertical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -73,6 +75,8 @@ const LS_KEYS = {
   smartFolders: "CBX_SMART_FOLDERS_V1",
   sections: "CBX_SIDEBAR_SECTIONS_V1",
   folderOpen: "CBX_FOLDER_OPEN_V1",
+  sidebarWidth: "CBX_SIDEBAR_WIDTH_V1",
+  sidebarCollapsed: "CBX_SIDEBAR_COLLAPSED_V1",
 } as const;
 
 export const demoFolders: FolderNode[] = [
@@ -424,6 +428,95 @@ export function FolderSidebar({
   const [createOpen, setCreateOpen] = React.useState(false);
   const [newFolderName, setNewFolderName] = React.useState("");
   const folderIndex = React.useMemo(() => buildFolderIndex(folders), [folders]);
+
+  // Sidebar width (resizable, persisted)
+  const [sidebarWidth, setSidebarWidth] = React.useState<number>(256);
+  const [widthReady, setWidthReady] = React.useState(false);
+
+  // Collapsed state (persisted)
+  const [collapsed, setCollapsed] = React.useState(false);
+
+  React.useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(LS_KEYS.sidebarCollapsed);
+      setCollapsed(raw === '1');
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem(LS_KEYS.sidebarCollapsed, collapsed ? '1' : '0');
+    } catch {
+      // ignore
+    }
+  }, [collapsed]);
+
+  React.useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(LS_KEYS.sidebarWidth);
+      const n = raw ? Number(raw) : NaN;
+      if (Number.isFinite(n)) setSidebarWidth(Math.min(Math.max(n, 220), 420));
+    } catch {
+      // ignore
+    } finally {
+      setWidthReady(true);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!widthReady) return;
+    try {
+      window.localStorage.setItem(LS_KEYS.sidebarWidth, String(sidebarWidth));
+    } catch {
+      // ignore
+    }
+  }, [sidebarWidth, widthReady]);
+
+  const dragRef = React.useRef<{ startX: number; startW: number } | null>(null);
+
+  const onStartResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    dragRef.current = { startX: e.clientX, startW: sidebarWidth };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  const onStartResizeCollapsed = (e: React.MouseEvent) => {
+    e.preventDefault();
+    // Expand first, then continue resizing from the stored width
+    const base = Math.min(Math.max(sidebarWidth, 220), 420);
+    setCollapsed(false);
+    // Ensure we start from a sensible width
+    setSidebarWidth(base);
+    dragRef.current = { startX: e.clientX, startW: base };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  React.useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragRef.current) return;
+      const dx = e.clientX - dragRef.current.startX;
+      const next = dragRef.current.startW + dx;
+      setSidebarWidth(Math.min(Math.max(next, 220), 420));
+    };
+
+    const onUp = () => {
+      if (!dragRef.current) return;
+      dragRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [sidebarWidth]);
 
   // Shared row classes for navigation rows
   const navRowBase =
@@ -810,10 +903,53 @@ export function FolderSidebar({
   return (
     <aside
       className={cn(
-        "h-full w-64 shrink-0 border-r border-border bg-background overflow-y-auto",
+        "relative h-full shrink-0 border-r border-border bg-background overflow-y-auto transition-[width] duration-200",
+        collapsed && "border-r-transparent",
         className
       )}
+      style={{ width: collapsed ? 14 : sidebarWidth }}
+      onKeyDown={(e) => {
+        if (!collapsed) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          setCollapsed(false);
+        }
+      }}
+      tabIndex={collapsed ? 0 : undefined}
+      role={collapsed ? "button" : undefined}
+      aria-label={collapsed ? "Show sidebar" : undefined}
     >
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        title="Drag to resize"
+        onMouseDown={collapsed ? undefined : onStartResize}
+        onClick={(e) => e.preventDefault()}
+        className={cn(
+          "absolute right-0 top-0 h-full cursor-col-resize",
+          collapsed ? "w-0 pointer-events-none" : "w-2"
+        )}
+      >
+        {!collapsed ? <div className="absolute right-0 top-0 h-full w-px bg-border/60" /> : null}
+      </div>
+      {!collapsed && (
+        <>
+        <div className="flex items-center justify-end px-2 pt-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={(e) => {
+              e.stopPropagation();
+              setCollapsed(true);
+            }}
+            aria-label="Hide sidebar"
+            title="Hide sidebar"
+            className="h-8 w-8"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+        </div>
       <div className="h-4" />
 
       <CommandPalette
@@ -1295,6 +1431,40 @@ export function FolderSidebar({
           )}
         </div>
       </div>
+      </>
+      )}
+      {collapsed && (
+        <div className="relative h-full">
+          {/* easy click target to re-open (invisible) */}
+          <button
+            type="button"
+            aria-label="Show sidebar"
+            title="Show sidebar"
+            onClick={(e) => {
+              e.stopPropagation();
+              setCollapsed(false);
+            }}
+            className="absolute inset-0 z-[50] bg-transparent"
+          />
+
+          {/* hairline rail */}
+          <div className="absolute left-1/2 top-0 z-[55] h-full w-px -translate-x-1/2 bg-border/60" />
+
+          {/* slim grab handle (drag to resize + open) */}
+          <button
+            type="button"
+            aria-label="Markér eller træk for at udvide"
+            title="Markér eller træk for at udvide"
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              onStartResizeCollapsed(e);
+            }}
+            className="absolute top-3 left-1/2 z-[70] -translate-x-1/2 flex h-10 w-3 items-center justify-center rounded-full bg-border/60 hover:bg-border cursor-col-resize"
+          >
+            <GripVertical className="h-4 w-4 text-muted-foreground/70" />
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

@@ -169,6 +169,10 @@ const COLOR_ORDER: Record<ImageItem["color"], number> = {
   neutral: 7,
 };
 
+function isPurchasedAsset(folderId: string) {
+  return String(folderId || "").toLowerCase() === "purchases";
+}
+
 const COLOURBOX_DEMO_ASSETS: Array<{
   id: number;
   title: string;
@@ -257,6 +261,14 @@ function SkeletonRow() {
       </div>
       <Skeleton className="h-8 w-8 rounded-md" />
     </div>
+  );
+}
+
+function PurchasedBadge() {
+  return (
+    <span className="inline-flex items-center rounded-full border border-border bg-background/80 px-2 py-0.5 text-[11px] text-muted-foreground shadow-sm backdrop-blur">
+      Purchased
+    </span>
   );
 }
 
@@ -579,9 +591,16 @@ function ListRow({
           />
           <span className="truncate">{img.folderId}</span>
         </div>
+        {isPurchasedAsset(img.folderId) ? (
+          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+            <PurchasedBadge />
+            <span className="truncate">License: Standard</span>
+          </div>
+        ) : null}
       </div>
 
-      <div onClick={(e) => e.stopPropagation()}>
+      <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-2">
+        {isPurchasedAsset(img.folderId) ? <PurchasedBadge /> : null}
         <Button
           type="button"
           variant="ghost"
@@ -1232,18 +1251,24 @@ export function ImageGrid({
             style={{ ["--thumb" as any]: `${Math.max(140, Math.min(520, thumbSize ?? 220))}px` }}
           >
             {sortedImages.map((img) => (
-              <ImageCard
-                key={img.id}
-                id={img.id}
-                title={img.title}
-                ratio={img.ratio as any}
-                src={img.src}
-                selected={isSelected(img.id)}
-                onToggleSelect={toggleSelected}
-                favorited={isFavorited(img.id)}
-                onToggleFavorite={toggleFavorite}
-                onOpen={(_id) => setActive(img)}
-              />
+              <div key={img.id} className="relative">
+                {isPurchasedAsset(img.folderId) ? (
+                  <div className="pointer-events-none absolute left-3 top-3 z-10">
+                    <PurchasedBadge />
+                  </div>
+                ) : null}
+                <ImageCard
+                  id={img.id}
+                  title={img.title}
+                  ratio={img.ratio as any}
+                  src={img.src}
+                  selected={isSelected(img.id)}
+                  onToggleSelect={toggleSelected}
+                  favorited={isFavorited(img.id)}
+                  onToggleFavorite={toggleFavorite}
+                  onOpen={(_id) => setActive(img)}
+                />
+              </div>
             ))}
           </section>
 

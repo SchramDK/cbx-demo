@@ -69,6 +69,7 @@ const LS_KEYS = {
   favorites: "CBX_ASSET_FAVORITES_V1",
   folderCovers: "CBX_FOLDER_COVERS_V1",
   assetFolders: "CBX_ASSET_FOLDERS_V1",
+  importedAssets: "CBX_DRIVE_IMPORTED_ASSETS_V1",
 } as const;
 
 
@@ -96,7 +97,7 @@ function readLSNumber(key: string): number | null {
 }
 
 
-const demoImages = demoAssets.map((a, idx) => ({
+const baseDemoImages = demoAssets.map((a, idx) => ({
   id: Number(a.id) || idx + 1,
   title: a.title,
   src: a.src,
@@ -105,8 +106,8 @@ const demoImages = demoAssets.map((a, idx) => ({
   color: a.color ?? "neutral",
 }));
 
-const demoById = new Map<number, (typeof demoImages)[number]>(
-  demoImages.map((a) => [a.id, a])
+const baseDemoById = new Map<number, (typeof baseDemoImages)[number]>(
+  baseDemoImages.map((a) => [a.id, a])
 );
 
 export default function Page() {
@@ -423,6 +424,68 @@ function DrivePageInner() {
     walk(folderTree);
     return map;
   }, [folderTree]);
+
+  // --- Imported assets state and logic ---
+  const [importedImages, setImportedImages] = useState<(typeof baseDemoImages)[number][]>([]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    try {
+      const raw = readLSString(LS_KEYS.importedAssets);
+      const arr = raw ? (JSON.parse(raw) as any[]) : [];
+      if (!Array.isArray(arr) || arr.length === 0) {
+        setImportedImages([]);
+        return;
+      }
+
+      const next = arr
+        .map((a, idx) => {
+          const id = Number(a?.id) || 100000 + idx;
+          const src = typeof a?.src === "string" ? a.src : "";
+          if (!src) return null;
+          return {
+            id,
+            title: typeof a?.title === "string" && a.title.trim().length ? a.title : `Asset ${id}`,
+            src,
+            ratio: a?.ratio ?? "landscape",
+            folderId: typeof a?.folderId === "string" && a.folderId ? a.folderId : "purchases",
+            color: typeof a?.color === "string" ? a.color : "neutral",
+          };
+        })
+        .filter(Boolean) as (typeof baseDemoImages)[number][];
+
+      // Deduplicate by src
+      const seen = new Set<string>();
+      const deduped: (typeof baseDemoImages)[number][] = [];
+      for (const img of next) {
+        if (seen.has(img.src)) continue;
+        seen.add(img.src);
+        deduped.push(img);
+      }
+
+      setImportedImages(deduped);
+    } catch {
+      setImportedImages([]);
+    }
+  }, [mounted]);
+
+  const allImages = useMemo(() => {
+    if (!importedImages.length) return baseDemoImages;
+
+    const bySrc = new Set(baseDemoImages.map((x) => x.src));
+    const merged = [...baseDemoImages];
+    for (const img of importedImages) {
+      if (bySrc.has(img.src)) continue;
+      merged.push(img);
+    }
+    return merged;
+  }, [importedImages]);
+
+  const allById = useMemo(() => {
+    const m = new Map<number, (typeof baseDemoImages)[number]>();
+    for (const a of allImages) m.set(a.id, a);
+    return m;
+  }, [allImages]);
   useEffect(() => {
     if (!mounted) return;
     const f = urlFolder.trim();
@@ -580,16 +643,16 @@ function DrivePageInner() {
 
   const selectedLinks = useMemo(() => {
     return selectedIdList
-      .map((id) => demoById.get(id)?.src)
+      .map((id) => allById.get(id)?.src)
       .filter((s): s is string => Boolean(s));
-  }, [selectedIdList]);
+  }, [selectedIdList, allById]);
 
   const previewSrcs = useMemo(() => {
     return Array.from(selectedIds)
-      .map((id) => demoById.get(id)?.src)
+      .map((id) => allById.get(id)?.src)
       .filter((s): s is string => Boolean(s))
       .slice(0, 3);
-  }, [selectedIds]);
+  }, [selectedIds, allById]);
 
   const crumbNodes = useMemo(() => {
     return getFolderPathById(selectedFolder, folderTree);
@@ -609,21 +672,21 @@ function DrivePageInner() {
 
   const folderCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const img of demoImages) {
+    for (const img of allImages) {
       const fid = assetFolderOverrides[img.id] ?? img.folderId ?? "all";
       counts[fid] = (counts[fid] ?? 0) + 1;
     }
     return counts;
-  }, [assetFolderOverrides]);
+  }, [assetFolderOverrides, allImages]);
 
   const assetsByFolder = useMemo(() => {
     const map: Record<string, { id: number; title: string; src: string }[]> = {};
-    for (const img of demoImages) {
+    for (const img of allImages) {
       const fid = assetFolderOverrides[img.id] ?? img.folderId ?? "all";
       (map[fid] ??= []).push({ id: img.id, title: img.title, src: img.src });
     }
     return map;
-  }, [assetFolderOverrides]);
+  }, [assetFolderOverrides, allImages]);
 
   const folderAssets = useMemo(() => {
     if (!isRealFolderView) return [];
@@ -640,7 +703,7 @@ function DrivePageInner() {
       const coverId = folderCovers[sf.id];
       const coverSrc =
         typeof coverId === "number"
-          ? demoById.get(coverId)?.src
+          ? allById.get(coverId)?.src
           : undefined;
       return {
         id: sf.id,
@@ -649,7 +712,7 @@ function DrivePageInner() {
         count: folderCounts[sf.id] ?? 0,
       };
     });
-  }, [subfolders, folderCovers, folderCounts]);
+  }, [subfolders, folderCovers, folderCounts, allById]);
 
   const coverAssetId = isRealFolderView ? folderCovers[selectedFolder] : undefined;
 

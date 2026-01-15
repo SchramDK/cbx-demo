@@ -349,7 +349,7 @@ useEffect(() => {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button asChild size="sm">
-                      <Link href="/drive?selectedId=purchases">Open Files</Link>
+                      <Link href="/drive?folder=purchases">Open Files</Link>
                     </Button>
                   </div>
                 </div>
