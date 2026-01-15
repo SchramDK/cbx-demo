@@ -41,6 +41,7 @@ export type ImageCardProps = {
   favorited?: boolean;
   onToggleFavorite?: (id: number) => void;
   onDelete?: (id: number) => void;
+  isCover?: boolean;
 };
 
 export function ImageCard({
@@ -54,6 +55,7 @@ export function ImageCard({
   onOpen,
   onToggleFavorite,
   onDelete,
+  isCover = false,
 }: ImageCardProps) {
   const [isDragging, setIsDragging] = React.useState(false);
   const dragDisabledRef = React.useRef(false);
@@ -117,6 +119,7 @@ export function ImageCard({
         "group relative mb-3 break-inside-avoid overflow-hidden rounded-2xl transition",
         "cursor-grab active:cursor-grabbing",
         "hover:ring-2 hover:ring-ring/40",
+        !selected && isCover && "ring-2 ring-ring/30",
         selected && "ring-2 ring-ring",
         isDragging && "opacity-70 scale-[0.98] ring-2 ring-ring shadow-lg"
       )}
@@ -124,8 +127,8 @@ export function ImageCard({
 
       {/* Hover actions */}
       <div className="pointer-events-none absolute inset-0 z-10">
-        <div className="flex items-start justify-between p-2">
-          {/* Select */}
+        <div className="absolute left-2 top-2 flex items-start gap-2">
+          {/* Select (top-left) */}
           <div
             className={cn(
               "pointer-events-auto transition-opacity",
@@ -147,17 +150,24 @@ export function ImageCard({
             </div>
           </div>
 
-          {/* Menu */}
-          <div className="pointer-events-auto opacity-0 transition-opacity group-hover:opacity-100">
-            <AssetActionsMenu
-              title={title}
-              src={src}
-              onOpen={handleOpen}
-              onToggleFavorite={toggleFavorite}
-              onDelete={() => onDelete?.(id)}
-              onCopyLink={(link) => void copyText(link)}
-            />
-          </div>
+          {/* Cover badge (next to select) */}
+          {isCover ? (
+            <div className="pointer-events-none inline-flex items-center rounded-full bg-background/80 px-2 py-1 text-[11px] font-medium text-foreground shadow-sm backdrop-blur">
+              Cover
+            </div>
+          ) : null}
+        </div>
+
+        {/* Menu (top-right) */}
+        <div className="absolute right-2 top-2 pointer-events-auto opacity-0 transition-opacity group-hover:opacity-100">
+          <AssetActionsMenu
+            title={title}
+            src={src}
+            onOpen={handleOpen}
+            onToggleFavorite={toggleFavorite}
+            onDelete={() => onDelete?.(id)}
+            onCopyLink={(link) => void copyText(link)}
+          />
         </div>
       </div>
 

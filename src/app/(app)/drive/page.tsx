@@ -38,6 +38,7 @@ import {
   loadFiltersFromStorage,
   saveFiltersToStorage,
 } from "@/components/assets-filters/filters";
+import { readJSON, readNumber, readString, remove, writeJSON, writeString } from "@/lib/storage/localStorage";
 
 type AssetSort = "name_asc" | "name_desc" | "id_asc" | "id_desc" | "color_asc" | "color_desc";
 
@@ -58,7 +59,6 @@ type FolderNode = {
   children?: FolderNode[];
 };
 
-
 const LS_KEYS = {
   filters: "CBX_ASSET_FILTERS_V1",
   oldColors: "CBX_COLOR_FILTER_V1",
@@ -68,52 +68,10 @@ const LS_KEYS = {
   selectedFolder: "CBX_SELECTED_FOLDER_V1",
   favorites: "CBX_ASSET_FAVORITES_V1",
   folderCovers: "CBX_FOLDER_COVERS_V1",
+  folderTree: "CBX_FOLDER_TREE_V1",
   assetFolders: "CBX_ASSET_FOLDERS_V1",
   importedAssets: "CBX_DRIVE_IMPORTED_ASSETS_V1",
 } as const;
-
-
-function readLSString(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function writeLSString(key: string, value: string) {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    // ignore
-  }
-}
-
-function readLSJson<T>(key: string, fallback: T): T {
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeLSJson(key: string, value: unknown) {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // ignore
-  }
-}
-
-function readLSNumber(key: string): number | null {
-  const raw = readLSString(key);
-  if (!raw) return null;
-  const n = Number(raw);
-  return Number.isFinite(n) ? n : null;
-}
-
 
 const baseDemoImages = demoAssets.map((a, idx) => ({
   id: Number(a.id) || idx + 1,
@@ -151,6 +109,10 @@ function DrivePageInner() {
   useEffect(() => {
     searchParamsRef.current = searchParams;
   }, [searchParams]);
+  // Prevent URL -> state sync from overwriting local typing.
+  // Whenever this page itself updates the URL `q`, we store the value here.
+  // Then the URL-sync effect will ignore that next `urlQ` update.
+  const suppressNextUrlQuerySyncRef = useRef<string | null>(null);
   const getCurrentSearchParams = useCallback(() => {
     return new URLSearchParams(Array.from(searchParamsRef.current.entries()));
   }, []);
@@ -187,11 +149,6 @@ function DrivePageInner() {
     [clearPendingQueryUrlUpdate, getCurrentSearchParams]
   );
   useEffect(() => clearPendingQueryUrlUpdate, [clearPendingQueryUrlUpdate]);
-
-  // Prevent URL -> state sync from overwriting local typing.
-  // Whenever this page itself updates the URL `q`, we store the value here.
-  // Then the URL-sync effect will ignore that next `urlQ` update.
-  const suppressNextUrlQuerySyncRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isReady) return;
@@ -348,12 +305,12 @@ function DrivePageInner() {
     };
   }, [mounted]);
   useEffect(() => {
-    const n = readLSNumber(LS_KEYS.thumbSize);
-    if (typeof n === "number" && n >= 140 && n <= 520) setThumbSize(n);
+    const n = readNumber(LS_KEYS.thumbSize, 0);
+    if (n >= 140 && n <= 520) setThumbSize(n);
   }, []);
   useEffect(() => {
     if (!mounted) return;
-    writeLSString(LS_KEYS.thumbSize, String(thumbSize));
+    writeString(LS_KEYS.thumbSize, String(thumbSize));
   }, [mounted, thumbSize]);
 
   const effectiveThumbSize = isDesktop ? thumbSize : 140;
@@ -383,12 +340,12 @@ function DrivePageInner() {
 
     // Backward-compat: if we don't have v1 stored yet, try old color-only key
     try {
-      const rawOld = window.localStorage.getItem(LS_KEYS.oldColors);
+      const rawOld = readString(LS_KEYS.oldColors, "");
       if (rawOld && (!loaded.colors || loaded.colors.size === 0)) {
         const arr = JSON.parse(rawOld) as string[];
         if (Array.isArray(arr)) {
           loaded.colors = new Set(arr as any);
-          window.localStorage.removeItem(LS_KEYS.oldColors);
+          remove(LS_KEYS.oldColors);
         }
       }
     } catch {
@@ -404,26 +361,25 @@ function DrivePageInner() {
     saveFiltersToStorage(LS_KEYS.filters, filters);
   }, [mounted, filters]);
 
-
   useEffect(() => {
-    const raw = readLSString(LS_KEYS.sort);
+    const raw = readString(LS_KEYS.sort, "");
     if (raw && isAssetSort(raw)) setAssetSort(raw);
     else setAssetSort("name_asc");
   }, []);
 
   useEffect(() => {
     if (!mounted) return;
-    writeLSString(LS_KEYS.sort, assetSort);
+    writeString(LS_KEYS.sort, assetSort);
   }, [mounted, assetSort]);
 
   useEffect(() => {
-    const raw = readLSString(LS_KEYS.view);
+    const raw = readString(LS_KEYS.view, "");
     if (raw === "list" || raw === "grid") setAssetView(raw);
   }, []);
 
   useEffect(() => {
     if (!mounted) return;
-    writeLSString(LS_KEYS.view, assetView);
+    writeString(LS_KEYS.view, assetView);
   }, [mounted, assetView]);
 
   useEffect(() => {
@@ -433,13 +389,13 @@ function DrivePageInner() {
     if (urlQ.trim().length > 0) return;
     if (urlFolder.trim().length > 0) return;
   
-    const raw = readLSString(LS_KEYS.selectedFolder);
-    if (typeof raw === "string" && raw.length > 0) setSelectedFolder(raw);
+    const raw = readString(LS_KEYS.selectedFolder, "");
+    if (raw.length > 0) setSelectedFolder(raw);
   }, [mounted, urlQ, urlFolder]);
 
   useEffect(() => {
     if (!mounted) return;
-    writeLSString(LS_KEYS.selectedFolder, selectedFolder);
+    writeString(LS_KEYS.selectedFolder, selectedFolder);
   }, [mounted, selectedFolder]);
 
   const [foldersOpen, setFoldersOpen] = useState(false);
@@ -453,7 +409,25 @@ function DrivePageInner() {
     setFiltersOpen(false);
   }, []);
 
-  const [folderTree, setFolderTree] = useState<FolderNode[]>(() => demoFolders as unknown as FolderNode[]);
+  const [folderTree, setFolderTree] = useState<FolderNode[]>(() => {
+    // On the server we can't access localStorage; initial render uses demoFolders.
+    return demoFolders as unknown as FolderNode[];
+  });
+  // Build fast lookup maps for folder nodes and breadcrumb paths.
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    const stored = readJSON<FolderNode[] | null>(LS_KEYS.folderTree, null);
+    if (Array.isArray(stored) && stored.length > 0) {
+      setFolderTree(stored);
+    }
+  }, [mounted]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    writeJSON(LS_KEYS.folderTree, folderTree);
+  }, [mounted, folderTree]);
 
   const { folderIndex, folderPathIndex } = useMemo(() => {
     const map = new Map<string, FolderNode>();
@@ -477,42 +451,39 @@ function DrivePageInner() {
 
   useEffect(() => {
     if (!mounted) return;
-    try {
-      const arr = readLSJson<any[]>(LS_KEYS.importedAssets, []);
-      if (!Array.isArray(arr) || arr.length === 0) {
-        setImportedImages([]);
-        return;
-      }
 
-      const next = arr
-        .map((a, idx) => {
-          const id = Number(a?.id) || 100000 + idx;
-          const src = typeof a?.src === "string" ? a.src : "";
-          if (!src) return null;
-          return {
-            id,
-            title: typeof a?.title === "string" && a.title.trim().length ? a.title : `Asset ${id}`,
-            src,
-            ratio: a?.ratio ?? "landscape",
-            folderId: typeof a?.folderId === "string" && a.folderId ? a.folderId : "purchases",
-            color: typeof a?.color === "string" ? a.color : "neutral",
-          };
-        })
-        .filter(Boolean) as (typeof baseDemoImages)[number][];
-
-      // Deduplicate by src
-      const seen = new Set<string>();
-      const deduped: (typeof baseDemoImages)[number][] = [];
-      for (const img of next) {
-        if (seen.has(img.src)) continue;
-        seen.add(img.src);
-        deduped.push(img);
-      }
-
-      setImportedImages(deduped);
-    } catch {
+    const arr = readJSON<any[]>(LS_KEYS.importedAssets, []);
+    if (!Array.isArray(arr) || arr.length === 0) {
       setImportedImages([]);
+      return;
     }
+
+    const next = arr
+      .map((a, idx) => {
+        const id = Number(a?.id) || 100000 + idx;
+        const src = typeof a?.src === "string" ? a.src : "";
+        if (!src) return null;
+        return {
+          id,
+          title: typeof a?.title === "string" && a.title.trim().length ? a.title : `Asset ${id}`,
+          src,
+          ratio: a?.ratio ?? "landscape",
+          folderId: typeof a?.folderId === "string" && a.folderId ? a.folderId : "purchases",
+          color: typeof a?.color === "string" ? a.color : "neutral",
+        };
+      })
+      .filter(Boolean) as (typeof baseDemoImages)[number][];
+
+    // Deduplicate by src
+    const seen = new Set<string>();
+    const deduped: (typeof baseDemoImages)[number][] = [];
+    for (const img of next) {
+      if (seen.has(img.src)) continue;
+      seen.add(img.src);
+      deduped.push(img);
+    }
+
+    setImportedImages(deduped);
   }, [mounted]);
 
   const allImages = useMemo(() => {
@@ -579,21 +550,13 @@ function DrivePageInner() {
 
   useEffect(() => {
     if (!mounted) return;
-    try {
-      const arr = readLSJson<number[]>(LS_KEYS.favorites, []);
-      setFavoriteAssetIds(new Set(Array.isArray(arr) ? arr : []));
-    } catch {
-      setFavoriteAssetIds(new Set());
-    }
+    const arr = readJSON<number[]>(LS_KEYS.favorites, []);
+    setFavoriteAssetIds(new Set(Array.isArray(arr) ? arr : []));
   }, [mounted]);
 
   useEffect(() => {
     if (!mounted) return;
-    try {
-      writeLSJson(LS_KEYS.favorites, Array.from(favoriteAssetIds));
-    } catch {
-      // ignore
-    }
+    writeJSON(LS_KEYS.favorites, Array.from(favoriteAssetIds));
   }, [mounted, favoriteAssetIds]);
 
   const toggleAssetFavorite = (id: number) => {
@@ -609,21 +572,14 @@ function DrivePageInner() {
 
   useEffect(() => {
     if (!mounted) return;
-    try {
-      const obj = readLSJson<Record<string, number>>(LS_KEYS.folderCovers, {});
-      if (obj && typeof obj === "object") setFolderCovers(obj as Record<string, number>);
-    } catch {
-      setFolderCovers({});
-    }
+    const obj = readJSON<Record<string, number>>(LS_KEYS.folderCovers, {});
+    if (obj && typeof obj === "object") setFolderCovers(obj);
+    else setFolderCovers({});
   }, [mounted]);
 
   useEffect(() => {
     if (!mounted) return;
-    try {
-      writeLSJson(LS_KEYS.folderCovers, folderCovers);
-    } catch {
-      // ignore
-    }
+    writeJSON(LS_KEYS.folderCovers, folderCovers);
   }, [mounted, folderCovers]);
 
   const setFolderCover = (folderId: string, assetId: number) => {
@@ -634,26 +590,18 @@ function DrivePageInner() {
 
   useEffect(() => {
     if (!mounted) return;
-    try {
-      const obj = readLSJson<Record<string, string>>(LS_KEYS.assetFolders, {});
-      const next: Record<number, string> = {};
-      Object.entries(obj || {}).forEach(([k, v]) => {
-        const id = Number(k);
-        if (Number.isFinite(id) && typeof v === "string") next[id] = v;
-      });
-      setAssetFolderOverrides(next);
-    } catch {
-      setAssetFolderOverrides({});
-    }
+    const obj = readJSON<Record<string, string>>(LS_KEYS.assetFolders, {});
+    const next: Record<number, string> = {};
+    Object.entries(obj || {}).forEach(([k, v]) => {
+      const id = Number(k);
+      if (Number.isFinite(id) && typeof v === "string") next[id] = v;
+    });
+    setAssetFolderOverrides(next);
   }, [mounted]);
 
   useEffect(() => {
     if (!mounted) return;
-    try {
-      writeLSJson(LS_KEYS.assetFolders, assetFolderOverrides);
-    } catch {
-      // ignore
-    }
+    writeJSON(LS_KEYS.assetFolders, assetFolderOverrides);
   }, [mounted, assetFolderOverrides]);
 
   const moveAssetToFolder = useCallback((assetId: number, folderId: string) => {
@@ -711,18 +659,64 @@ function DrivePageInner() {
     ? crumbNodes[crumbNodes.length - 1]?.name ?? "Folder"
     : "";
 
+  const coverAssetId = isRealFolderView ? folderCovers[selectedFolder] : undefined;
+
   const { folderCounts, assetsByFolder } = useMemo(() => {
     const counts: Record<string, number> = {};
     const map: Record<string, { id: number; title: string; src: string }[]> = {};
+
+    // Ensure smart folders exist even when empty
+    counts["favorites"] = 0;
+    counts["trash"] = 0;
+    counts["all"] = 0;
+    map["favorites"] = [];
+    map["trash"] = [];
+    map["all"] = [];
+
     for (const img of allImages) {
       const fid = assetFolderOverrides[img.id] ?? img.folderId ?? "all";
+
+      // Physical folder
       counts[fid] = (counts[fid] ?? 0) + 1;
       (map[fid] ??= []).push({ id: img.id, title: img.title, src: img.src });
+
+      // "All" includes everything except trash
+      if (fid !== "trash") {
+        counts["all"] += 1;
+        map["all"].push({ id: img.id, title: img.title, src: img.src });
+      }
+
+      // Favorites is a smart folder (also exclude trash)
+      if (fid !== "trash" && favoriteAssetIds.has(img.id)) {
+        counts["favorites"] += 1;
+        map["favorites"].push({ id: img.id, title: img.title, src: img.src });
+      }
     }
+
+    // Ensure cover asset is first when viewing a folder (visual priority)
+    if (isRealFolderView && typeof coverAssetId === "number") {
+      const arr = map[selectedFolder];
+      if (Array.isArray(arr) && arr.length > 1) {
+        const idx = arr.findIndex((a) => a.id === coverAssetId);
+        if (idx > 0) {
+          const next = arr.slice();
+          const [cover] = next.splice(idx, 1);
+          next.unshift(cover);
+          map[selectedFolder] = next;
+        }
+      }
+    }
+
     return { folderCounts: counts, assetsByFolder: map };
-  }, [assetFolderOverrides, allImages]);
+  }, [assetFolderOverrides, allImages, favoriteAssetIds, isRealFolderView, coverAssetId, selectedFolder]);
 
   const folderAssets = useMemo(() => {
+    // Smart folders
+    if (selectedFolder === "favorites") return assetsByFolder["favorites"] ?? [];
+    if (selectedFolder === "trash") return assetsByFolder["trash"] ?? [];
+    if (selectedFolder === "all") return assetsByFolder["all"] ?? [];
+
+    // Real folders only
     if (!isRealFolderView) return [];
     return assetsByFolder[selectedFolder] ?? [];
   }, [isRealFolderView, selectedFolder, assetsByFolder]);
@@ -748,7 +742,7 @@ function DrivePageInner() {
     });
   }, [subfolders, folderCovers, folderCounts, allById]);
 
-  const coverAssetId = isRealFolderView ? folderCovers[selectedFolder] : undefined;
+  // (folderAssetsOrdered removed: now handled in assetsByFolder)
 
   const trashCount = useMemo(() => {
     return folderCounts["trash"] ?? 0;
@@ -762,7 +756,7 @@ function DrivePageInner() {
     <div className="min-h-screen">
       <div className="flex min-h-screen">
         {/* Desktop folders */}
-        <div className="hidden md:block sticky top-14 h-[calc(100vh-56px)] overflow-y-auto pr-4 pt-2">
+        <div className="hidden md:block sticky top-14 h-[calc(100vh-56px)] overflow-y-auto">
           <FolderSidebar
             folders={folderTree}
             onFoldersChangeAction={setFolderTree}
@@ -844,7 +838,7 @@ function DrivePageInner() {
         </Sheet>
 
         <div className="flex-1 flex flex-col">
-          <header className="sticky top-14 z-20 border-b bg-background/70 px-4 lg:px-6 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <header className="sticky top-14 z-20 border-b bg-background/70 px-4 lg:px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
                 <Button
@@ -1048,7 +1042,7 @@ function DrivePageInner() {
             </div>
           </header>
 
-          <div key={selectedFolder} className="flex-1 px-4 lg:px-6 py-6">
+          <div key={selectedFolder} className="flex-1 px-4 lg:px-6 py-4">
             <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <h1 className="text-2xl font-semibold">
@@ -1133,7 +1127,6 @@ function DrivePageInner() {
                       toMove.add(id);
                     }
                   });
-
                   setAssetFolderOverrides((prev) => {
                     const next = { ...prev };
                     toMove.forEach((id) => {
@@ -1144,8 +1137,6 @@ function DrivePageInner() {
                 }}
               />
             ) : null}
-
-
 
             {showTrashEmptyState ? (
               <div className="mt-10 flex w-full justify-center">

@@ -521,6 +521,7 @@ function ListRow({
   favorited,
   onToggleFavorite,
   onOpen,
+  isCover,
 }: {
   img: ImageItem;
   selected: boolean;
@@ -528,6 +529,7 @@ function ListRow({
   favorited: boolean;
   onToggleFavorite: (id: number) => void;
   onOpen: () => void;
+  isCover?: boolean;
 }) {
   return (
     <div
@@ -573,7 +575,14 @@ function ListRow({
       />
 
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{img.title}</div>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="truncate text-sm font-medium">{img.title}</div>
+          {isCover ? (
+            <span className="shrink-0 inline-flex items-center rounded-full border border-border bg-background px-2 py-0.5 text-[11px] text-muted-foreground">
+              Cover
+            </span>
+          ) : null}
+        </div>
         <div className="flex items-center gap-2 truncate text-xs text-muted-foreground">
           <span
             aria-label={`Color: ${img.color}`}
@@ -631,6 +640,7 @@ export function ImageGrid({
   onToggleFavorite,
   onRequestSetQuery,
   onRequestClearFilters,
+  priorityAssetId,
   thumbSize,
 }: {
   view?: "grid" | "list";
@@ -647,6 +657,7 @@ export function ImageGrid({
   onToggleFavorite?: (id: number) => void;
   onRequestSetQuery?: (next: string) => void;
   onRequestClearFilters?: () => void;
+  priorityAssetId?: number;
   thumbSize?: number;
 }) {
   const [active, setActive] = useState<ImageItem | null>(null);
@@ -1129,7 +1140,7 @@ export function ImageGrid({
   const sortedImages = useMemo(() => {
     const list = [...filteredImages];
 
-    list.sort((a, b) => {
+    const baseCompare = (a: ImageItem, b: ImageItem) => {
       if (sort === "id_asc") return a.id - b.id;
       if (sort === "id_desc") return b.id - a.id;
 
@@ -1152,10 +1163,22 @@ export function ImageGrid({
       if (an < bn) return sort === "name_desc" ? 1 : -1;
       if (an > bn) return sort === "name_desc" ? -1 : 1;
       return a.id - b.id;
-    });
+    };
+
+    const compareWithPriority = (a: ImageItem, b: ImageItem) => {
+      if (typeof priorityAssetId === "number") {
+        const ap = a.id === priorityAssetId;
+        const bp = b.id === priorityAssetId;
+        if (ap && !bp) return -1;
+        if (!ap && bp) return 1;
+      }
+      return baseCompare(a, b);
+    };
+
+    list.sort(compareWithPriority);
 
     return list;
-  }, [filteredImages, sort]);
+  }, [filteredImages, sort, priorityAssetId]);
 
   const showColourboxFallback = !isLoading && q.length > 0 && sortedImages.length === 0;
   const colourboxSuggestions = useMemo(
@@ -1190,6 +1213,7 @@ export function ImageGrid({
                   favorited={isFavorited(img.id)}
                   onToggleFavorite={toggleFavorite}
                   onOpen={() => setActive(img)}
+                  isCover={typeof priorityAssetId === "number" && img.id === priorityAssetId}
                 />
               ))}
             </>
@@ -1261,6 +1285,7 @@ export function ImageGrid({
                   title={img.title}
                   ratio={img.ratio as any}
                   src={img.src}
+                  isCover={typeof priorityAssetId === "number" && img.id === priorityAssetId}
                   selected={isSelected(img.id)}
                   onToggleSelectAction={toggleSelected}
                   favorited={isFavorited(img.id)}

@@ -34,6 +34,7 @@ import {
   type SmartRule,
 } from '@/components/smart-folders/CreateSmartFolderDialog';
 import { Input } from '@/components/ui/input';
+import { readJSON, readString, writeJSON, writeString } from '@/lib/storage/localStorage';
 
 import {
   DropdownMenu,
@@ -79,40 +80,6 @@ const LS_KEYS = {
   sidebarCollapsed: 'CBX_SIDEBAR_COLLAPSED_V1',
 } as const;
 
-function readLS<T>(key: string, fallback: T): T {
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeLS(key: string, value: unknown) {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // ignore
-  }
-}
-
-function readLSString(key: string, fallback: string): string {
-  try {
-    const raw = window.localStorage.getItem(key);
-    return raw ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeLSString(key: string, value: string) {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    // ignore
-  }
-}
 
 export const demoFolders: FolderNode[] = [
   {
@@ -428,14 +395,14 @@ export function FolderSidebar({
   const [favoriteIds, setFavoriteIds] = React.useState<Set<string>>(() => new Set());
   const [favoritesReady, setFavoritesReady] = React.useState(false);
   React.useEffect(() => {
-    const arr = readLS<string[]>(LS_KEYS.favorites, []);
-    setFavoriteIds(new Set(arr));
+    const arr = readJSON<string[]>(LS_KEYS.favorites, []);
+    setFavoriteIds(new Set(Array.isArray(arr) ? arr : []));
     setFavoritesReady(true);
   }, []);
 
   React.useEffect(() => {
     if (!favoritesReady) return;
-    writeLS(LS_KEYS.favorites, Array.from(favoriteIds));
+    writeJSON(LS_KEYS.favorites, Array.from(favoriteIds));
   }, [favoriteIds, favoritesReady]);
 
   const toggleFavorite = (id: string) => {
@@ -458,15 +425,15 @@ export function FolderSidebar({
   // Collapsed state (persisted)
   const [collapsed, setCollapsed] = React.useState(false);
   React.useEffect(() => {
-    setCollapsed(readLSString(LS_KEYS.sidebarCollapsed, '0') === '1');
+    setCollapsed(readString(LS_KEYS.sidebarCollapsed, '0') === '1');
   }, []);
 
   React.useEffect(() => {
-    writeLSString(LS_KEYS.sidebarCollapsed, collapsed ? '1' : '0');
+    writeString(LS_KEYS.sidebarCollapsed, collapsed ? '1' : '0');
   }, [collapsed]);
 
   React.useEffect(() => {
-    const raw = readLSString(LS_KEYS.sidebarWidth, '');
+    const raw = readString(LS_KEYS.sidebarWidth, '');
     const n = raw ? Number(raw) : NaN;
     if (Number.isFinite(n)) setSidebarWidth(Math.min(Math.max(n, 220), 420));
     setWidthReady(true);
@@ -474,7 +441,7 @@ export function FolderSidebar({
 
   React.useEffect(() => {
     if (!widthReady) return;
-    writeLSString(LS_KEYS.sidebarWidth, String(sidebarWidth));
+    writeString(LS_KEYS.sidebarWidth, String(sidebarWidth));
   }, [sidebarWidth, widthReady]);
 
   const dragRef = React.useRef<{ startX: number; startW: number } | null>(null);
@@ -534,47 +501,43 @@ export function FolderSidebar({
   const [smartReady, setSmartReady] = React.useState(false);
 
   React.useEffect(() => {
-    try {
-      const parsed = readLS<SmartFolderDef[] | null>(LS_KEYS.smartFolders, null);
+    const parsed = readJSON<SmartFolderDef[] | null>(LS_KEYS.smartFolders, null);
 
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const cleaned: SmartFolderDef[] = [];
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const cleaned: SmartFolderDef[] = [];
 
-        parsed.forEach((d) => {
-          if (!d || typeof d.id !== 'string' || typeof d.name !== 'string') return;
+      parsed.forEach((d) => {
+        if (!d || typeof d.id !== 'string' || typeof d.name !== 'string') return;
 
-          const kindOk =
-            !d.kind || d.kind === 'portraits' || d.kind === 'wides' || d.kind === 'squares';
+        const kindOk =
+          !d.kind || d.kind === 'portraits' || d.kind === 'wides' || d.kind === 'squares';
 
-          const rulesOk =
-            !d.rules ||
-            (Array.isArray(d.rules) &&
-              d.rules.every(
-                (r: any) =>
-                  r &&
-                  (r.field === 'ratio' || r.field === 'name' || r.field === 'keywords') &&
-                  (r.op === 'is' || r.op === 'contains') &&
-                  typeof r.value === 'string'
-              ));
+        const rulesOk =
+          !d.rules ||
+          (Array.isArray(d.rules) &&
+            d.rules.every(
+              (r: any) =>
+                r &&
+                (r.field === 'ratio' || r.field === 'name' || r.field === 'keywords') &&
+                (r.op === 'is' || r.op === 'contains') &&
+                typeof r.value === 'string'
+            ));
 
-          if (kindOk && rulesOk) cleaned.push(d);
-        });
+        if (kindOk && rulesOk) cleaned.push(d);
+      });
 
-        // If storage somehow contains nothing valid, fall back to defaults
-        setSmartFolderDefs(cleaned.length ? cleaned : defaultSmartFolders);
-      } else {
-        setSmartFolderDefs(defaultSmartFolders);
-      }
-    } catch {
+      // If storage somehow contains nothing valid, fall back to defaults
+      setSmartFolderDefs(cleaned.length ? cleaned : defaultSmartFolders);
+    } else {
       setSmartFolderDefs(defaultSmartFolders);
-    } finally {
-      setSmartReady(true);
     }
+
+    setSmartReady(true);
   }, []);
 
   React.useEffect(() => {
     if (!smartReady) return;
-    writeLS(LS_KEYS.smartFolders, smartFolderDefs);
+    writeJSON(LS_KEYS.smartFolders, smartFolderDefs);
   }, [smartFolderDefs, smartReady]);
 
   const [createSmartOpen, setCreateSmartOpen] = React.useState(false);
@@ -606,23 +569,18 @@ export function FolderSidebar({
   const [sectionsReady, setSectionsReady] = React.useState(false);
 
   React.useEffect(() => {
-    try {
-      const parsed = readLS<Partial<typeof sectionsOpen>>(LS_KEYS.sections, {});
-      setSectionsOpen((prev) => ({
-        smart: typeof parsed.smart === 'boolean' ? parsed.smart : prev.smart,
-        starred: typeof parsed.starred === 'boolean' ? parsed.starred : prev.starred,
-        folders: typeof parsed.folders === 'boolean' ? parsed.folders : prev.folders,
-      }));
-    } catch {
-      // ignore
-    } finally {
-      setSectionsReady(true);
-    }
+    const parsed = readJSON<Partial<typeof sectionsOpen>>(LS_KEYS.sections, {});
+    setSectionsOpen((prev) => ({
+      smart: typeof parsed.smart === 'boolean' ? parsed.smart : prev.smart,
+      starred: typeof parsed.starred === 'boolean' ? parsed.starred : prev.starred,
+      folders: typeof parsed.folders === 'boolean' ? parsed.folders : prev.folders,
+    }));
+    setSectionsReady(true);
   }, []);
 
   React.useEffect(() => {
     if (!sectionsReady) return;
-    writeLS(LS_KEYS.sections, sectionsOpen);
+    writeJSON(LS_KEYS.sections, sectionsOpen);
   }, [sectionsOpen, sectionsReady]);
 
   const toggleSection = React.useCallback((key: keyof typeof sectionsOpen) => {
@@ -639,7 +597,7 @@ export function FolderSidebar({
 
   // Load persisted open/closed state after mount (avoid SSR hydration mismatch)
   React.useEffect(() => {
-    const obj = readLS<Record<string, boolean>>(LS_KEYS.folderOpen, {});
+    const obj = readJSON<Record<string, boolean>>(LS_KEYS.folderOpen, {});
     setOpenById(obj || {});
     setOpenReady(true);
   }, []);
@@ -647,7 +605,7 @@ export function FolderSidebar({
   // Persist on changes
   React.useEffect(() => {
     if (!openReady) return;
-    writeLS(LS_KEYS.folderOpen, openById);
+    writeJSON(LS_KEYS.folderOpen, openById);
   }, [openById, openReady]);
 
   const isOpen = (id: string) => {
