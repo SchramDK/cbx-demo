@@ -122,7 +122,8 @@ export function SearchBar({
   });
 
   const selectableItems = React.useMemo(() => {
-    return value.trim().length === 0 ? recents : suggestions;
+    const q = value.trim();
+    return q.length === 0 ? recents : suggestions;
   }, [value, recents, suggestions]);
 
   const loadRecents = React.useCallback(() => {
@@ -216,13 +217,13 @@ export function SearchBar({
 
   const scopePadLeft = React.useMemo(() => {
     if (!onScopeChange) return undefined;
-    // Rough estimate: base + label widths (keeps compact while avoiding overlap)
+    // Rough estimate: pill width + current label width (keeps compact while avoiding overlap)
     const base = 74; // pill + icon gap
     const perChar = 6; // conservative
-    const labels = scopes.slice(0, 4).map((s) => s.label).join("");
-    const est = base + labels.length * perChar;
+    const label = scopeLabel ?? "";
+    const est = base + label.length * perChar;
     return Math.min(Math.max(est, 120), 160);
-  }, [onScopeChange, scopes]);
+  }, [onScopeChange, scopeLabel]);
 
   // Avoid mismatch: render a stable default, then show shortcut hint only after mount
   const [primaryShortcut, setPrimaryShortcut] = React.useState("Ctrl K");
@@ -394,6 +395,9 @@ export function SearchBar({
     };
   }, []);
 
+  // Consistent trimmed query for checks
+  const q = value.trim();
+
   return (
     <div className={cn("flex w-full items-center gap-3", className)}>
       <Popover
@@ -510,12 +514,12 @@ export function SearchBar({
                 aria-label={effectiveAriaLabel}
                 style={
                   onScopeChange
-                    ? ({ paddingLeft: `${scopePadLeft ?? 130}px` } as React.CSSProperties)
+                    ? ({ paddingLeft: `${(scopePadLeft ?? 130) + (showIcon ? 22 : 0)}px` } as React.CSSProperties)
                     : undefined
                 }
                 className={cn(
                   "h-10 bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring focus-visible:ring-offset-background",
-                  onScopeChange ? "pl-3" : showIcon ? "pl-9" : "pl-3",
+                  onScopeChange ? "" : showIcon ? "pl-9" : "pl-3",
                   value ? "pr-9" : "pr-16",
                   "[&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none [&::-webkit-search-results-button]:appearance-none [&::-webkit-search-results-decoration]:appearance-none"
                 )}
@@ -524,7 +528,7 @@ export function SearchBar({
           </PopoverAnchor>
 
           {onScopeChange ? (
-            <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
+            <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center gap-2 pr-1">
               <div
                 className="inline-flex h-7 items-center rounded-full bg-muted/50 p-0.5 ring-1 ring-border/40"
                 role="tablist"
@@ -641,15 +645,20 @@ export function SearchBar({
                 <CommandList>
                   <div className="px-3 py-2 text-xs text-muted-foreground">
                     Enter to search • ↑/↓ then Enter to select • Esc to close
+                    {onScopeChange ? " • / Stock • ⇧/ Files" : ""}
                   </div>
-                  {showRecents && value.trim().length === 0 && recents.length > 0 ? (
+                  {showRecents && q.length === 0 && recents.length > 0 ? (
                     <CommandGroup
                       heading={
                         <div className="flex items-center justify-between">
                           <span>Recent {onScopeChange ? (scope === 'drive' ? 'Files' : 'Stock') : ''} searches</span>
                           <button
                             type="button"
-                            onClick={clearRecents}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              clearRecents();
+                              window.setTimeout(() => inputRef.current?.focus(), 0);
+                            }}
                             className="text-xs text-muted-foreground hover:text-foreground"
                           >
                             Clear
@@ -677,7 +686,7 @@ export function SearchBar({
                     </CommandGroup>
                   ) : null}
 
-                  {!suggestionsLoading && value.trim().length > 0 ? (
+                  {!suggestionsLoading && q.length >= minChars && suggestions.length === 0 ? (
                     <CommandEmpty>No suggestions</CommandEmpty>
                   ) : null}
 
@@ -697,6 +706,13 @@ export function SearchBar({
                       ))}
                     </CommandGroup>
                   ) : null}
+                {showRecents && q.length === 0 && recents.length === 0 ? (
+                  <CommandGroup>
+                    <div className="px-3 py-2 text-xs text-muted-foreground">
+                      No recent searches yet.
+                    </div>
+                  </CommandGroup>
+                ) : null}
                 </CommandList>
               </Command>
             </PopoverContent>

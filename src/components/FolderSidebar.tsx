@@ -309,16 +309,11 @@ function CommandPalette({
           <CommandItem value="All files" onSelect={() => run("all")}>
             All files
           </CommandItem>
+          <CommandItem value="Purchases" onSelect={() => run("purchases")}>
+            Purchases
+          </CommandItem>
           <CommandItem value="Favorites" onSelect={() => run("favorites")}>
             Favorites
-          </CommandItem>
-          <CommandItem value="Purchases" onSelect={() => run("purchases")}>
-            <div className="flex w-full items-center justify-between gap-2">
-              <span>Purchases</span>
-              <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                Stock
-              </span>
-            </div>
           </CommandItem>
           <CommandItem value="Trash" onSelect={() => run("trash")}>
             Trash
@@ -936,21 +931,21 @@ export function FolderSidebar({
 
         <button
           type="button"
-          onClick={() => onSelectAction?.("favorites")}
-          className={cn(navRowBase, selectedId === "favorites" && navRowActive)}
-          aria-current={selectedId === "favorites" ? "page" : undefined}
-        >
-          <Heart className="h-4 w-4 text-muted-foreground" />
-          <span className="truncate">Favorites</span>
-        </button>
-        <button
-          type="button"
           onClick={() => onSelectAction?.("purchases")}
           className={cn(navRowBase, selectedId === "purchases" && navRowActive)}
           aria-current={selectedId === "purchases" ? "page" : undefined}
         >
           <Receipt className="h-4 w-4 text-muted-foreground" />
           <span className="truncate">Purchases</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onSelectAction?.("favorites")}
+          className={cn(navRowBase, selectedId === "favorites" && navRowActive)}
+          aria-current={selectedId === "favorites" ? "page" : undefined}
+        >
+          <Heart className="h-4 w-4 text-muted-foreground" />
+          <span className="truncate">Favorites</span>
         </button>
         <button
           type="button"

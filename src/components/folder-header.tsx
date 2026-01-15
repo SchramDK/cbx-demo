@@ -38,14 +38,18 @@ export function FolderHeader({
 }: FolderHeaderProps) {
   const [open, setOpen] = React.useState(false);
 
-  const fallback = assets[0];
+  const hasAssets = assets.length > 0;
+
+  const fallback = hasAssets ? assets[0] : undefined;
   const cover =
     (coverAssetId ? assets.find((a) => a.id === coverAssetId) : undefined) ?? fallback;
 
-  const countLabel = `${assets.length} file${assets.length === 1 ? "" : "s"}`;
+  const countLabel = hasAssets
+    ? `${assets.length} file${assets.length === 1 ? "" : "s"}`
+    : "No files";
 
   return (
-    <div className={cn("mb-4", className)} data-folder-id={folderId}>
+    <div className={cn("mb-3 sm:mb-4", className)} data-folder-id={folderId}>
       <div className="relative overflow-hidden rounded-2xl border border-border bg-muted/40">
         {/* Cover */}
         <div className="relative h-[150px] w-full">
@@ -81,6 +85,8 @@ export function FolderHeader({
                 <Button
                   type="button"
                   variant="secondary"
+                  aria-label={`Choose cover image for ${folderName}`}
+                  disabled={!hasAssets}
                   className="h-9 gap-2 bg-background/70 backdrop-blur supports-[backdrop-filter]:bg-background/55"
                 >
                   <Pencil className="h-4 w-4" />
@@ -105,6 +111,7 @@ export function FolderHeader({
                             onSetCoverAction(a.id);
                             setOpen(false);
                           }}
+                          aria-pressed={isActive}
                           className={cn(
                             "group relative overflow-hidden rounded-xl border border-border bg-muted/40 text-left",
                             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",

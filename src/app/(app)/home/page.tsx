@@ -61,8 +61,8 @@ const suggestions = [
   {
     key: 'purchases',
     title: 'Review purchases',
-    description: 'Access your licensed Stock images — separate from Drive downloads.',
-    href: '/drive?selectedId=purchases',
+    description: 'Your bought images — automatically available in Files.',
+    href: '/drive?folder=purchases',
     icon: Receipt,
   },
 ];
@@ -70,7 +70,7 @@ const suggestions = [
 const quickActions = [
   { label: 'Upload files', href: '/drive', hint: 'Start in Files', icon: UploadCloud },
   { label: 'Find images', href: '/stock', hint: 'Search Stock', icon: Search },
-  { label: 'Open purchases', href: '/drive?selectedId=purchases', hint: 'Stock licenses', icon: Receipt },
+  { label: 'Open purchases', href: '/drive?folder=purchases', hint: 'In Files', icon: Receipt },
 ];
 
 export default function HomePage() {
@@ -387,6 +387,15 @@ export default function HomePage() {
                   >
                     Open Files <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                   </button>
+
+                  <button
+                    onClick={() => router.push('/drive?folder=purchases')}
+                    className="group inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-background/60 px-5 text-sm font-medium ring-1 ring-border/30 transition hover:bg-background/80 sm:w-auto"
+                  >
+                    <Receipt className="h-4 w-4" /> Open Purchases
+                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                  </button>
+
                   <button
                     onClick={() => router.push('/stock')}
                     className="group inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-muted/30 px-5 text-sm font-medium transition hover:bg-muted/40 sm:w-auto"

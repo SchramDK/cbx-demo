@@ -305,7 +305,7 @@ useEffect(() => {
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button asChild>
-                  <Link href="/drive?selectedId=purchases">Open Files</Link>
+                  <Link href="/drive?folder=purchases">Open Files</Link>
                 </Button>
                 <Button asChild variant="secondary">
                   <Link href="/stock">Browse Stock</Link>
@@ -359,9 +359,9 @@ useEffect(() => {
               <div>
                 <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h2 className="text-sm font-semibold text-foreground">Your downloads</h2>
+                    <h2 className="text-sm font-semibold text-foreground">Your purchases</h2>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      Download now, or find everything later in Files.
+                      Download now, or find everything later in Purchases in Files.
                     </p>
                   </div>
 
@@ -436,7 +436,7 @@ useEffect(() => {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button asChild size="sm">
-                      <Link href="/drive?selectedId=purchases">Open Files</Link>
+                      <Link href="/drive?folder=purchases">Open Files</Link>
                     </Button>
                   </div>
                 </div>
@@ -461,14 +461,14 @@ useEffect(() => {
             </>
           ) : (
             <div className="mt-2 rounded-2xl border border-border bg-muted/20 p-6">
-              <p className="text-sm font-semibold text-foreground">No downloads yet</p>
+              <p className="text-sm font-semibold text-foreground">No purchases yet</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                If you just completed checkout, give it a moment — or open Files to manage your files and find any downloads.
+                If you just completed checkout, give it a moment — or open Files to manage your files and find any purchases.
               </p>
 
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                 <Button asChild>
-                  <Link href="/drive?selectedId=purchases">Open Files</Link>
+                  <Link href="/drive?folder=purchases">Open Files</Link>
                 </Button>
                 <Button asChild variant="secondary">
                   <Link href="/stock">Browse Stock</Link>
@@ -583,7 +583,7 @@ useEffect(() => {
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <Button asChild>
-                <Link href="/drive?selectedId=purchases">Open Files</Link>
+                <Link href="/drive?folder=purchases">Open Files</Link>
               </Button>
               <Button asChild variant="secondary">
                 <Link href="/stock">Browse Stock</Link>
