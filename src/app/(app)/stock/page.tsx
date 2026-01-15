@@ -47,8 +47,6 @@ function safeParseLastSeen(raw: string | null): LastSeenItem[] {
 
 const getAssetImage = (asset?: Asset) => asset?.preview ?? asset?.src ?? asset?.image ?? asset?.url ?? '';
 const getImage = (asset: Asset, fallback: string) => getAssetImage(asset) || fallback;
-
-
 const isLocalDemoImage = (src: string) => src.startsWith('/demo/');
 
 // --- Seeded RNG and shuffle helpers for per-visit randomization ---
@@ -84,15 +82,28 @@ function Pill({ children }: { children: React.ReactNode }) {
   );
 }
 
-function AddToCartOverlayButton({ onClick }: { onClick: (e: React.MouseEvent) => void }) {
+function AddToCartOverlayButton({
+  onClick,
+  disabled,
+  label,
+}: {
+  onClick: (e: React.MouseEvent) => void;
+  disabled?: boolean;
+  label?: string;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="absolute right-2 top-2 z-10 inline-flex items-center rounded-full bg-background/90 px-3 py-1 text-[11px] font-medium text-foreground ring-1 ring-black/5 shadow-sm backdrop-blur transition hover:bg-background focus:outline-none focus:ring-2 focus:ring-foreground/25 dark:ring-white/10"
-      aria-label="Add to cart"
+      disabled={disabled}
+      className={`absolute right-2 top-2 z-10 inline-flex items-center rounded-full bg-background/90 px-3 py-1 text-[11px] font-medium text-foreground ring-1 ring-black/5 shadow-sm backdrop-blur transition dark:ring-white/10 ${
+        disabled
+          ? 'opacity-60 cursor-default'
+          : 'hover:bg-background focus:outline-none focus:ring-2 focus:ring-foreground/25'
+      }`}
+      aria-label={label ?? 'Add to cart'}
     >
-      Add
+      {label ?? 'Add'}
     </button>
   );
 }
@@ -106,9 +117,10 @@ type AssetCardProps = {
   variant?: AssetCardVariant;
   badge?: string;
   onAdd: () => void;
+  inCart?: boolean;
 };
 
-function AssetCard({ asset, href, imageSrc, variant = 'grid', badge, onAdd }: AssetCardProps) {
+function AssetCard({ asset, href, imageSrc, variant = 'grid', badge, onAdd, inCart = false }: AssetCardProps) {
   const frameClass =
     variant === 'compact'
       ? 'h-28 w-44'
@@ -133,7 +145,10 @@ function AssetCard({ asset, href, imageSrc, variant = 'grid', badge, onAdd }: As
       }
     >
       <AddToCartOverlayButton
+        disabled={inCart}
+        label={inCart ? 'In cart' : 'Add'}
         onClick={(e) => {
+          if (inCart) return;
           e.preventDefault();
           e.stopPropagation();
           onAdd();
@@ -204,7 +219,7 @@ export default function StockPage() {
   const { isReady, isLoggedIn } = useProtoAuth();
   const loggedIn = isReady && isLoggedIn;
 
-  const { addItem } = useCart();
+  const cart = useCart() as any;
   const { open: openCart } = useCartUI();
 
   const assets = useMemo(() => ASSETS as Asset[], []);
@@ -212,6 +227,7 @@ export default function StockPage() {
   // Per-visit seed for shuffling.
   // IMPORTANT: set after mount to avoid SSR/CSR hydration mismatches.
   const [visitSeed, setVisitSeed] = useState<number | null>(null);
+  const shuffleReady = visitSeed !== null;
 
   useEffect(() => {
     try {
@@ -233,20 +249,46 @@ export default function StockPage() {
     return getAssetImage(first) ?? '';
   }, [assets]);
 
+  const cartIds = useMemo(() => {
+    const ids = new Set<string>();
+    const items = (cart?.items ?? []) as any[];
+    for (const it of items) {
+      const id = (it?.id ?? it?.assetId ?? it?.asset?.id ?? '').toString();
+      if (id) ids.add(id);
+    }
+    return ids;
+  }, [cart?.items]);
+
   const addToCart = useCallback(
     (asset: Asset) => {
+      if (cartIds.has(asset.id)) {
+        // Already in cart — just open cart UI.
+        if (typeof openCart === 'function') openCart();
+        return;
+      }
+
       const img = getImage(asset, fallbackImage);
-      addItem({
+
+      const payload: any = {
         id: asset.id,
+        assetId: asset.id,
         title: asset.title,
+        name: asset.title,
         license: 'single',
         price: 7.99,
         image: img,
+        preview: img,
         qty: 1,
-      });
-      openCart();
+        quantity: 1,
+        asset,
+      };
+
+      const fn = cart?.addItem ?? cart?.addAsset ?? cart?.add;
+      if (typeof fn === 'function') fn(payload);
+
+      if (typeof openCart === 'function') openCart();
     },
-    [addItem, openCart, fallbackImage]
+    [cart, cartIds, openCart, fallbackImage]
   );
 
   const [q, setQ] = useState('');
@@ -258,20 +300,21 @@ export default function StockPage() {
     const byId = new Map(assets.map((a) => [a.id, a] as const));
     const picked = STOCK_FEATURED_IDS.map((id) => byId.get(id)).filter(Boolean) as Asset[];
 
+    const base = shuffleReady ? shuffledAssets : assets;
     const pickedIds = new Set(picked.map((p) => p.id));
-    const rest = shuffledAssets.filter((a) => !pickedIds.has(a.id));
+    const rest = base.filter((a) => !pickedIds.has(a.id));
 
     return [...picked, ...rest].slice(0, 10);
-  }, [assets, shuffledAssets]);
+  }, [assets, shuffledAssets, shuffleReady]);
 
-  const newest = useMemo(() => shuffledAssets.slice(0, 12), [shuffledAssets]);
+  const newest = useMemo(() => (shuffleReady ? shuffledAssets : assets).slice(0, 12), [assets, shuffledAssets, shuffleReady]);
 
   const heroImages = useMemo(() => {
     // Use a wider pool (shuffled) so the hero varies per visit, but keep it stable while on page.
-    const pool = shuffledAssets.length ? shuffledAssets : featured;
+    const pool = shuffleReady ? shuffledAssets : assets;
     const list = pool.slice(0, 8).map((a) => getImage(a, fallbackImage)).filter(Boolean);
     return list.length > 1 ? list : fallbackImage ? [fallbackImage, fallbackImage] : [];
-  }, [shuffledAssets, featured, fallbackImage]);
+  }, [assets, shuffledAssets, shuffleReady, fallbackImage]);
 
   const heroSources = useMemo(() => {
     const fallback = featured.slice(0, 1).map((a) => getImage(a, fallbackImage));
@@ -460,21 +503,22 @@ export default function StockPage() {
                   <div className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-background/60 to-transparent" />
                   <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-background/60 to-transparent" />
                   <div className="overflow-x-auto px-4">
-                    <div className="flex snap-x snap-mandatory gap-3 pr-6">
-                      {featured.slice(0, 12).map((a) => {
-                        const img = getImage(a, fallbackImage);
-                        return (
-                          <AssetCard
-                            key={a.id}
-                            asset={a}
-                            href={`/stock/assets/${a.id}`}
-                            imageSrc={img}
-                            variant="compact"
-                            onAdd={() => addToCart(a)}
-                          />
-                        );
-                      })}
-                    </div>
+                <div className="flex snap-x snap-mandatory gap-3 pr-6">
+                  {featured.slice(0, 12).map((a) => {
+                    const img = getImage(a, fallbackImage);
+                    return (
+                      <AssetCard
+                        key={a.id}
+                        asset={a}
+                        href={`/stock/assets/${a.id}`}
+                        imageSrc={img}
+                        variant="compact"
+                        onAdd={() => addToCart(a)}
+                        inCart={cartIds.has(a.id)}
+                      />
+                    );
+                  })}
+                </div>
                   </div>
                 </div>
               </div>
@@ -620,79 +664,6 @@ export default function StockPage() {
         </section>
       ) : null}
 
-      {/* Browse helpers */}
-      <section className="mb-12 px-4 sm:px-6 lg:px-10">
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-          <div className="lg:col-span-8">
-            <div className="rounded-2xl bg-muted/10 p-5 sm:p-6">
-              <div className="text-sm font-semibold">Discover faster</div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Explore popular categories and trending searches.
-              </p>
-
-              <div className="mt-5 space-y-5">
-                <div>
-                  <div className="mb-2 text-xs font-medium text-muted-foreground">Popular categories</div>
-                  <div className="flex flex-wrap gap-2">
-                    {['campaign', 'office', 'summer', 'family', 'travel', 'abstract'].map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => router.push(buildSearchHref(t))}
-                        className="rounded-full focus:outline-none"
-                      >
-                        <Pill>{t}</Pill>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="mb-2 text-xs font-medium text-muted-foreground">Trending</div>
-                  <div className="flex flex-wrap gap-2">
-                    {['winter', 'lifestyle', 'business', 'nature', 'food', 'portrait'].map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => router.push(buildSearchHref(t))}
-                        className="rounded-full focus:outline-none"
-                      >
-                        <Pill>{t}</Pill>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {!loggedIn ? (
-            <div className="lg:col-span-4">
-              <div className="grid grid-cols-1 gap-3">
-                <div className="rounded-2xl bg-muted/10 p-5">
-                  <div className="text-xs font-medium">Fast licensing</div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    Clear rights and instant download options.
-                  </div>
-                </div>
-                <div className="rounded-2xl bg-muted/10 p-5">
-                  <div className="text-xs font-medium">Brand-safe search</div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    Find the right look with keywords and filters.
-                  </div>
-                </div>
-                <div className="rounded-2xl bg-muted/10 p-5">
-                  <div className="text-xs font-medium">Team-ready</div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    Share, save, and reuse across projects.
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </section>
-
       <div className="mb-12 h-px w-full bg-border/50" />
 
       {/* Featured */}
@@ -725,7 +696,14 @@ export default function StockPage() {
                 }}
                 href={`/stock/assets/${a.id}`}
                 aspect="photo"
-                onAddToCart={() => addToCart(a)}
+                onAddToCart={() => {
+                  if (cartIds.has(a.id)) {
+                    if (typeof openCart === 'function') openCart();
+                    return;
+                  }
+                  addToCart(a);
+                }}
+                inCart={cartIds.has(a.id)}
               />
             );
           })}
@@ -828,7 +806,14 @@ export default function StockPage() {
                 }}
                 href={`/stock/assets/${a.id}`}
                 aspect="wide"
-                onAddToCart={() => addToCart(a)}
+                onAddToCart={() => {
+                  if (cartIds.has(a.id)) {
+                    if (typeof openCart === 'function') openCart();
+                    return;
+                  }
+                  addToCart(a);
+                }}
+                inCart={cartIds.has(a.id)}
               />
             );
           })}

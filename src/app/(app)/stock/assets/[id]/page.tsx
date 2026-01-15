@@ -12,6 +12,7 @@ import { ArrowLeft, ShoppingCart } from 'lucide-react';
 import { useCart, useCartUI } from '@/lib/cart/cart';
 import { useProtoAuth } from '@/lib/proto-auth';
 
+
 type Asset = {
   id: string;
   title: string;
@@ -22,20 +23,55 @@ type Asset = {
   tags?: string[];
 };
 
+type TabKey = 'info' | 'keywords' | 'similar' | 'shoot' | 'related';
+
 const getAssetImage = (asset?: Asset) => asset?.preview ?? '';
 
-const normalizeToken = (s: string) => s.trim().toLowerCase();
+const normalizeToken = (s?: string) => (s ?? '').trim().toLowerCase();
 
+const isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
 const pickTags = (asset?: Asset, limit = 10) => {
   const fromTags = asset?.tags ?? [];
   const fromKeywords = asset?.keywords ?? [];
   const fromCategory = asset?.category ? [asset.category] : [];
   const merged = [...fromTags, ...fromKeywords, ...fromCategory]
-    .filter(Boolean)
+    .filter(isNonEmptyString)
     .map(normalizeToken);
 
   const unique = Array.from(new Set(merged));
   return unique.slice(0, limit);
+};
+
+// Helper: pick "meaningful" tokens (tags+keywords only, no category)
+const pickMeaningful = (asset?: Asset, limit = 12) => {
+  const fromTags = asset?.tags ?? [];
+  const fromKeywords = asset?.keywords ?? [];
+  const merged = [...fromTags, ...fromKeywords].filter(isNonEmptyString).map(normalizeToken);
+  const unique = Array.from(new Set(merged));
+  return unique.slice(0, limit);
+};
+
+// --- Similarity helpers for better "Similar images" picks ---
+const tokenSet = (a?: Asset) => {
+  const parts = [a?.category, ...(a?.tags ?? []), ...(a?.keywords ?? [])]
+    .filter(isNonEmptyString)
+    .map(normalizeToken);
+  return new Set(parts);
+};
+
+const jaccard = (a: Set<string>, b: Set<string>) => {
+  if (!a.size || !b.size) return 0;
+  let inter = 0;
+  for (const x of a) if (b.has(x)) inter += 1;
+  const union = a.size + b.size - inter;
+  return union ? inter / union : 0;
+};
+
+const signature = (a?: Asset) => {
+  // coarse signature to avoid near-duplicates when demo assets share very similar metadata
+  const cat = normalizeToken(a?.category ?? '');
+  const t = pickMeaningful(a, 6).sort().join('|');
+  return `${cat}::${t}`;
 };
 
 export default function StockAssetPage() {
@@ -55,66 +91,80 @@ export default function StockAssetPage() {
     if (asset?.category) raw.push(asset.category);
     if (asset?.tags?.length) raw.push(...asset.tags);
     if (asset?.keywords?.length) raw.push(...asset.keywords);
-    return new Set(raw.filter(Boolean).map(normalizeToken));
+    return new Set(raw.filter(isNonEmptyString).map(normalizeToken));
   }, [asset]);
 
   const relatedPicks = useMemo(() => {
     if (!assets.length) return [] as Asset[];
 
     const currentId = asset?.id ?? id;
+    const baseMeaningful = new Set(pickMeaningful(asset, 24));
+    const baseAll = tokenSet(asset);
 
-    // Score by shared tokens + category, then diversify a bit.
     const scored = assets
       .filter((a) => a.id !== currentId)
       .map((a) => {
+        const meaningful = pickMeaningful(a, 24);
+        let hits = 0;
+        for (const t of meaningful) if (baseMeaningful.has(t)) hits += 1;
+
+        const sameCat = asset?.category && a.category && a.category === asset.category;
+        const sim = jaccard(baseAll, tokenSet(a));
+        const hasPreview = Boolean(getAssetImage(a));
+
+        // Penalize category-only matches (no meaningful overlap)
+        const categoryOnly = sameCat && hits === 0;
+
         let score = 0;
-        const aTokens = new Set(
-          [a.category, ...(a.tags ?? []), ...(a.keywords ?? [])]
-            .filter(Boolean)
-            .map(normalizeToken)
-        );
+        score += Math.min(hits, 8) * 2.4; // strong overlap on meaningful tokens
+        score += sim * 6; // softer semantic similarity
+        if (sameCat) score += 4; // category matters for related
+        if (hasPreview) score += 0.5;
+        if (categoryOnly) score -= 3;
 
-        // category boost
-        if (asset?.category && a.category && a.category === asset.category) score += 8;
-
-        // shared tags/keywords/category tokens
-        for (const tok of aTokens) {
-          if (assetTokens.has(tok)) score += 3;
-        }
-
-        // slight preference for assets with previews
-        if (getAssetImage(a)) score += 1;
-
-        return { a, score };
+        return {
+          a,
+          score,
+          sig: signature(a),
+          cat: (a.category ?? '').trim(),
+        };
       })
       .sort((x, y) => y.score - x.score);
 
-    // Diversify by category: take top results but avoid all being same category.
-    const result: Asset[] = [];
-    const seenCats = new Set<string>();
-
-    for (const { a } of scored) {
-      if (result.length >= 8) break;
-      const cat = (a.category ?? '').trim();
-      if (cat && seenCats.has(cat) && result.length < 4) {
-        // first half: encourage diversity
-        continue;
-      }
-      if (cat) seenCats.add(cat);
-      result.push(a);
+    // Pool: top unique signatures
+    const pool: typeof scored = [];
+    const seenSig = new Set<string>();
+    for (const item of scored) {
+      if (pool.length >= 20) break;
+      if (seenSig.has(item.sig)) continue;
+      seenSig.add(item.sig);
+      pool.push(item);
     }
 
-    // If not enough due to diversity constraints, fill remaining
+    // Diversity after first 3
+    const result: Asset[] = [];
+    const seenCats = new Set<string>();
+    for (const item of pool) {
+      if (result.length >= 8) break;
+      const cat = item.cat;
+
+      if (result.length >= 3 && cat && seenCats.has(cat)) continue;
+
+      if (cat) seenCats.add(cat);
+      result.push(item.a);
+    }
+
+    // Fill remaining slots
     if (result.length < 8) {
-      for (const { a } of scored) {
+      for (const item of pool) {
         if (result.length >= 8) break;
-        if (result.some((r) => r.id === a.id)) continue;
-        result.push(a);
+        if (result.some((r) => r.id === item.a.id)) continue;
+        result.push(item.a);
       }
     }
 
     return result;
-  }, [assets, asset, id, assetTokens]);
+  }, [assets, asset, id]);
 
   const sameShootPicks = useMemo(() => {
     if (!assets.length) return [] as Asset[];
@@ -125,7 +175,7 @@ export default function StockAssetPage() {
       .map((a) => {
         const tokens = new Set(
           [a.category, ...(a.tags ?? []), ...(a.keywords ?? [])]
-            .filter(Boolean)
+            .filter(isNonEmptyString)
             .map(normalizeToken)
         );
         let overlap = 0;
@@ -141,22 +191,81 @@ export default function StockAssetPage() {
     if (!assets.length) return [] as Asset[];
     const currentId = asset?.id ?? id;
 
-    return assets
+    const base = tokenSet(asset);
+    const baseTags = new Set(pickMeaningful(asset, 16));
+
+    const scored = assets
       .filter((a) => a.id !== currentId)
       .map((a) => {
-        const tokens = new Set(
-          [a.category, ...(a.tags ?? []), ...(a.keywords ?? [])]
-            .filter(Boolean)
-            .map(normalizeToken)
-        );
-        let overlap = 0;
-        for (const t of tokens) if (assetTokens.has(t)) overlap += 1;
-        return { a, score: overlap + (getAssetImage(a) ? 0.5 : 0) };
+        const t = tokenSet(a);
+        const sim = jaccard(base, t);
+
+        // Stronger overlap count on “meaningful” tokens (tags/keywords), category less important.
+        const aTags = pickMeaningful(a, 16);
+        let tagHits = 0;
+        for (const tok of aTags) if (baseTags.has(tok)) tagHits += 1;
+
+        const sameCat = asset?.category && a.category && a.category === asset.category;
+
+        // Penalize category-only matches. (Stricter: no meaningful overlap)
+        const categoryOnly = sameCat && tagHits === 0;
+
+        // Slight preference for assets with previews
+        const hasPreview = Boolean(getAssetImage(a));
+
+        let score = 0;
+        score += sim * 10; // semantic similarity
+        score += Math.min(tagHits, 6) * 2.2; // strong tag/keyword overlap
+        if (sameCat) score += 2.5;
+        if (hasPreview) score += 0.5;
+        if (categoryOnly) score -= 3.5;
+
+        return {
+          a,
+          score,
+          sig: signature(a),
+          cat: (a.category ?? '').trim(),
+        };
       })
-      .sort((x, y) => y.score - x.score)
-      .slice(0, 12)
-      .map((x) => x.a);
-  }, [assets, asset, id, assetTokens]);
+      .sort((x, y) => y.score - x.score);
+
+    // First pass: take best, but avoid near-duplicates by signature
+    const first: typeof scored = [];
+    const seenSig = new Set<string>();
+    for (const item of scored) {
+      if (first.length >= 18) break; // gather a pool
+      if (seenSig.has(item.sig)) continue;
+      seenSig.add(item.sig);
+      first.push(item);
+    }
+
+    // Second pass: diversify by category after top 4
+    const result: Asset[] = [];
+    const seenCats = new Set<string>();
+    for (const item of first) {
+      if (result.length >= 12) break;
+      const cat = item.cat;
+
+      if (result.length >= 4 && cat && seenCats.has(cat)) {
+        // after the first few, encourage diversity
+        continue;
+      }
+
+      if (cat) seenCats.add(cat);
+      result.push(item.a);
+    }
+
+    // Fill remainder if diversity filtered too much
+    if (result.length < 12) {
+      for (const item of first) {
+        if (result.length >= 12) break;
+        if (result.some((r) => r.id === item.a.id)) continue;
+        result.push(item.a);
+      }
+    }
+
+    return result;
+  }, [assets, asset, id]);
 
   const fallbackImage = useMemo(() => {
     const firstValid = assets.find((a) => Boolean(getAssetImage(a)));
@@ -173,7 +282,7 @@ export default function StockAssetPage() {
       ...(asset?.tags ?? []),
       ...(asset?.keywords ?? []),
       ...(asset?.category ? [asset.category] : []),
-    ].filter(Boolean);
+    ].filter(isNonEmptyString);
 
     const map = new Map<string, string>();
     for (const t of original) map.set(t.trim().toLowerCase(), t.trim());
@@ -196,7 +305,7 @@ export default function StockAssetPage() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [isSmUp, setIsSmUp] = useState(false);
   const topbarOffset = isSmUp ? 64 : 56;
-  const stickyMenuOffset = 48; // overlay menu height (compact)
+  const stickyMenuOffset = isSmUp ? 48 : 44; // compact sticky menu height
 
   const touchStart = useRef<{ x: number; y: number; t: number } | null>(null);
   const heroRef = useRef<HTMLDivElement | null>(null);
@@ -205,27 +314,32 @@ export default function StockAssetPage() {
   const similarRef = useRef<HTMLElement | null>(null);
   const shootRef = useRef<HTMLElement | null>(null);
   const relatedRef = useRef<HTMLElement | null>(null);
+  // Removed purchaseTopRef and dynamicStickyExtra, see sticky offset logic below.
   const [showStickyMenu, setShowStickyMenu] = useState(false);
-  const [activeTab, setActiveTab] = useState<'info' | 'keywords' | 'similar' | 'shoot'>('info');
+  const [activeTab, setActiveTab] = useState<TabKey>('info');
   const showStickyMenuRef = useRef(false);
   const stickyRafRef = useRef<number | null>(null);
-  const activeTabRef = useRef<'info' | 'keywords' | 'similar' | 'shoot'>('info');
+  const activeTabRef = useRef<TabKey>('info');
   const tabRafRef = useRef<number | null>(null);
   const scrollTo = useCallback(
     (ref: React.RefObject<HTMLElement | null>) => {
       const el = ref.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      const targetLine = topbarOffset + stickyMenuOffset + 8;
+      const targetLine = topbarOffset + (showStickyMenu ? stickyMenuOffset : 0) + 8;
+      const y = window.scrollY + rect.top - targetLine;
+
       // If we are already close to the target line, don't restart a smooth scroll (feels like a hitch).
       if (Math.abs(rect.top - targetLine) < 12) {
-        el.scrollIntoView({ behavior: 'auto', block: 'start' });
+        window.scrollTo({ top: y, behavior: 'auto' });
         return;
       }
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      window.scrollTo({ top: y, behavior: 'smooth' });
     },
-    [topbarOffset]
+    [topbarOffset, stickyMenuOffset, showStickyMenu]
   );
+  // Removed dynamicStickyExtra measurement effect.
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -279,15 +393,17 @@ export default function StockAssetPage() {
     const keywordsEl = keywordsRef.current;
     const similarEl = similarRef.current;
     const shootEl = shootRef.current;
+    const relatedEl = relatedRef.current;
 
-    const targets: Array<{ key: 'info' | 'keywords' | 'similar' | 'shoot'; el: HTMLElement | null }> = [
+    const targets: Array<{ key: TabKey; el: HTMLElement | null }> = [
       { key: 'info', el: infoEl },
       { key: 'keywords', el: keywordsEl },
       { key: 'similar', el: similarEl },
       { key: 'shoot', el: shootEl },
+      { key: 'related', el: relatedEl },
     ];
 
-    const existing = targets.filter((t) => t.el) as Array<{ key: 'info' | 'keywords' | 'similar' | 'shoot'; el: HTMLElement }>;
+    const existing = targets.filter((t) => t.el) as Array<{ key: TabKey; el: HTMLElement }>;
     if (!existing.length) return;
 
     const obs = new IntersectionObserver(
@@ -313,8 +429,8 @@ export default function StockAssetPage() {
       },
       {
         root: null,
-        // Account for topbar + sticky menu height.
-        rootMargin: `-${topbarOffset + stickyMenuOffset + 24}px 0px -65% 0px`,
+        // Account for topbar + sticky menu height, only when sticky menu is visible.
+        rootMargin: `-${topbarOffset + (showStickyMenu ? stickyMenuOffset : 0) + 24}px 0px -65% 0px`,
         threshold: 0.01,
       }
     );
@@ -324,7 +440,7 @@ export default function StockAssetPage() {
       if (tabRafRef.current !== null) cancelAnimationFrame(tabRafRef.current);
       obs.disconnect();
     };
-  }, [topbarOffset]);
+  }, [topbarOffset, stickyMenuOffset, showStickyMenu]);
 
   const onTouchStart = (e: React.TouchEvent) => {
     const p = e.touches[0];
@@ -443,7 +559,7 @@ export default function StockAssetPage() {
   }
 
   return (
-    <main className="w-full px-4 py-5 sm:px-6 sm:py-6 lg:px-8 [--cbx-topbar:56px] sm:[--cbx-topbar-sm:64px]">
+    <main className="w-full px-4 py-5 sm:px-6 sm:py-6 lg:px-8 [--cbx-topbar:56px] sm:[--cbx-topbar:64px] [--cbx-sticky:44px] sm:[--cbx-sticky:48px]">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <button
@@ -463,7 +579,9 @@ export default function StockAssetPage() {
       </div>
 
       <div
-        className={`fixed top-[var(--cbx-topbar)] sm:top-[var(--cbx-topbar-sm)] left-0 right-0 md:left-[var(--app-left-rail)] z-30 transition-all duration-200 ${
+        className={`fixed top-[var(--cbx-topbar)] left-0 right-0 ${
+          loggedIn ? 'md:left-[var(--app-left-rail)]' : 'md:left-0'
+        } z-30 transition-all duration-200 ${
           showStickyMenu
             ? 'opacity-100 translate-y-0'
             : 'pointer-events-none opacity-0 -translate-y-2'
@@ -534,6 +652,21 @@ export default function StockAssetPage() {
                 >
                   Shoot
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('related');
+                    activeTabRef.current = 'related';
+                    scrollTo(relatedRef);
+                  }}
+                  className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ring-1 ${
+                    activeTab === 'related'
+                      ? 'bg-muted/50 text-foreground ring-black/10 dark:ring-white/20'
+                      : 'text-muted-foreground ring-transparent hover:bg-muted/40 hover:text-foreground'
+                  }`}
+                >
+                  Related
+                </button>
               </div>
 
               <div className="flex items-center gap-3">
@@ -599,7 +732,7 @@ export default function StockAssetPage() {
           <div
             ref={infoRef}
             id="info"
-            className="scroll-mt-[calc(var(--cbx-topbar)+88px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+88px)] rounded-2xl bg-background p-4 ring-1 ring-black/5 dark:ring-white/10"
+            className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] rounded-2xl bg-background p-4 ring-1 ring-black/5 dark:ring-white/10"
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
@@ -636,7 +769,7 @@ export default function StockAssetPage() {
           <div
             ref={keywordsRef}
             id="keywords"
-            className="scroll-mt-[calc(var(--cbx-topbar)+88px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+88px)] flex flex-wrap items-center gap-2 px-1"
+            className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] flex flex-wrap items-center gap-2 px-1"
           >
             {asset?.category ? (
               <Badge variant="secondary" className="cursor-default">{asset.category}</Badge>
@@ -660,7 +793,7 @@ export default function StockAssetPage() {
           </div>
         </div>
 
-        <Card className="h-fit p-4 lg:sticky lg:top-[calc(var(--cbx-topbar)+88px)] sm:lg:top-[calc(var(--cbx-topbar-sm)+88px)] ring-1 ring-black/5 dark:ring-white/10">
+        <Card className="h-fit p-4 lg:sticky lg:top-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] ring-1 ring-black/5 dark:ring-white/10">
           <div className="mb-3 flex items-center justify-between">
             <div>
               <div className="text-sm font-semibold">Buy license</div>
@@ -753,7 +886,7 @@ export default function StockAssetPage() {
         </Card>
       </div>
 
-      <section ref={shootRef} id="shoot" className="scroll-mt-[calc(var(--cbx-topbar)+88px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+88px)] mt-10">
+      <section ref={shootRef} id="shoot" className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] mt-10">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">From the same shoot</h2>
@@ -798,7 +931,7 @@ export default function StockAssetPage() {
         </div>
       </section>
 
-      <section ref={similarRef} id="similar" className="scroll-mt-[calc(var(--cbx-topbar)+88px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+88px)] mt-10">
+      <section ref={similarRef} id="similar" className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] mt-10">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">Similar images</h2>
@@ -817,9 +950,12 @@ export default function StockAssetPage() {
 
         <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
           {similarPicks.slice(0, 12).map((a) => {
-            const aTags = pickTags(a, 6);
-            const overlap = aTags.filter((t) => assetTokens.has(t)).slice(0, 2);
-            const hint = overlap.length ? overlap.join(' · ') : a.category ?? 'Similar';
+            const aTags = pickMeaningful(a, 8);
+            const baseMeaningfulSet = new Set(pickMeaningful(asset, 24));
+            const overlapMeaningful = aTags.filter((t) => baseMeaningfulSet.has(t)).slice(0, 2);
+            const hint = overlapMeaningful.length
+              ? overlapMeaningful.join(' · ')
+              : a.category ?? 'Similar';
 
             return (
               <Link
@@ -845,7 +981,7 @@ export default function StockAssetPage() {
         </div>
       </section>
 
-      <section ref={relatedRef} id="related" className="scroll-mt-[calc(var(--cbx-topbar)+88px)] sm:scroll-mt-[calc(var(--cbx-topbar-sm)+88px)] mt-10">
+      <section ref={relatedRef} id="related" className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] mt-10">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">Related images</h2>

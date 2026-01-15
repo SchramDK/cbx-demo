@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useMemo } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
@@ -63,6 +63,8 @@ const SYNONYMS: Record<string, string[]> = {
   vindmolle: ['wind', 'windmill', 'windmills', 'wind turbine', 'wind turbines', 'vindmølle', 'vindmøller', 'vindmoller'],
   vindmoller: ['wind', 'windmill', 'windmills', 'wind turbine', 'wind turbines', 'vindmølle', 'vindmøller', 'vindmolle'],
 };
+
+const POPULAR_SEARCHES = ['aurora', 'københavn', 'cyklist', 'vindmølle', 'svane', 'kongeørn'];
 
 const normalize = (input: string) => {
   return (input ?? '')
@@ -277,6 +279,13 @@ function StockSearchInner() {
   const rawCat = (searchParams.get('cat') ?? '').trim().toLowerCase();
   const cat = rawCat === 'all' ? '' : rawCat;
 
+  const [visibleCount, setVisibleCount] = useState(40);
+
+  useEffect(() => {
+    // reset pagination when query or category changes
+    setVisibleCount(40);
+  }, [q, cat]);
+
   const buildHref = useCallback(
     (next: { q?: string; cat?: string }) => {
       const params = new URLSearchParams();
@@ -307,23 +316,39 @@ function StockSearchInner() {
       const keywords = (asset.keywords ?? []).map((k) => normalize(String(k)));
       const tags = (asset.tags ?? []).map((t) => normalize(String(t)));
 
-      for (const base of baseTerms) {
-        const term = normalize(base);
+      const titleTokens = tokenize(asset.title ?? '');
+      const keywordTokens = tokenize((asset.keywords ?? []).join(' '));
+      const tagTokens = tokenize((asset.tags ?? []).join(' '));
+
+      // Phrase match is a strong signal
+      if (q && title.includes(q)) s += 10;
+      if (q && desc.includes(q)) s += 4;
+
+      // Pre-expand synonyms once per base term
+      const expandedPerBase = baseTerms.map((t) => ({
+        term: normalize(t),
+        expanded: expandTerms([normalize(t)]),
+      }));
+
+      for (const { term, expanded } of expandedPerBase) {
         if (!term) continue;
 
-        const candidates = expandTerms([term]);
-
-        const hitTitle = candidates.some((c) => title.includes(c));
-        const hitCat = candidates.some((c) => category.includes(c));
-        const hitKeys = candidates.some((c) => keywords.some((k) => k.includes(c)));
-        const hitTags = candidates.some((c) => tags.some((t) => t.includes(c)));
-        const hitDesc = candidates.some((c) => desc.includes(c));
+        const hitTitle = expanded.some((c) => title.includes(c));
+        const hitCat = expanded.some((c) => category.includes(c));
+        const hitKeys = expanded.some((c) => keywords.some((k) => k.includes(c)));
+        const hitTags = expanded.some((c) => tags.some((t) => t.includes(c)));
+        const hitDesc = expanded.some((c) => desc.includes(c));
 
         if (hitTitle) s += 8;
         if (hitCat) s += 5;
         if (hitKeys) s += 4;
         if (hitTags) s += 3;
         if (hitDesc) s += 2;
+
+        // Extra boosts for exact token hits (keeps relevance feeling snappy)
+        if (titleTokens.includes(term)) s += 2;
+        if (keywordTokens.includes(term)) s += 1.5;
+        if (tagTokens.includes(term)) s += 1;
 
         // tiny bonus if the exact term (not only synonym) is in title
         if (title.includes(term)) s += 0.5;
@@ -388,6 +413,21 @@ function StockSearchInner() {
             : 'Explore curated stock images ready for campaigns, websites, and social media.'}
         </p>
 
+        {!hasQuery ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Try:</span>
+            {POPULAR_SEARCHES.map((s) => (
+              <Link
+                key={s}
+                href={buildHref({ q: s })}
+                className="rounded-full border px-3 py-1 text-xs text-muted-foreground transition hover:border-foreground/30 hover:text-foreground"
+              >
+                {s}
+              </Link>
+            ))}
+          </div>
+        ) : null}
+
         {/* Category chips */}
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <Link
@@ -448,45 +488,67 @@ function StockSearchInner() {
               </Link>
               ?
             </p>
-          ) : (
-            <div className="mt-4 flex flex-wrap justify-center gap-2">
-              {STOCK_CATEGORIES.slice(0, 4).map((c) => (
-                <Link
-                  key={c.key}
-                  href={buildHref({ cat: c.key })}
-                  className="rounded-full border px-3 py-1 text-xs text-muted-foreground transition hover:border-foreground/30 hover:text-foreground"
-                >
-                  Browse {c.label}
-                </Link>
-              ))}
-            </div>
-          )}
+          ) : null}
+
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            {STOCK_CATEGORIES.slice(0, 4).map((c) => (
+              <Link
+                key={c.key}
+                href={buildHref({ cat: c.key })}
+                className="rounded-full border px-3 py-1 text-xs text-muted-foreground transition hover:border-foreground/30 hover:text-foreground"
+              >
+                Browse {c.label}
+              </Link>
+            ))}
+            {POPULAR_SEARCHES.slice(0, 4).map((s) => (
+              <Link
+                key={`sugg-${s}`}
+                href={buildHref({ q: s })}
+                className="rounded-full border px-3 py-1 text-xs text-muted-foreground transition hover:border-foreground/30 hover:text-foreground"
+              >
+                “{s}”
+              </Link>
+            ))}
+          </div>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-          {results.slice(0, 40).map((asset) => (
-            <ImageCard
-              key={asset.id}
-              asset={{
-                id: asset.id,
-                title: asset.title,
-                preview: getImage(asset),
-                category: asset.category,
-              }}
-              href={`/stock/assets/${asset.id}`}
-              aspect="photo"
-              inCart={cartIds.has(asset.id)}
-              onAddToCart={() => addToCart(asset)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+            {results.slice(0, visibleCount).map((asset) => (
+              <ImageCard
+                key={asset.id}
+                asset={{
+                  id: asset.id,
+                  title: asset.title,
+                  preview: getImage(asset),
+                  category: asset.category,
+                }}
+                href={`/stock/assets/${asset.id}`}
+                aspect="photo"
+                inCart={cartIds.has(asset.id)}
+                onAddToCart={() => addToCart(asset)}
+              />
+            ))}
+          </div>
+          {results.length > visibleCount ? (
+            <div className="mt-6 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setVisibleCount((n) => Math.min(results.length, n + 40))}
+                className="rounded-full border px-4 py-2 text-sm transition hover:border-foreground/30"
+              >
+                Load more
+              </button>
+            </div>
+          ) : null}
+        </>
       )}
 
       {/* Footer hint */}
       <div className="mt-8 text-xs text-muted-foreground">
         {hasQuery
-          ? `Showing ${Math.min(results.length, 40)} of ${results.length} results`
-          : `Showing ${Math.min(results.length, 40)} of ${results.length} assets`}
+          ? `Showing ${Math.min(results.length, visibleCount)} of ${results.length} results`
+          : `Showing ${Math.min(results.length, visibleCount)} of ${results.length} assets`}
       </div>
     </div>
   );

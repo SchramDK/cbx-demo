@@ -111,7 +111,7 @@ export const STOCK_ASSETS: StockAsset[] = [
   defineStockAsset({
     id: "s-006",
     title: "Golden eagle (Aquila chrysaetos)",
-    category: "nature",
+    category: "wildlife",
     description: "Majestic golden eagle (Aquila chrysaetos) captured in its natural habitat. Powerful bird of prey symbolizing strength, wilderness, and freedom. Ideal for wildlife, nature, and conservation themes.",
     keywords: ["golden eagle", "aquila chrysaetos", "eagle", "bird of prey", "raptor", "wildlife", "nature", "predator", "wilderness"],
     tags: ["nature", "wildlife", "birds"],
@@ -165,7 +165,7 @@ export const STOCK_ASSETS: StockAsset[] = [
   defineStockAsset({
     id: "s-012",
     title: "Windmills on the water",
-    category: "nature",
+    category: "energy",
     description: "Wind turbines standing in calm coastal waters, capturing renewable energy production in a Scandinavian landscape. Clean energy scene symbolizing sustainability, green technology, and the future of power generation.",
     keywords: ["windmills", "wind turbines", "renewable energy", "wind power", "sustainability", "green energy", "coast", "sea", "scandinavia", "nature"],
     tags: ["nature", "energy", "sustainability", "renewable"],
