@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Workflow,
   Sparkles,
+  Users,
   ChevronUp,
   ChevronDown,
   RotateCcw,
@@ -22,7 +23,7 @@ import {
 import ImageNext from 'next/image';
 
 type PrimaryKey = 'home' | 'stock' | 'files';
-type MoreKey = 'consent' | 'workflows' | 'apps';
+type MoreKey = 'team' | 'consent' | 'workflows' | 'apps';
 
 type NavConfig = {
   primaryOrder: PrimaryKey[];
@@ -34,7 +35,7 @@ const NAV_CONFIG_KEY = 'CBX_NAV_CONFIG_V1';
 
 const DEFAULT_NAV_CONFIG: NavConfig = {
   primaryOrder: ['home', 'stock', 'files'],
-  moreOrder: ['consent', 'workflows', 'apps'],
+  moreOrder: ['team', 'consent', 'workflows', 'apps'],
   moreHidden: [],
 };
 
@@ -47,7 +48,7 @@ function readStoredNavConfig(): NavConfig | null {
     if (!parsed) return null;
 
     const primaryAllowed: PrimaryKey[] = ['home', 'stock', 'files'];
-    const moreAllowed: MoreKey[] = ['consent', 'workflows', 'apps'];
+    const moreAllowed: MoreKey[] = ['team', 'consent', 'workflows', 'apps'];
 
     const primaryOrder = Array.isArray(parsed.primaryOrder)
       ? (parsed.primaryOrder.filter((x): x is PrimaryKey => primaryAllowed.includes(x as PrimaryKey)) as PrimaryKey[])
@@ -556,6 +557,12 @@ export function LeftNavigation() {
   const productItems = navConfig.primaryOrder.map((k) => primaryMeta[k]);
 
   const moreMeta: Record<MoreKey, { href?: string; label: string; description: string; icon: any }> = {
+    team: {
+      href: '/team',
+      label: 'Team',
+      description: 'Invite members, manage roles and access.',
+      icon: Users,
+    },
     consent: {
       href: undefined,
       label: 'Consent',

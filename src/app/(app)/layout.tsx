@@ -30,6 +30,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     }
   }, [isReady, isLoggedIn, pathname, router]);
 
+  // Guard Team routes for logged-out users
+  useEffect(() => {
+    if (!isReady || !pathname) return;
+    if (!isLoggedIn && pathname.startsWith('/team')) {
+      router.replace(`/login?returnTo=${encodeURIComponent(pathname)}`);
+    }
+  }, [isReady, isLoggedIn, pathname, router]);
+
   const showLeftNavigation = mounted && isReady && isLoggedIn;
 
   // Left rail width (use rem so it scales with root font-size)
@@ -53,6 +61,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
     if (pathname.startsWith('/home')) return 'Home';
     if (pathname.startsWith('/stock')) return 'Stock';
     if (pathname.startsWith('/drive')) return 'Files';
+    if (pathname.startsWith('/team')) return 'Team';
     return 'CBX';
   }, [pathname]);
 

@@ -33,6 +33,7 @@
 
 :root {
   --radius: 10px;
+  color-scheme: light;
 
   --background: oklch(0.99 0.008 90);
   --foreground: oklch(0.16 0 0);
@@ -65,15 +66,9 @@
   --ring: oklch(0.62 0.05 90);
 }
 
-:root {
-  color-scheme: light;
-}
-
 .dark {
   color-scheme: dark;
-}
 
-.dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
 
@@ -132,18 +127,12 @@
       radial-gradient(45% 35% at 85% 0%, color-mix(in oklch, var(--logo) 12%, transparent), transparent 62%),
       radial-gradient(55% 40% at 55% 18%, color-mix(in oklch, var(--accent) 10%, transparent), transparent 65%);
     opacity: 0.5;
-    z-index: -1; /* always behind app chrome */
-  }
-
-  main, header, section, aside {
-    position: relative;
-    z-index: 1;
+    z-index: -10; /* always behind app chrome */
   }
 
   #__next,
   [data-app-shell] {
     position: relative;
-    z-index: 1;
     isolation: isolate; /* prevents blending seams between columns */
   }
 
@@ -151,17 +140,16 @@
     color: inherit;
     text-decoration: none;
   }
-}
 
-:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
 
-::selection {
-  background: color-mix(in oklch, var(--primary) 28%, transparent);
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 28%, transparent);
+  }
 }
-
 
 /* Subtle scrollbar polish */
 @supports (scrollbar-color: auto) {

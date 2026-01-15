@@ -23,7 +23,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { ImageGrid } from "../../../components/image-grid";
+import { ImageGrid } from "../../../components/drive/image-grid";
 import { demoAssets } from "@/lib/demo/assets";
 import { FolderSidebar, getFolderPathById, demoFolders } from "../../../components/FolderSidebar";
 import { SelectionBar } from "../../../components/selection-bar";

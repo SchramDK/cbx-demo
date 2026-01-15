@@ -2,7 +2,7 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Heart, SearchX, SlidersHorizontal, Sparkles } from "lucide-react";
 import { ViewerModal, ViewerItem } from "@/components/viewer-modal";
-import { ImageCard } from "@/components/image-card";
+import { ImageCard } from "@/components/drive/image-card";
 import { demoAssets } from "@/lib/demo/assets";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -240,7 +240,7 @@ function SkeletonCard({ ratio }: { ratio: string }) {
       : "aspect-video";
 
   return (
-    <div className="mb-3 break-inside-avoid overflow-hidden rounded-2xl border border-border bg-background">
+    <div className="mb-3 break-inside-avoid overflow-hidden rounded-2xl bg-background/95 ring-1 ring-border/60">
       <div className={cn("relative w-full", ratioClass)}>
         <Skeleton className="absolute inset-0" />
       </div>
@@ -300,7 +300,7 @@ function ColourboxSuggestions({
         {suggestions.map((a) => (
           <div
             key={a.id}
-            className="group overflow-hidden rounded-xl border border-border bg-background/60 transition-shadow hover:shadow-sm"
+            className="group overflow-hidden rounded-xl bg-background/70 ring-1 ring-border/50 transition hover:bg-background/80 hover:ring-border/80"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -600,7 +600,6 @@ function ListRow({
       </div>
 
       <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-2">
-        {isPurchasedAsset(img.folderId) ? <PurchasedBadge /> : null}
         <Button
           type="button"
           variant="ghost"
