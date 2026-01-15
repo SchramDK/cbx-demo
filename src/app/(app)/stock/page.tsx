@@ -48,7 +48,33 @@ function safeParseLastSeen(raw: string | null): LastSeenItem[] {
 const getAssetImage = (asset?: Asset) => asset?.preview ?? asset?.src ?? asset?.image ?? asset?.url ?? '';
 const getImage = (asset: Asset, fallback: string) => getAssetImage(asset) || fallback;
 
+
 const isLocalDemoImage = (src: string) => src.startsWith('/demo/');
+
+// --- Seeded RNG and shuffle helpers for per-visit randomization ---
+function mulberry32(seed: number) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function shuffleWithSeed<T>(input: T[], seed: number): T[] {
+  if (input.length <= 1) return input.slice();
+  const rand = mulberry32(seed);
+  const arr = input.slice();
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+  }
+  return arr;
+}
 
 function Pill({ children }: { children: React.ReactNode }) {
   return (
@@ -183,6 +209,25 @@ export default function StockPage() {
 
   const assets = useMemo(() => ASSETS as Asset[], []);
 
+  // Per-visit seed for shuffling.
+  // IMPORTANT: set after mount to avoid SSR/CSR hydration mismatches.
+  const [visitSeed, setVisitSeed] = useState<number | null>(null);
+
+  useEffect(() => {
+    try {
+      const buf = new Uint32Array(1);
+      window.crypto.getRandomValues(buf);
+      setVisitSeed(buf[0] || Math.floor(Math.random() * 1e9));
+    } catch {
+      setVisitSeed(Math.floor(Math.random() * 1e9));
+    }
+  }, []);
+
+  const shuffledAssets = useMemo(
+    () => (visitSeed == null ? assets : shuffleWithSeed(assets, visitSeed)),
+    [assets, visitSeed]
+  );
+
   const fallbackImage = useMemo(() => {
     const first = assets[0];
     return getAssetImage(first) ?? '';
@@ -209,23 +254,33 @@ export default function StockPage() {
   const [lastSeen, setLastSeen] = useState<LastSeenItem[]>([]);
 
   const featured = useMemo(() => {
+    // If we have configured featured ids, keep them on top but vary the remainder per visit.
     const byId = new Map(assets.map((a) => [a.id, a] as const));
     const picked = STOCK_FEATURED_IDS.map((id) => byId.get(id)).filter(Boolean) as Asset[];
 
-    const rest = assets.filter((a) => !(STOCK_FEATURED_IDS as readonly string[]).includes(a.id));
+    const pickedIds = new Set(picked.map((p) => p.id));
+    const rest = shuffledAssets.filter((a) => !pickedIds.has(a.id));
+
     return [...picked, ...rest].slice(0, 10);
-  }, [assets]);
-  const newest = useMemo(() => assets.slice(0, 12), [assets]);
+  }, [assets, shuffledAssets]);
+
+  const newest = useMemo(() => shuffledAssets.slice(0, 12), [shuffledAssets]);
 
   const heroImages = useMemo(() => {
-    const list = featured.slice(0, 6).map((a) => getImage(a, fallbackImage));
+    // Use a wider pool (shuffled) so the hero varies per visit, but keep it stable while on page.
+    const pool = shuffledAssets.length ? shuffledAssets : featured;
+    const list = pool.slice(0, 8).map((a) => getImage(a, fallbackImage)).filter(Boolean);
     return list.length > 1 ? list : fallbackImage ? [fallbackImage, fallbackImage] : [];
-  }, [featured, fallbackImage]);
+  }, [shuffledAssets, featured, fallbackImage]);
 
   const heroSources = useMemo(() => {
     const fallback = featured.slice(0, 1).map((a) => getImage(a, fallbackImage));
     return (heroImages.length ? heroImages : fallback).filter(Boolean);
   }, [featured, fallbackImage, heroImages]);
+
+  useEffect(() => {
+    setHeroIndex(0);
+  }, [heroImages.join('|')]);
 
   useEffect(() => {
     if (heroImages.length <= 1) return;
