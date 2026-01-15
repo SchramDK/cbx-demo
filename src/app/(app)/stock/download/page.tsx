@@ -273,138 +273,209 @@ useEffect(() => {
       : undefined;
 
     return (
-      <main className="mx-auto w-full max-w-6xl bg-background px-4 pb-10 pt-[calc(var(--cbx-topbar)+24px)] text-foreground sm:pt-[calc(var(--cbx-topbar-sm)+24px)]">
+      <main className="mx-auto w-full max-w-6xl bg-background px-4 pb-10 pt-[calc(var(--cbx-topbar,64px)+28px)] text-foreground sm:pt-[calc(var(--cbx-topbar-sm,56px)+28px)]">
+        <header className="mb-4">
+          <p className="text-xs font-medium text-muted-foreground">Welcome</p>
+          <h1 className="mt-1 text-xl font-semibold tracking-tight text-foreground">
+            {demoUser?.name ? `Welcome to Colourbox, ${demoUser.name}` : "Welcome to Colourbox"}
+          </h1>
+          <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">
+            Your purchases are saved automatically in Files, so your team can always find them again.
+          </p>
+        </header>
         {showAccountCreatedBanner ? (
           <div className="mb-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 dark:border-emerald-400/20 dark:bg-emerald-400/10">
             <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Account created</p>
             <p className="mt-1 text-sm text-emerald-700/90 dark:text-emerald-200">
-              You’re now signed in as <span className="font-semibold">{demoUser?.name}</span> • {demoUser?.org}. Your purchases will be available in Drive.
+              You’re now signed in as <span className="font-semibold">{demoUser?.name}</span> • {demoUser?.org}. Your purchases will be available in Files.
             </p>
           </div>
         ) : null}
 
-        <section className="mb-6 overflow-hidden rounded-3xl border border-border bg-gradient-to-b from-primary/10 to-transparent p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground">Welcome to Colourbox + Drive</p>
-              <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Your account is ready 🎉</h2>
-              <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-                You’re signed in and ready to work. Upload your own files to Drive, or browse Stock to download your first images —
-                everything stays organised and saved.
-              </p>
+        {purchased.length === 0 && (
+          <section className="mb-6 overflow-hidden rounded-3xl border border-border bg-gradient-to-b from-primary/10 to-transparent p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground">Welcome to Colourbox + Files</p>
+                <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Your account is ready 🎉</h2>
+                <p className="mt-2 max-w-xl text-sm text-muted-foreground">
+                  You’re signed in and ready to work. Upload your own files to Files, or browse Stock to download your first images —
+                  everything stays organised and saved.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button asChild>
+                  <Link href="/drive">Open Files</Link>
+                </Button>
+                <Button asChild variant="secondary">
+                  <Link href="/stock">Browse Stock</Link>
+                </Button>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button asChild>
-                <Link href="/drive">Open Drive</Link>
-              </Button>
-              <Button asChild variant="secondary">
-                <Link href="/stock">Browse Stock</Link>
-              </Button>
-            </div>
-          </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-2xl border border-border bg-card p-4">
-              <p className="text-xs font-medium text-muted-foreground">Step 1</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">Upload to Drive</p>
-              <p className="mt-1 text-xs text-muted-foreground">Drag & drop your own files and keep everything in one place.</p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <p className="text-xs font-medium text-muted-foreground">Step 1</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">Upload to Files</p>
+                <p className="mt-1 text-xs text-muted-foreground">Drag & drop your own files and keep everything in one place.</p>
+              </div>
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <p className="text-xs font-medium text-muted-foreground">Step 2</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">Find Stock images</p>
+                <p className="mt-1 text-xs text-muted-foreground">Search and download assets — they’re saved to Files automatically.</p>
+              </div>
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <p className="text-xs font-medium text-muted-foreground">Step 3</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">Share & collaborate</p>
+                <p className="mt-1 text-xs text-muted-foreground">Send links, keep rights info, and stay organised.</p>
+              </div>
             </div>
-            <div className="rounded-2xl border border-border bg-card p-4">
-              <p className="text-xs font-medium text-muted-foreground">Step 2</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">Find Stock images</p>
-              <p className="mt-1 text-xs text-muted-foreground">Search and download assets — they’re saved to Drive automatically.</p>
-            </div>
-            <div className="rounded-2xl border border-border bg-card p-4">
-              <p className="text-xs font-medium text-muted-foreground">Step 3</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">Share & collaborate</p>
-              <p className="mt-1 text-xs text-muted-foreground">Send links, keep rights info, and stay organised.</p>
-            </div>
-          </div>
-        </section>
+          </section>
+        )}
 
 
         <div className="rounded-2xl border border-border bg-card p-6">
-
           {purchased.length ? (
-            <div className="mt-6">
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold text-foreground">Your downloads</h2>
-                  <p className="mt-0.5 text-xs text-muted-foreground">Everything you just purchased — ready to download.</p>
+            <>
+              {/* 1. Purchase complete banner */}
+              <div className="mb-5 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 dark:border-emerald-400/20 dark:bg-emerald-400/10">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-emerald-700/90 dark:text-emerald-200">Purchase complete</p>
+                    <p className="mt-1 text-sm font-semibold text-emerald-800 dark:text-emerald-100">Your files are ready to download ✅</p>
+                    <p className="mt-1 text-xs text-emerald-800/80 dark:text-emerald-100/80">
+                      Your purchases are now saved in Files, so you can re-download anytime and stay organised.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button asChild size="sm">
+                      <Link href="/drive">Open Files</Link>
+                    </Button>
+                  </div>
                 </div>
-                <span className="text-xs text-muted-foreground">{purchased.length} item{purchased.length === 1 ? "" : "s"}</span>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                {purchased.map((it: any) => {
-                  const id = String(it.assetId ?? it.id ?? "");
-                  const t = String(it.title ?? it.name ?? `Asset #${id}`);
-                  const thumb =
-                    it.thumbUrl ??
-                    it.thumbnailUrl ??
-                    it.previewUrl ??
-                    it.image ??
-                    it.preview ??
-                    it.thumbnail ??
-                    it.asset?.thumbUrl ??
-                    it.asset?.thumbnailUrl ??
-                    it.asset?.previewUrl ??
-                    it.asset?.image ??
-                    it.asset?.preview ??
-                    it.asset?.thumbnail ??
-                    null;
-                  const perAssetHref = id
-                    ? `/api/stock/download?assetId=${encodeURIComponent(id)}&size=${encodeURIComponent(size)}&format=${encodeURIComponent(format)}`
-                    : null;
-                  // For badge values, use the current size/format as in the query string
-                  return (
-                    <div key={id || t} className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3">
-                      <div className="h-16 w-16 overflow-hidden rounded-xl bg-muted">
-                        {thumb ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={thumb} alt={t} className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">No preview</div>
-                        )}
-                      </div>
+              {/* 2. Downloads section */}
+              <div>
+                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-sm font-semibold text-foreground">Your downloads</h2>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Download now, or find everything later in Files.
+                    </p>
+                  </div>
 
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-foreground">{t}</p>
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          <span className="rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground">#{id}</span>
-                          <span className="rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground">{size} • {format}</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-muted-foreground">{purchased.length} item{purchased.length === 1 ? "" : "s"}</span>
+                    {orderDownloadHref && purchased.length > 1 ? (
+                      <Button asChild size="sm" variant="secondary">
+                        <a href={orderDownloadHref} download>
+                          Download all
+                        </a>
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {purchased.map((it: any) => {
+                    const id = String(it.assetId ?? it.id ?? "");
+                    const t = String(it.title ?? it.name ?? `Asset #${id}`);
+                    const thumb =
+                      it.thumbUrl ??
+                      it.thumbnailUrl ??
+                      it.previewUrl ??
+                      it.image ??
+                      it.preview ??
+                      it.thumbnail ??
+                      it.asset?.thumbUrl ??
+                      it.asset?.thumbnailUrl ??
+                      it.asset?.previewUrl ??
+                      it.asset?.image ??
+                      it.asset?.preview ??
+                      it.asset?.thumbnail ??
+                      null;
+                    const perAssetHref = id
+                      ? `/api/stock/download?assetId=${encodeURIComponent(id)}&size=${encodeURIComponent(size)}&format=${encodeURIComponent(format)}`
+                      : null;
+                    return (
+                      <div key={id || t} className="flex items-center gap-3 rounded-2xl border border-border bg-card p-3">
+                        <div className="h-16 w-16 overflow-hidden rounded-xl bg-muted">
+                          {thumb ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={thumb} alt={t} className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">No preview</div>
+                          )}
                         </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-foreground">{t}</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            <span className="rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground">#{id}</span>
+                            <span className="rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground">{size} • {format}</span>
+                          </div>
+                        </div>
+                        {perAssetHref ? (
+                          <Button asChild variant="secondary" size="sm" className="shrink-0">
+                            <a href={perAssetHref} download>
+                              Download
+                            </a>
+                          </Button>
+                        ) : null}
                       </div>
-
-                      {perAssetHref ? (
-                        <Button asChild variant="secondary" size="sm" className="shrink-0">
-                          <a href={perAssetHref} download>
-                            Download
-                          </a>
-                        </Button>
-                      ) : null}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+
+              {/* 3. Next steps panel */}
+              <div className="mt-6 rounded-2xl border border-border bg-muted/20 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">What you can do next</p>
+                    <p className="mt-1 text-sm font-semibold text-foreground">Your downloads are already connected to Files</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button asChild size="sm">
+                      <Link href="/drive">Open Files</Link>
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl border border-border bg-card p-3">
+                    <p className="text-xs font-medium text-muted-foreground">1</p>
+                    <p className="mt-1 text-xs font-semibold text-foreground">Stored with context</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Your download stays searchable with title, IDs and metadata.</p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-card p-3">
+                    <p className="text-xs font-medium text-muted-foreground">2</p>
+                    <p className="mt-1 text-xs font-semibold text-foreground">Rights stay attached</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Avoid losing license info when assets move between tools.</p>
+                  </div>
+                  <div className="rounded-xl border border-border bg-card p-3">
+                    <p className="text-xs font-medium text-muted-foreground">3</p>
+                    <p className="mt-1 text-xs font-semibold text-foreground">Ready to share</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Send a link to colleagues without re-uploading files.</p>
+                  </div>
+                </div>
+              </div>
+            </>
           ) : (
             <div className="mt-2 rounded-2xl border border-border bg-muted/20 p-6">
               <p className="text-sm font-semibold text-foreground">No downloads yet</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                If you just completed checkout, give it a moment — or open Drive to manage your files and find any downloads.
+                If you just completed checkout, give it a moment — or open Files to manage your files and find any downloads.
               </p>
 
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                 <Button asChild>
-                  <Link href="/drive">Open Drive</Link>
+                  <Link href="/drive">Open Files</Link>
                 </Button>
                 <Button asChild variant="secondary">
                   <Link href="/stock">Browse Stock</Link>
                 </Button>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                <span className="rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">✅ Files saved in Drive</span>
+                <span className="rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">✅ Saved in Files</span>
                 <span className="rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">⚡ Fast downloads</span>
                 <span className="rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">🔒 Rights info included</span>
               </div>
@@ -414,27 +485,17 @@ useEffect(() => {
           <div className="mt-6 border-t border-border pt-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-sm text-muted-foreground">
-                Everything is saved in <span className="font-medium text-foreground">Drive</span>.
+                Everything is saved in <span className="font-medium text-foreground">Files</span>.
               </div>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Button asChild>
-                  <Link href="/drive">Open Drive</Link>
+                  <Link href="/drive">Open Files</Link>
                 </Button>
                 <Button asChild variant="secondary">
                   <Link href="/stock">Browse Stock</Link>
                 </Button>
               </div>
             </div>
-            {orderDownloadHref ? (
-              <div className="mt-5">
-                <Button asChild variant="secondary" className="w-full">
-                  <a href={orderDownloadHref} download>
-                    Download all files
-                  </a>
-                </Button>
-                <p className="mt-2 text-center text-xs text-muted-foreground">Downloads everything from this order in one file</p>
-              </div>
-            ) : null}
           </div>
         </div>
       </main>
@@ -449,12 +510,12 @@ useEffect(() => {
   )}&format=${encodeURIComponent(format)}`;
 
   return (
-    <main className="mx-auto w-full max-w-6xl bg-background px-4 pb-10 pt-[calc(var(--cbx-topbar)+24px)] text-foreground sm:pt-[calc(var(--cbx-topbar-sm)+24px)]">
+    <main className="mx-auto w-full max-w-6xl bg-background px-4 pb-10 pt-[calc(var(--cbx-topbar,64px)+40px)] text-foreground sm:pt-[calc(var(--cbx-topbar-sm,56px)+40px)]">
       {showAccountCreatedBanner ? (
         <div className="mb-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 dark:border-emerald-400/20 dark:bg-emerald-400/10">
           <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Account created</p>
           <p className="mt-1 text-sm text-emerald-700/90 dark:text-emerald-200">
-            You’re now signed in as <span className="font-semibold">{demoUser?.name}</span> • {demoUser?.org}. Your purchases will be available in Drive.
+            You’re now signed in as <span className="font-semibold">{demoUser?.name}</span> • {demoUser?.org}. Your purchases will be available in Files.
           </p>
         </div>
       ) : null}
@@ -462,7 +523,7 @@ useEffect(() => {
       <header className="mb-8">
         <p className="text-xs font-medium text-muted-foreground">Download</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Download file</h1>
-        <p className="mt-2 max-w-xl text-sm text-muted-foreground">Download this file now — and find all your purchases in Drive.</p>
+        <p className="mt-2 max-w-xl text-sm text-muted-foreground">Download this file now — and find all your purchases in Files.</p>
 
         {demoUser ? (
           <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
@@ -518,11 +579,11 @@ useEffect(() => {
         <div className="mt-6 border-t border-border pt-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm text-muted-foreground">
-              Everything is saved in <span className="font-medium text-foreground">Drive</span>.
+              Everything is saved in <span className="font-medium text-foreground">Files</span>.
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <Button asChild>
-                <Link href="/drive">Open Drive</Link>
+                <Link href="/drive">Open Files</Link>
               </Button>
               <Button asChild variant="secondary">
                 <Link href="/stock">Browse Stock</Link>
