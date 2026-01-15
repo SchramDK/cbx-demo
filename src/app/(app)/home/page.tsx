@@ -265,7 +265,7 @@ export default function HomePage() {
         description: `Jump back into “${q}” and refine your results.`,
         reason: 'Because you searched recently',
         steps: ['Refine filters', 'Save this search'],
-        primary: { label: 'Open search', href: `/stock?q=${encodeURIComponent(q)}` },
+        primary: { label: 'Open search', href: `/stock/search?q=${encodeURIComponent(q)}` },
         secondary: { label: 'Open Stock', href: '/stock' },
       };
     }
@@ -306,7 +306,7 @@ export default function HomePage() {
         return;
       }
 
-      router.push(`/stock?q=${encodeURIComponent(v)}`);
+      router.push(`/stock/search?q=${encodeURIComponent(v)}`);
     },
     [router]
   );
@@ -534,13 +534,17 @@ export default function HomePage() {
 
               <style jsx>{`
                 .cbx-marquee {
+                  --cbx-marquee-gap: 14px;
+                  --cbx-marquee-duration: 40s;
                   width: 100%;
+                  -webkit-mask-image: linear-gradient(to right, transparent, black 6%, black 94%, transparent);
+                  mask-image: linear-gradient(to right, transparent, black 6%, black 94%, transparent);
                 }
                 .cbx-marquee__track {
                   display: flex;
-                  gap: 14px;
+                  gap: var(--cbx-marquee-gap);
                   width: max-content;
-                  animation: cbx-marquee 24s linear infinite;
+                  animation: cbx-marquee var(--cbx-marquee-duration) linear infinite;
                   will-change: transform;
                 }
                 .cbx-marquee:hover .cbx-marquee__track {
@@ -552,6 +556,11 @@ export default function HomePage() {
                   }
                   100% {
                     transform: translateX(-50%);
+                  }
+                }
+                @media (min-width: 1024px) {
+                  .cbx-marquee {
+                    --cbx-marquee-duration: 48s;
                   }
                 }
                 @media (prefers-reduced-motion: reduce) {
@@ -652,7 +661,7 @@ export default function HomePage() {
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             <button
               onClick={() => router.push('/drive')}
-              className="group relative overflow-hidden rounded-2xl bg-muted/20 p-4 ring-1 ring-border/60 text-left transition will-change-transform hover:-translate-y-0.5 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
+              className="group relative overflow-hidden rounded-2xl bg-muted/20 p-4 ring-1 ring-border/60 text-left transition hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
             >
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-background/70">
@@ -680,7 +689,7 @@ export default function HomePage() {
 
             <button
               onClick={() => router.push('/stock')}
-              className="group relative overflow-hidden rounded-2xl bg-muted/20 p-4 ring-1 ring-border/60 text-left transition will-change-transform hover:-translate-y-0.5 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
+              className="group relative overflow-hidden rounded-2xl bg-muted/20 p-4 ring-1 ring-border/60 text-left transition hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
             >
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-background/70">
@@ -737,7 +746,7 @@ export default function HomePage() {
             <section className="w-full rounded-2xl bg-muted/10 p-4">
               <div>
                 <h2 className="text-xs font-semibold">Recent activity</h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">A quick snapshot from your local prototype</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">A quick snapshot based on your activity</p>
               </div>
 
               <div className="mt-3 grid gap-2">
@@ -794,7 +803,7 @@ export default function HomePage() {
                           key={q}
                           onClick={() => {
                             pushRecentSearch(q);
-                            router.push(`/stock?q=${encodeURIComponent(q)}`);
+                            router.push(`/stock/search?q=${encodeURIComponent(q)}`);
                           }}
                           className="rounded-full bg-muted/30 px-3 py-1 text-xs text-foreground transition hover:bg-muted/40"
                         >
@@ -804,7 +813,7 @@ export default function HomePage() {
                     </div>
                   ) : (
                     <div className="mt-1.5 text-sm text-muted-foreground">
-                      No searches yet — open Stock and try a query like “winter campaign”.
+                      No searches yet — open Stock and try a query like “winter campaign”. Your searches will show up here.
                     </div>
                   )}
                 </div>
