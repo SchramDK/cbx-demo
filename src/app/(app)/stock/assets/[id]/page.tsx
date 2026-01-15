@@ -8,6 +8,7 @@ import { STOCK_ASSETS as ASSETS } from '@/lib/demo/stock-assets';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import ImageCard from '@/components/stock/ImageCard';
 import { ArrowLeft, ShoppingCart } from 'lucide-react';
 import { useCart, useCartUI } from '@/lib/cart/cart';
 import { useProtoAuth } from '@/lib/proto-auth';
@@ -30,10 +31,17 @@ const getAssetImage = (asset?: Asset) => asset?.preview ?? '';
 const normalizeToken = (s?: string) => (s ?? '').trim().toLowerCase();
 
 const isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 0;
-const pickTags = (asset?: Asset, limit = 10) => {
+const pickTokens = (
+  asset?: Asset,
+  opts?: { includeCategory?: boolean; limit?: number }
+) => {
+  const includeCategory = opts?.includeCategory ?? true;
+  const limit = opts?.limit ?? 10;
+
   const fromTags = asset?.tags ?? [];
   const fromKeywords = asset?.keywords ?? [];
-  const fromCategory = asset?.category ? [asset.category] : [];
+  const fromCategory = includeCategory && asset?.category ? [asset.category] : [];
+
   const merged = [...fromTags, ...fromKeywords, ...fromCategory]
     .filter(isNonEmptyString)
     .map(normalizeToken);
@@ -42,22 +50,13 @@ const pickTags = (asset?: Asset, limit = 10) => {
   return unique.slice(0, limit);
 };
 
-// Helper: pick "meaningful" tokens (tags+keywords only, no category)
-const pickMeaningful = (asset?: Asset, limit = 12) => {
-  const fromTags = asset?.tags ?? [];
-  const fromKeywords = asset?.keywords ?? [];
-  const merged = [...fromTags, ...fromKeywords].filter(isNonEmptyString).map(normalizeToken);
-  const unique = Array.from(new Set(merged));
-  return unique.slice(0, limit);
-};
+const pickMeaningful = (asset?: Asset, limit = 12) =>
+  pickTokens(asset, { includeCategory: false, limit });
+
+const pickTags = (asset?: Asset, limit = 10) => pickTokens(asset, { includeCategory: true, limit });
 
 // --- Similarity helpers for better "Similar images" picks ---
-const tokenSet = (a?: Asset) => {
-  const parts = [a?.category, ...(a?.tags ?? []), ...(a?.keywords ?? [])]
-    .filter(isNonEmptyString)
-    .map(normalizeToken);
-  return new Set(parts);
-};
+const tokenSet = (a?: Asset) => new Set(pickTokens(a, { includeCategory: true, limit: 200 }));
 
 const jaccard = (a: Set<string>, b: Set<string>) => {
   if (!a.size || !b.size) return 0;
@@ -74,6 +73,20 @@ const signature = (a?: Asset) => {
   return `${cat}::${t}`;
 };
 
+
+const overlapHint = (
+  base: Set<string>,
+  asset?: Asset,
+  opts?: { limit?: number; fallback?: string }
+) => {
+  const limit = opts?.limit ?? 2;
+  const fallback = opts?.fallback ?? asset?.category ?? '';
+  const tokens = pickMeaningful(asset, 8);
+  const overlap = tokens.filter((t) => base.has(t)).slice(0, limit);
+  return overlap.length ? overlap.join(' · ') : fallback;
+};
+
+
 export default function StockAssetPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -86,19 +99,24 @@ export default function StockAssetPage() {
 
   const asset = useMemo(() => assets.find((a) => a.id === id), [assets, id]);
 
-  const assetTokens = useMemo(() => {
-    const raw: string[] = [];
-    if (asset?.category) raw.push(asset.category);
-    if (asset?.tags?.length) raw.push(...asset.tags);
-    if (asset?.keywords?.length) raw.push(...asset.keywords);
-    return new Set(raw.filter(isNonEmptyString).map(normalizeToken));
-  }, [asset]);
+  const cartIds = useMemo(() => {
+    const ids = new Set<string>();
+    const list = (items as any[]) ?? [];
+    for (const it of list) {
+      const itId = (it?.id ?? it?.assetId ?? '').toString();
+      if (itId) ids.add(itId);
+    }
+    return ids;
+  }, [items]);
+
+
+  const baseMeaningfulSet = useMemo(() => new Set(pickMeaningful(asset, 24)), [asset]);
 
   const relatedPicks = useMemo(() => {
     if (!assets.length) return [] as Asset[];
 
     const currentId = asset?.id ?? id;
-    const baseMeaningful = new Set(pickMeaningful(asset, 24));
+    const baseMeaningful = baseMeaningfulSet;
     const baseAll = tokenSet(asset);
 
     const scored = assets
@@ -164,35 +182,42 @@ export default function StockAssetPage() {
     }
 
     return result;
-  }, [assets, asset, id]);
+  }, [assets, asset, id, baseMeaningfulSet]);
 
   const sameShootPicks = useMemo(() => {
     if (!assets.length) return [] as Asset[];
     const currentId = asset?.id ?? id;
 
-    return assets
+    const pool = assets
       .filter((a) => a.id !== currentId && a.category === asset?.category)
       .map((a) => {
-        const tokens = new Set(
-          [a.category, ...(a.tags ?? []), ...(a.keywords ?? [])]
-            .filter(isNonEmptyString)
-            .map(normalizeToken)
-        );
-        let overlap = 0;
-        for (const t of tokens) if (assetTokens.has(t)) overlap += 1;
-        return { a, score: overlap + (getAssetImage(a) ? 0.5 : 0) };
+        const meaningful = pickMeaningful(a, 24);
+        let hits = 0;
+        for (const t of meaningful) if (baseMeaningfulSet.has(t)) hits += 1;
+        const hasPreview = Boolean(getAssetImage(a));
+        const score = Math.min(hits, 8) * 2 + (hasPreview ? 0.5 : 0);
+        return { a, score, sig: signature(a) };
       })
-      .sort((x, y) => y.score - x.score)
-      .slice(0, 12)
-      .map((x) => x.a);
-  }, [assets, asset, id, assetTokens]);
+      .sort((x, y) => y.score - x.score);
+
+    const res: Asset[] = [];
+    const seenSig = new Set<string>();
+    for (const item of pool) {
+      if (res.length >= 12) break;
+      if (seenSig.has(item.sig)) continue;
+      seenSig.add(item.sig);
+      res.push(item.a);
+    }
+
+    return res;
+  }, [assets, asset, id, baseMeaningfulSet]);
 
   const similarPicks = useMemo(() => {
     if (!assets.length) return [] as Asset[];
     const currentId = asset?.id ?? id;
 
     const base = tokenSet(asset);
-    const baseTags = new Set(pickMeaningful(asset, 16));
+    const baseTags = baseMeaningfulSet;
 
     const scored = assets
       .filter((a) => a.id !== currentId)
@@ -265,7 +290,7 @@ export default function StockAssetPage() {
     }
 
     return result;
-  }, [assets, asset, id]);
+  }, [assets, asset, id, baseMeaningfulSet]);
 
   const fallbackImage = useMemo(() => {
     const firstValid = assets.find((a) => Boolean(getAssetImage(a)));
@@ -314,13 +339,13 @@ export default function StockAssetPage() {
   const similarRef = useRef<HTMLElement | null>(null);
   const shootRef = useRef<HTMLElement | null>(null);
   const relatedRef = useRef<HTMLElement | null>(null);
-  // Removed purchaseTopRef and dynamicStickyExtra, see sticky offset logic below.
   const [showStickyMenu, setShowStickyMenu] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>('info');
   const showStickyMenuRef = useRef(false);
   const stickyRafRef = useRef<number | null>(null);
   const activeTabRef = useRef<TabKey>('info');
   const tabRafRef = useRef<number | null>(null);
+  const addedTimeoutRef = useRef<number | null>(null);
   const scrollTo = useCallback(
     (ref: React.RefObject<HTMLElement | null>) => {
       const el = ref.current;
@@ -339,7 +364,26 @@ export default function StockAssetPage() {
     },
     [topbarOffset, stickyMenuOffset, showStickyMenu]
   );
-  // Removed dynamicStickyExtra measurement effect.
+
+  const onTabClick = useCallback(
+    (key: TabKey, ref: React.RefObject<HTMLElement | null>) => {
+      setActiveTab(key);
+      activeTabRef.current = key;
+      scrollTo(ref);
+    },
+    [scrollTo]
+  );
+
+  const stickyTabs = useMemo(
+    () => [
+      { key: 'info' as const, label: 'Info', ref: infoRef },
+      { key: 'keywords' as const, label: 'Keywords', ref: keywordsRef },
+      { key: 'similar' as const, label: 'Similar', ref: similarRef },
+      { key: 'shoot' as const, label: 'Shoot', ref: shootRef },
+      { key: 'related' as const, label: 'Related', ref: relatedRef },
+    ],
+    []
+  );
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -477,17 +521,17 @@ export default function StockAssetPage() {
   const openLightbox = () => setLightboxOpen(true);
   const closeLightbox = () => setLightboxOpen(false);
 
-  const goPrev = () => {
+  const goPrev = useCallback(() => {
     if (!assets.length) return;
     const prev = assets[(currentIndex - 1 + assets.length) % assets.length];
     if (prev) router.push(`/stock/assets/${prev.id}`);
-  };
+  }, [assets, currentIndex, router]);
 
-  const goNext = () => {
+  const goNext = useCallback(() => {
     if (!assets.length) return;
     const next = assets[(currentIndex + 1) % assets.length];
     if (next) router.push(`/stock/assets/${next.id}`);
-  };
+  }, [assets, currentIndex, router]);
 
   useEffect(() => {
     if (!lightboxOpen) return;
@@ -513,20 +557,36 @@ export default function StockAssetPage() {
       document.body.style.overflow = prevOverflow;
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [lightboxOpen, currentIndex, assets.length]);
+  }, [lightboxOpen, closeLightbox, goPrev, goNext]);
 
   const price = purchaseOption === 'single' ? priceSingle : payGo10Price;
   const selectedLicense = purchaseOption === 'single' ? 'single' : 'paygo10';
   const isInCart = useMemo(() => {
     const list = (items as any[]) ?? [];
-    return list.some((it) => it && it.id === assetId && (it.license ? it.license === selectedLicense : true));
+    return list.some((it) => {
+      if (!it) return false;
+      const itId = (it.id ?? it.assetId ?? '').toString();
+      if (itId !== assetId) return false;
+      const itLic = it.license ?? it.selectedLicense;
+      return itLic ? itLic === selectedLicense : true;
+    });
   }, [items, assetId, selectedLicense]);
 
-  useEffect(() => {
-    if (isInCart) setAdded(false);
-  }, [isInCart]);
+  const cartCtaLabel = useCallback(
+    (addedText: string) => {
+      if (added) return addedText;
+      if (isInCart) return 'Show cart';
+      return `Add to cart · €${price}`;
+    },
+    [added, isInCart, price]
+  );
 
   const handleAddToCart = useCallback(() => {
+    if (addedTimeoutRef.current !== null) {
+      window.clearTimeout(addedTimeoutRef.current);
+      addedTimeoutRef.current = null;
+    }
+
     if (isInCart) {
       openCart();
       return;
@@ -543,8 +603,40 @@ export default function StockAssetPage() {
 
     openCart();
     setAdded(true);
-    window.setTimeout(() => setAdded(false), 2000);
+    addedTimeoutRef.current = window.setTimeout(() => {
+      setAdded(false);
+      addedTimeoutRef.current = null;
+    }, 2000);
   }, [addItem, assetId, title, selectedLicense, price, imageSrc, openCart, isInCart]);
+
+  const addQuick = useCallback(
+    (a: Asset) => {
+      const aId = a.id;
+      if (cartIds.has(aId)) {
+        openCart();
+        return;
+      }
+      addItem({
+        id: aId,
+        title: a.title,
+        license: 'single',
+        price: priceSingle,
+        image: getAssetImage(a) || fallbackImage,
+        qty: 1,
+      });
+      openCart();
+    },
+    [addItem, cartIds, openCart, fallbackImage]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (addedTimeoutRef.current !== null) {
+        window.clearTimeout(addedTimeoutRef.current);
+        addedTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const goLogin = () => router.push(`/login?returnTo=${encodeURIComponent(returnTo)}`);
 
@@ -592,81 +684,20 @@ export default function StockAssetPage() {
           <div className="w-full px-4 py-2 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('info');
-                    activeTabRef.current = 'info';
-                    scrollTo(infoRef);
-                  }}
-                  className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ring-1 ${
-                    activeTab === 'info'
-                      ? 'bg-muted/50 text-foreground ring-black/10 dark:ring-white/20'
-                      : 'text-muted-foreground ring-transparent hover:bg-muted/40 hover:text-foreground'
-                  }`}
-                >
-                  Info
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('keywords');
-                    activeTabRef.current = 'keywords';
-                    scrollTo(keywordsRef);
-                  }}
-                  className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ring-1 ${
-                    activeTab === 'keywords'
-                      ? 'bg-muted/50 text-foreground ring-black/10 dark:ring-white/20'
-                      : 'text-muted-foreground ring-transparent hover:bg-muted/40 hover:text-foreground'
-                  }`}
-                >
-                  Keywords
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('similar');
-                    activeTabRef.current = 'similar';
-                    scrollTo(similarRef);
-                  }}
-                  className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ring-1 ${
-                    activeTab === 'similar'
-                      ? 'bg-muted/50 text-foreground ring-black/10 dark:ring-white/20'
-                      : 'text-muted-foreground ring-transparent hover:bg-muted/40 hover:text-foreground'
-                  }`}
-                >
-                  Similar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('shoot');
-                    activeTabRef.current = 'shoot';
-                    scrollTo(shootRef);
-                  }}
-                  className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ring-1 ${
-                    activeTab === 'shoot'
-                      ? 'bg-muted/50 text-foreground ring-black/10 dark:ring-white/20'
-                      : 'text-muted-foreground ring-transparent hover:bg-muted/40 hover:text-foreground'
-                  }`}
-                >
-                  Shoot
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('related');
-                    activeTabRef.current = 'related';
-                    scrollTo(relatedRef);
-                  }}
-                  className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ring-1 ${
-                    activeTab === 'related'
-                      ? 'bg-muted/50 text-foreground ring-black/10 dark:ring-white/20'
-                      : 'text-muted-foreground ring-transparent hover:bg-muted/40 hover:text-foreground'
-                  }`}
-                >
-                  Related
-                </button>
+                {stickyTabs.map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => onTabClick(t.key, t.ref)}
+                    className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ring-1 ${
+                      activeTab === t.key
+                        ? 'bg-muted/50 text-foreground ring-black/10 dark:ring-white/20'
+                        : 'text-muted-foreground ring-transparent hover:bg-muted/40 hover:text-foreground'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
               </div>
 
               <div className="flex items-center gap-3">
@@ -686,12 +717,12 @@ export default function StockAssetPage() {
 
                 <Button
                   size="default"
-                  variant={isInCart ? 'secondary' : 'default'}
+                  variant={isInCart || added ? 'secondary' : 'default'}
                   className="gap-2"
                   onClick={handleAddToCart}
                 >
                   <ShoppingCart className="h-4 w-4" />
-                  {isInCart ? 'Show cart' : added ? 'Added' : `Add to cart · €${price}`}
+                  {cartCtaLabel('Added')}
                 </Button>
               </div>
             </div>
@@ -718,12 +749,12 @@ export default function StockAssetPage() {
                 fill
                 priority
                 sizes="(min-width: 1024px) calc(100vw - 420px), 100vw"
-                className="object-contain motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:duration-300"
+                className="object-contain"
               />
             </div>
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-black/10" />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/10" />
             {/* ring overlay removed */}
-            <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-background/70 px-2 py-1 text-[11px] text-foreground/80 backdrop-blur-sm ring-1 ring-black/5 dark:ring-white/10">
+            <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-background/80 px-2 py-1 text-[11px] text-foreground/70 ring-1 ring-black/5 dark:ring-white/10">
               <span className="sm:hidden">Tap to zoom</span>
               <span className="hidden sm:inline">Click to zoom · Esc to close</span>
             </div>
@@ -732,7 +763,7 @@ export default function StockAssetPage() {
           <div
             ref={infoRef}
             id="info"
-            className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] rounded-2xl bg-background p-4 ring-1 ring-black/5 dark:ring-white/10"
+            className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] rounded-2xl bg-background/95 p-4 ring-1 ring-black/5 dark:ring-white/10"
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
@@ -772,15 +803,31 @@ export default function StockAssetPage() {
             className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] flex flex-wrap items-center gap-2 px-1"
           >
             {asset?.category ? (
-              <Badge variant="secondary" className="cursor-default">{asset.category}</Badge>
+              <Link href={`/stock/search?cat=${encodeURIComponent(asset.category.toLowerCase())}`}>
+                <Badge
+                  variant="secondary"
+                  className="cursor-pointer transition hover:bg-muted/60 hover:text-foreground"
+                >
+                  {asset.category}
+                </Badge>
+              </Link>
             ) : null}
             {displayTags
               .filter((t) => t && t.toLowerCase() !== (asset?.category ?? '').toLowerCase())
               .slice(0, 10)
               .map((t) => (
-                <Badge key={t} variant="secondary" className="cursor-default">
-                  {t}
-                </Badge>
+                <Link
+                  key={t}
+                  href={`/stock/search?q=${encodeURIComponent(t)}`}
+                  className="inline-flex"
+                >
+                  <Badge
+                    variant="secondary"
+                    className="cursor-pointer transition hover:bg-muted/60 hover:text-foreground"
+                  >
+                    {t}
+                  </Badge>
+                </Link>
               ))}
             <button
               type="button"
@@ -856,7 +903,7 @@ export default function StockAssetPage() {
             onClick={handleAddToCart}
           >
             <ShoppingCart className="h-4 w-4" />
-            {isInCart ? 'Show cart' : added ? 'Added to cart' : `Add to cart · €${price}`}
+            {cartCtaLabel('Added to cart')}
           </Button>
 
           {!loggedIn ? (
@@ -886,7 +933,7 @@ export default function StockAssetPage() {
         </Card>
       </div>
 
-      <section ref={shootRef} id="shoot" className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] mt-10">
+      <section ref={shootRef} id="shoot" className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] mt-8">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">From the same shoot</h2>
@@ -907,31 +954,25 @@ export default function StockAssetPage() {
           {(sameShootPicks.length ? sameShootPicks : relatedPicks)
             .slice(0, 12)
             .map((a) => (
-              <Link
-                key={`shoot-${a.id}`}
-                href={`/stock/assets/${a.id}`}
-                className="group relative h-40 w-56 shrink-0 overflow-hidden rounded-xl bg-muted/10 ring-1 ring-black/5 transition hover:-translate-y-0.5 hover:bg-muted/20 hover:ring-black/10 dark:ring-white/10 dark:hover:ring-white/20"
-              >
-                <Image
-                  src={getAssetImage(a) || fallbackImage}
-                  alt={a.title}
-                  fill
-                  sizes="224px"
-                  className="object-cover transition-transform duration-300 group-hover:scale-[1.05]"
+              <div key={`shoot-${a.id}`} className="w-56 shrink-0">
+                <ImageCard
+                  asset={{
+                    id: a.id,
+                    title: a.title,
+                    preview: getAssetImage(a) || fallbackImage,
+                    category: a.category,
+                  }}
+                  href={`/stock/assets/${a.id}`}
+                  aspect="photo"
+                  inCart={cartIds.has(a.id)}
+                  onAddToCart={() => addQuick(a)}
                 />
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-black/5 to-transparent opacity-80" />
-                <div className="absolute inset-x-0 bottom-0 p-3">
-                  <div className="line-clamp-1 text-xs font-semibold text-white">{a.title}</div>
-                  <div className="mt-0.5 line-clamp-1 text-[11px] text-white/75">
-                    {asset?.category ?? 'Shoot'}
-                  </div>
-                </div>
-              </Link>
+              </div>
             ))}
         </div>
       </section>
 
-      <section ref={similarRef} id="similar" className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] mt-10">
+      <section ref={similarRef} id="similar" className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] mt-8">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">Similar images</h2>
@@ -949,39 +990,26 @@ export default function StockAssetPage() {
         </div>
 
         <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-          {similarPicks.slice(0, 12).map((a) => {
-            const aTags = pickMeaningful(a, 8);
-            const baseMeaningfulSet = new Set(pickMeaningful(asset, 24));
-            const overlapMeaningful = aTags.filter((t) => baseMeaningfulSet.has(t)).slice(0, 2);
-            const hint = overlapMeaningful.length
-              ? overlapMeaningful.join(' · ')
-              : a.category ?? 'Similar';
-
-            return (
-              <Link
-                key={`similar-${a.id}`}
+          {similarPicks.slice(0, 12).map((a) => (
+            <div key={`similar-${a.id}`} className="w-56 shrink-0">
+              <ImageCard
+                asset={{
+                  id: a.id,
+                  title: a.title,
+                  preview: getAssetImage(a) || fallbackImage,
+                  category: a.category,
+                }}
                 href={`/stock/assets/${a.id}`}
-                className="group relative h-40 w-56 shrink-0 overflow-hidden rounded-xl bg-muted/10 ring-1 ring-black/5 transition hover:-translate-y-0.5 hover:bg-muted/20 hover:ring-black/10 dark:ring-white/10 dark:hover:ring-white/20"
-              >
-                <Image
-                  src={getAssetImage(a) || fallbackImage}
-                  alt={a.title}
-                  fill
-                  sizes="224px"
-                  className="object-cover transition-transform duration-300 group-hover:scale-[1.05]"
-                />
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-black/5 to-transparent opacity-80" />
-                <div className="absolute inset-x-0 bottom-0 p-3">
-                  <div className="line-clamp-1 text-xs font-semibold text-white">{a.title}</div>
-                  <div className="mt-0.5 line-clamp-1 text-[11px] text-white/75">{hint}</div>
-                </div>
-              </Link>
-            );
-          })}
+                aspect="photo"
+                inCart={cartIds.has(a.id)}
+                onAddToCart={() => addQuick(a)}
+              />
+            </div>
+          ))}
         </div>
       </section>
 
-      <section ref={relatedRef} id="related" className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] mt-10">
+      <section ref={relatedRef} id="related" className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] mt-8">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">Related images</h2>
@@ -999,41 +1027,21 @@ export default function StockAssetPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {relatedPicks.slice(0, 8).map((a) => {
-            const aTags = pickTags(a, 6);
-            const overlap = aTags.filter((t) => assetTokens.has(t)).slice(0, 2);
-            const hint = overlap.length
-              ? overlap.join(' · ')
-              : a.category
-                ? a.category
-                : 'Related';
-
-            return (
-              <Link
-                key={a.id}
-                href={`/stock/assets/${a.id}`}
-                className="group relative overflow-hidden rounded-xl bg-muted/10 ring-1 ring-black/5 transition hover:-translate-y-0.5 hover:bg-muted/20 hover:ring-black/10 dark:ring-white/10 dark:hover:ring-white/20"
-              >
-                <Image
-                  src={getAssetImage(a) || fallbackImage}
-                  alt={a.title}
-                  width={900}
-                  height={900}
-                  className="aspect-square w-full object-cover transition-transform duration-300 group-hover:scale-[1.05]"
-                />
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-black/5 to-transparent opacity-80" />
-
-                <div className="absolute inset-x-0 bottom-0 p-3">
-                  <div className="line-clamp-1 text-xs font-semibold text-white">
-                    {a.title}
-                  </div>
-                  <div className="mt-0.5 line-clamp-1 text-[11px] text-white/75">
-                    {hint}
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
+          {relatedPicks.slice(0, 8).map((a) => (
+            <ImageCard
+              key={a.id}
+              asset={{
+                id: a.id,
+                title: a.title,
+                preview: getAssetImage(a) || fallbackImage,
+                category: a.category,
+              }}
+              href={`/stock/assets/${a.id}`}
+              aspect="photo"
+              inCart={cartIds.has(a.id)}
+              onAddToCart={() => addQuick(a)}
+            />
+          ))}
         </div>
       </section>
 
