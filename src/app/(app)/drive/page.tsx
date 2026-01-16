@@ -66,7 +66,10 @@ type FolderNode = {
 };
 
 // --- Extracted types for derived folder/asset data ---
+
 type FolderAsset = { id: number; title: string; src: string };
+
+type DriveFolderContextDetail = { id: string; name: string };
 
 type DriveFolderDataArgs = {
   allImages: (typeof baseDemoImages)[number][];
@@ -258,8 +261,7 @@ function useDriveUrlSync(args: {
 
           if (trimmed) {
             params.set("q", trimmed);
-            // Search is global: clear folder context
-            params.delete("folder");
+            // Keep `folder` so search can be scoped to the current folder.
           } else {
             params.delete("q");
           }
@@ -293,20 +295,8 @@ function useDriveUrlSync(args: {
     _setQuery((prev) => {
       if (prev.trim() === next) return prev;
 
-      if (next.length > 0) {
-        setSelectedFolder("all");
-
-        // Normalize URL: search implies no folder
-        try {
-          const params = getCurrentSearchParams();
-          if (params.get("folder")) {
-            params.delete("folder");
-            routerRef.current.replace(`/drive${params.toString() ? `?${params.toString()}` : ""}`);
-          }
-        } catch {
-          // ignore
-        }
-      }
+      // Keep folder context when searching (scoped search)
+      // (Do not force folder to "all" or delete the `folder` param.)
 
       return next;
     });
@@ -314,7 +304,6 @@ function useDriveUrlSync(args: {
 
   const clearSearchUrlAndFolder = useCallback(() => {
     _setQuery("");
-    setSelectedFolder("all");
     clearPendingQueryUrlUpdate();
 
     try {
@@ -323,12 +312,12 @@ function useDriveUrlSync(args: {
       params.delete("q");
       params.delete("query");
       params.delete("search");
-      params.delete("folder");
+      // Keep `folder` so we stay in the current folder.
       routerRef.current.replace(`/drive${params.toString() ? `?${params.toString()}` : ""}`);
     } catch {
       // ignore
     }
-  }, [clearPendingQueryUrlUpdate, getCurrentSearchParams, setSelectedFolder]);
+  }, [clearPendingQueryUrlUpdate, getCurrentSearchParams]);
 
   return {
     query,
@@ -495,7 +484,7 @@ function DrivePageInner() {
       const ce = e as CustomEvent<string>;
       const next = typeof ce.detail === "string" ? ce.detail : "";
       setQuery(next);
-      setSelectedFolder("all");
+      // Keep current folder (scoped search)
       scheduleQueryUrlUpdate(next);
     };
 
@@ -930,6 +919,37 @@ function DrivePageInner() {
   const folderName = isRealFolderView
     ? crumbNodes[crumbNodes.length - 1]?.name ?? "Folder"
     : "";
+
+  // Tell Topbar which folder we're in (for the search context chip)
+  useEffect(() => {
+    if (!mounted) return;
+
+    const id = (selectedFolder ?? "").trim();
+    if (!id || id === "all") {
+      try {
+        window.dispatchEvent(
+          new CustomEvent<DriveFolderContextDetail>("CBX_DRIVE_FOLDER_CONTEXT", {
+            detail: { id: "", name: "" },
+          })
+        );
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    const name = (isRealFolderView ? folderName : "") || folderIndex.get(id)?.name || id;
+
+    try {
+      window.dispatchEvent(
+        new CustomEvent<DriveFolderContextDetail>("CBX_DRIVE_FOLDER_CONTEXT", {
+          detail: { id, name: String(name || id) },
+        })
+      );
+    } catch {
+      // ignore
+    }
+  }, [mounted, selectedFolder, isRealFolderView, folderName, folderIndex]);
 
 
   const {
@@ -1481,7 +1501,7 @@ function DrivePageInner() {
                 onRequestSetQuery={(next) => {
                   const trimmed = (next ?? "").trim();
                   setQuery(trimmed);
-                  setSelectedFolder("all");
+                  // Keep current folder (scoped search)
                   scheduleQueryUrlUpdate(trimmed);
                 }}
                 onRequestClearFilters={clearAllFilters}

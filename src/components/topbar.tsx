@@ -236,6 +236,28 @@ export function Topbar({
     sp.get("search") ??
     ""
   ).trim();
+
+  const driveFolderId = (pathname ?? "").startsWith("/drive") ? (sp.get("folder") ?? "").trim() : "";
+  const folderContextLabel = driveFolderId && driveFolderId !== "all" ? driveFolderId : "";
+
+  const folderContextLabelPretty = React.useMemo(() => {
+    const raw = (folderContextLabel ?? "").trim();
+    if (!raw) return "";
+
+    // Prettify ids like "marketing_campaigns" -> "Marketing Campaigns"
+    const words = raw
+      .replace(/[\-_]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .split(" ")
+      .filter(Boolean);
+
+    const pretty = words
+      .map((w) => (w.length ? w[0]!.toUpperCase() + w.slice(1) : w))
+      .join(" ");
+
+    return pretty || raw;
+  }, [folderContextLabel]);
   const { open: openCart } = useCartUI();
   const { count: liveCartCount } = useCart();
 
@@ -339,11 +361,10 @@ export function Topbar({
       suppressNextDriveLiveSyncRef.current = null;
     }
 
-    const hasFolder = Boolean(sp.get("folder"));
     const hasLegacy = Boolean(sp.get("query") || sp.get("search"));
 
     if (q === urlQ) {
-      if (!(q && (hasFolder || hasLegacy))) return;
+      if (!(q && hasLegacy)) return;
     }
 
     if (liveSyncTimerRef.current) {
@@ -357,7 +378,7 @@ export function Topbar({
 
         if (q) {
           params.set("q", q);
-          params.delete("folder");
+          // Keep `folder` so search can be scoped to the current folder.
         } else {
           params.delete("q");
         }
@@ -389,6 +410,7 @@ export function Topbar({
     urlQ,
     router,
     searchParamsString,
+    searchParamsEntries,
     sp,
   ]);
 
@@ -411,6 +433,16 @@ export function Topbar({
   // Only pass a placeholder when explicitly provided (lets SearchBar show scope-aware defaults)
   const resolvedSearchPlaceholder = searchPlaceholder;
 
+  const clearFolderContext = React.useCallback(() => {
+    try {
+      const params = new URLSearchParams(searchParamsString);
+      params.delete("folder");
+      const next = params.toString();
+      router.replace(`/drive${next ? `?${next}` : ""}`);
+    } catch {
+      // ignore
+    }
+  }, [router, searchParamsString]);
 
   const submitSearch = React.useCallback(() => {
     const q = (onSearchChange ? (searchValue ?? "") : internalQuery).trim();
@@ -423,7 +455,6 @@ export function Topbar({
       try {
         const params = new URLSearchParams(searchParamsEntries);
         params.set("q", q);
-        params.delete("folder");
         params.delete("query");
         params.delete("search");
         suppressNextDriveLiveSyncRef.current = q;
@@ -522,6 +553,8 @@ export function Topbar({
           value={onSearchChange ? (searchValue ?? "") : internalQuery}
           onChange={onSearchChange ?? setInternalQuery}
           {...(resolvedSearchPlaceholder ? { placeholder: resolvedSearchPlaceholder } : {})}
+          contextLabel={folderContextLabelPretty || undefined}
+          onClearContext={folderContextLabel ? clearFolderContext : undefined}
           scope={loggedIn ? searchScope : undefined}
           scopes={
             loggedIn
@@ -573,7 +606,6 @@ export function Topbar({
                 try {
                   const params = new URLSearchParams(searchParamsEntries);
                   params.set("q", v);
-                  params.delete("folder");
                   params.delete("query");
                   params.delete("search");
                   suppressNextDriveLiveSyncRef.current = v;

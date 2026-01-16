@@ -47,6 +47,11 @@ type SearchBarProps = {
   scope?: string;
   onScopeChange?: (scope: string) => void;
   scopes?: Array<{ value: string; label: string }>;
+
+  /** Optional context indicator shown inside the input (e.g. “In: Marketing”) */
+  contextLabel?: string;
+  /** Optional clear action for the context indicator */
+  onClearContext?: () => void;
 };
 
 export function SearchBar({
@@ -72,6 +77,8 @@ export function SearchBar({
     { value: "stock", label: "Stock" },
     { value: "drive", label: "Files" },
   ],
+  contextLabel,
+  onClearContext,
   className,
 }: SearchBarProps) {
   const inputRef = React.useRef<HTMLInputElement | null>(null);
@@ -79,6 +86,9 @@ export function SearchBar({
   const popoverRef = React.useRef<HTMLDivElement | null>(null);
   const blurCloseTimerRef = React.useRef<number | null>(null);
   const suppressOpenRef = React.useRef(false);
+  const valueRef = React.useRef(value);
+  const showRecentsRef = React.useRef(showRecents);
+  const loadRecentsRef = React.useRef<() => string[]>(() => []);
   const [isFocused, setIsFocused] = React.useState(false);
   const [popoverWidth, setPopoverWidth] = React.useState<number | undefined>(undefined);
 
@@ -87,7 +97,7 @@ export function SearchBar({
     return onScopeChange ? `${recentsStorageKey}_${scope}` : recentsStorageKey;
   }, [onScopeChange, recentsStorageKey, scope]);
 
-  React.useLayoutEffect(() => {
+  React.useEffect(() => {
     const el = triggerRef.current;
     if (!el) return;
 
@@ -107,19 +117,7 @@ export function SearchBar({
   const [suggestionsLoading, setSuggestionsLoading] = React.useState(false);
   const [highlight, setHighlight] = React.useState<string>("");
 
-  const [recents, setRecents] = React.useState<string[]>(() => {
-    if (!showRecents) return [];
-    try {
-      const raw = window.localStorage.getItem(effectiveRecentsKey);
-      const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-      const list = Array.isArray(parsed)
-        ? parsed.map((x) => String(x).trim()).filter(Boolean)
-        : [];
-      return list.slice(0, Math.max(1, maxRecents));
-    } catch {
-      return [];
-    }
-  });
+  const [recents, setRecents] = React.useState<string[]>([]);
 
   const selectableItems = React.useMemo(() => {
     const q = value.trim();
@@ -139,6 +137,19 @@ export function SearchBar({
       return [];
     }
   }, [showRecents, effectiveRecentsKey, maxRecents]);
+
+  // Keep refs in sync with latest value/showRecents/loadRecents
+  React.useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+
+  React.useEffect(() => {
+    showRecentsRef.current = showRecents;
+  }, [showRecents]);
+
+  React.useEffect(() => {
+    loadRecentsRef.current = loadRecents;
+  }, [loadRecents]);
 
   const persistRecents = React.useCallback(
     (next: string[]) => {
@@ -186,6 +197,19 @@ export function SearchBar({
     setHighlight("");
   }, [scope, onScopeChange, showRecents, loadRecents]);
 
+  // Load recents after mount / when the storage key changes (avoids localStorage access during state init)
+  // Only used when the scope selector is NOT enabled; otherwise the scope-effect above owns recents.
+  React.useEffect(() => {
+    if (onScopeChange) return;
+
+    if (!showRecents) {
+      setRecents([]);
+      return;
+    }
+
+    setRecents(loadRecents());
+  }, [onScopeChange, showRecents, loadRecents, effectiveRecentsKey]);
+
   const maxSug = maxSuggestions ?? 8;
   const minChars = minSuggestionChars ?? 1;
 
@@ -224,6 +248,17 @@ export function SearchBar({
     const est = base + label.length * perChar;
     return Math.min(Math.max(est, 120), 160);
   }, [onScopeChange, scopeLabel]);
+
+  const contextPadLeft = React.useMemo(() => {
+    const label = (contextLabel ?? "").trim();
+    if (!label) return 0;
+
+    // Rough estimate: chip padding + text width + close button
+    const base = 54; // padding + close
+    const perChar = 6; // conservative
+    const est = base + label.length * perChar;
+    return Math.min(Math.max(est, 110), 220);
+  }, [contextLabel]);
 
   // Avoid mismatch: render a stable default, then show shortcut hint only after mount
   const [primaryShortcut, setPrimaryShortcut] = React.useState("Ctrl K");
@@ -330,30 +365,73 @@ export function SearchBar({
 
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      // Don’t steal focus when user is typing in a form field
-      const el = document.activeElement as HTMLElement | null;
-      const tag = el?.tagName?.toLowerCase();
-      const isEditable =
-        tag === "input" ||
-        tag === "textarea" ||
-        tag === "select" ||
-        Boolean(el && (el as any).isContentEditable);
-
-      if (isEditable) return;
-
       const key = (e.key || "").toLowerCase();
       const isCmdK = (e.metaKey || e.ctrlKey) && !e.shiftKey && key === "k";
+      if (!isCmdK) return;
 
-      if (isCmdK) {
-        e.preventDefault();
+      // If user is editing text AND has an active selection, don't steal the shortcut.
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName?.toLowerCase();
+      const isTextEditing =
+        tag === "input" ||
+        tag === "textarea" ||
+        Boolean(el && (el as any).isContentEditable);
+
+      const sel = typeof window !== "undefined" ? window.getSelection?.() : null;
+      const hasSelection = !!sel && !sel.isCollapsed;
+      if (isTextEditing && hasSelection) return;
+
+      e.preventDefault();
+
+      // Toggle behavior
+      const isAlreadyFocused = document.activeElement === inputRef.current;
+      setSuggestionsOpen((prev) => {
+        const nextOpen = isAlreadyFocused ? !prev : true;
+
+        // Always clear highlight when toggling
+        setHighlight("");
+
+        // When opening, allow suggestions to open again and refresh recents (empty query)
+        if (nextOpen) {
+          suppressOpenRef.current = false;
+
+          const currentValue = (valueRef.current ?? "").trim();
+          if (showRecentsRef.current && currentValue.length === 0) {
+            const fn = loadRecentsRef.current;
+            setRecents(typeof fn === "function" ? fn() : []);
+          }
+
+          window.setTimeout(() => {
+            const el = inputRef.current;
+            if (!el) return;
+            el.focus();
+            try {
+              el.select();
+            } catch {
+              // ignore
+            }
+          }, 0);
+        } else {
+          // When closing via toggle, blur if we are focused
+          window.setTimeout(() => {
+            if (document.activeElement === inputRef.current) {
+              (inputRef.current as HTMLInputElement | null)?.blur();
+            }
+          }, 0);
+        }
+
+        return nextOpen;
+      });
+
+      // If not focused, ensure we focus (open will also select)
+      if (!isAlreadyFocused) {
         inputRef.current?.focus();
-        setSuggestionsOpen(true);
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onScopeChange, setScope]);
+  }, []);
 
   const clear = React.useCallback(() => {
     onChange("");
@@ -501,8 +579,12 @@ export function SearchBar({
                 aria-label={effectiveAriaLabel}
                 style={
                   onScopeChange
-                    ? ({ paddingLeft: `${(scopePadLeft ?? 130) + (showIcon ? 22 : 0)}px` } as React.CSSProperties)
-                    : undefined
+                    ? ({
+                        paddingLeft: `${(scopePadLeft ?? 130) + (showIcon ? 22 : 0) + (contextPadLeft ? contextPadLeft + 8 : 0)}px`,
+                      } as React.CSSProperties)
+                    : contextPadLeft
+                      ? ({ paddingLeft: `${(showIcon ? 36 : 12) + contextPadLeft + 8}px` } as React.CSSProperties)
+                      : undefined
                 }
                 className={cn(
                   "h-10 bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring focus-visible:ring-offset-background",
@@ -554,6 +636,24 @@ export function SearchBar({
                 })}
               </div>
 
+              {contextLabel ? (
+                <div className="inline-flex h-7 max-w-[240px] items-center gap-1 rounded-full border border-border bg-background/80 px-2 text-[11px] text-muted-foreground shadow-sm">
+                  <span className="truncate">In: <span className="text-foreground">{contextLabel}</span></span>
+                  {onClearContext ? (
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={onClearContext}
+                      className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+                      aria-label="Clear folder filter"
+                      title="Clear folder filter"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+
               {showIcon ? (
                 <div className="pointer-events-none text-muted-foreground">
                   <Search className="h-4 w-4" />
@@ -561,8 +661,27 @@ export function SearchBar({
               ) : null}
             </div>
           ) : showIcon ? (
-            <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-              <Search className="h-4 w-4" />
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+              <div className="pointer-events-none text-muted-foreground">
+                <Search className="h-4 w-4" />
+              </div>
+              {contextLabel ? (
+                <div className="inline-flex h-7 max-w-[240px] items-center gap-1 rounded-full border border-border bg-background/80 px-2 text-[11px] text-muted-foreground shadow-sm">
+                  <span className="truncate">In: <span className="text-foreground">{contextLabel}</span></span>
+                  {onClearContext ? (
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={onClearContext}
+                      className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+                      aria-label="Clear folder filter"
+                      title="Clear folder filter"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
 
