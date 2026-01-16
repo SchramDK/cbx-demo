@@ -208,11 +208,9 @@ function useDriveUrlSync(args: {
   mounted: boolean;
   router: ReturnType<typeof useRouter>;
   searchParams: ReturnType<typeof useSearchParams>;
-  selectedFolder: string;
-  setSelectedFolder: (id: string) => void;
   initialQuery: string;
 }): DriveUrlSync {
-  const { mounted, router, searchParams, setSelectedFolder, initialQuery } = args;
+  const { mounted, router, searchParams, initialQuery } = args;
 
   const urlQ = (
     searchParams.get("q") ??
@@ -300,7 +298,7 @@ function useDriveUrlSync(args: {
 
       return next;
     });
-  }, [mounted, urlQ, getCurrentSearchParams, setSelectedFolder]);
+  }, [mounted, urlQ]);
 
   const clearSearchUrlAndFolder = useCallback(() => {
     _setQuery("");
@@ -415,8 +413,6 @@ function DrivePageInner() {
     mounted,
     router,
     searchParams,
-    selectedFolder,
-    setSelectedFolder,
     initialQuery: initialUrlQ,
   });
 

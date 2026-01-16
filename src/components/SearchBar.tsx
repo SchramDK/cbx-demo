@@ -253,11 +253,11 @@ export function SearchBar({
     const label = (contextLabel ?? "").trim();
     if (!label) return 0;
 
-    // Rough estimate: chip padding + text width + close button
-    const base = 54; // padding + close
+    // Rough estimate: chip padding + "In: " + text width + close button
+    const base = 62; // padding + close + "In: "
     const perChar = 6; // conservative
     const est = base + label.length * perChar;
-    return Math.min(Math.max(est, 110), 220);
+    return Math.min(Math.max(est, 120), 240);
   }, [contextLabel]);
 
   // Avoid mismatch: render a stable default, then show shortcut hint only after mount
@@ -637,16 +637,21 @@ export function SearchBar({
               </div>
 
               {contextLabel ? (
-                <div className="inline-flex h-7 max-w-[240px] items-center gap-1 rounded-full border border-border bg-background/80 px-2 text-[11px] text-muted-foreground shadow-sm">
-                  <span className="truncate">In: <span className="text-foreground">{contextLabel}</span></span>
+                <div
+                  className="inline-flex h-7 max-w-[240px] items-center gap-1 rounded-full border border-border bg-background/80 px-2 text-[11px] text-muted-foreground shadow-sm"
+                  title={contextLabel}
+                >
+                  <span className="truncate" title={contextLabel}>
+                    In: <span className="text-foreground">{contextLabel}</span>
+                  </span>
                   {onClearContext ? (
                     <button
                       type="button"
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={onClearContext}
                       className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
-                      aria-label="Clear folder filter"
-                      title="Clear folder filter"
+                      aria-label={`Clear folder filter (${contextLabel})`}
+                      title={`Clear folder filter (${contextLabel})`}
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>
@@ -666,16 +671,21 @@ export function SearchBar({
                 <Search className="h-4 w-4" />
               </div>
               {contextLabel ? (
-                <div className="inline-flex h-7 max-w-[240px] items-center gap-1 rounded-full border border-border bg-background/80 px-2 text-[11px] text-muted-foreground shadow-sm">
-                  <span className="truncate">In: <span className="text-foreground">{contextLabel}</span></span>
+                <div
+                  className="inline-flex h-7 max-w-[240px] items-center gap-1 rounded-full border border-border bg-background/80 px-2 text-[11px] text-muted-foreground shadow-sm"
+                  title={contextLabel}
+                >
+                  <span className="truncate" title={contextLabel}>
+                    In: <span className="text-foreground">{contextLabel}</span>
+                  </span>
                   {onClearContext ? (
                     <button
                       type="button"
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={onClearContext}
                       className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
-                      aria-label="Clear folder filter"
-                      title="Clear folder filter"
+                      aria-label={`Clear folder filter (${contextLabel})`}
+                      title={`Clear folder filter (${contextLabel})`}
                     >
                       <X className="h-3.5 w-3.5" />
                     </button>

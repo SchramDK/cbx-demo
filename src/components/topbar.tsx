@@ -262,7 +262,22 @@ export function Topbar({
   const { count: liveCartCount } = useCart();
 
   const [mounted, setMounted] = React.useState(false);
+  const [driveFolderContextName, setDriveFolderContextName] = React.useState<string>(""
+  );
   React.useEffect(() => setMounted(true), []);
+
+  React.useEffect(() => {
+    if (!mounted) return;
+
+    const onCtx = (e: Event) => {
+      const ce = e as CustomEvent<{ id: string; name: string }>;
+      const nextName = (ce.detail?.name ?? "").trim();
+      setDriveFolderContextName(nextName);
+    };
+
+    window.addEventListener("CBX_DRIVE_FOLDER_CONTEXT", onCtx as EventListener);
+    return () => window.removeEventListener("CBX_DRIVE_FOLDER_CONTEXT", onCtx as EventListener);
+  }, [mounted]);
 
   const { me, setMe, refreshMe } = useDemoMe(mounted);
 
@@ -553,7 +568,7 @@ export function Topbar({
           value={onSearchChange ? (searchValue ?? "") : internalQuery}
           onChange={onSearchChange ?? setInternalQuery}
           {...(resolvedSearchPlaceholder ? { placeholder: resolvedSearchPlaceholder } : {})}
-          contextLabel={folderContextLabelPretty || undefined}
+          contextLabel={(driveFolderContextName || folderContextLabelPretty || folderContextLabel) || undefined}
           onClearContext={folderContextLabel ? clearFolderContext : undefined}
           scope={loggedIn ? searchScope : undefined}
           scopes={
