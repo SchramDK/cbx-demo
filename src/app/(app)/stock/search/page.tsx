@@ -54,7 +54,7 @@ function hasId(set: Set<string>, raw: unknown): boolean {
   );
 }
 
-const SYNONYMS: Record<string, string[]> = {
+const RAW_SYNONYMS: Record<string, string[]> = {
   aurora: ['northern lights', 'aurora borealis', 'nordlys'],
   'aurora borealis': ['aurora', 'northern lights', 'nordlys'],
   'northern lights': ['aurora', 'aurora borealis', 'nordlys'],
@@ -113,6 +113,34 @@ const normalize = (input: string) => {
 
 const tokenize = (input: string) => normalize(input).split(' ').filter(Boolean);
 
+const SYNONYMS = (() => {
+  const out: Record<string, string[]> = {};
+
+  for (const [k, vals] of Object.entries(RAW_SYNONYMS)) {
+    const nk = normalize(k);
+    if (!nk) continue;
+
+    const list: string[] = [];
+    const seen = new Set<string>();
+
+    const add = (v: string) => {
+      const nv = normalize(v);
+      if (!nv) return;
+      if (seen.has(nv)) return;
+      seen.add(nv);
+      list.push(nv);
+    };
+
+    // include original key and values
+    add(k);
+    for (const v of vals) add(v);
+
+    out[nk] = list;
+  }
+
+  return out;
+})();
+
 const expandTerms = (terms: string[]) => {
   const out: string[] = [];
   const seen = new Set<string>();
@@ -127,7 +155,7 @@ const expandTerms = (terms: string[]) => {
 
   for (const t of terms) {
     add(t);
-    const syn = SYNONYMS[t] ?? SYNONYMS[normalize(t)] ?? [];
+    const syn = SYNONYMS[normalize(t)] ?? [];
     for (const s of syn) add(s);
   }
 
@@ -202,7 +230,7 @@ const buildVocab = (assets: Asset[]) => {
   }
 
   // include synonym keys + values as vocabulary
-  for (const [k, vals] of Object.entries(SYNONYMS)) {
+  for (const [k, vals] of Object.entries(RAW_SYNONYMS)) {
     addTokens(k);
     for (const v of vals) addTokens(v);
   }
@@ -624,7 +652,6 @@ function StockSearchInner() {
                   id: asset.id,
                   title: asset.title,
                   preview: getImage(asset),
-                  category: asset.category,
                 }}
                 href={`/stock/assets/${asset.id}`}
                 aspect="photo"
