@@ -859,8 +859,8 @@ export default function StockAssetPage() {
     const targets: Array<{ key: TabKey; el: HTMLElement | null }> = [
       { key: 'info', el: infoEl },
       { key: 'keywords', el: keywordsEl },
-      { key: 'similar', el: similarEl },
       { key: 'shoot', el: shootEl },
+      { key: 'similar', el: similarEl },
       { key: 'related', el: relatedEl },
     ];
 
@@ -1486,7 +1486,7 @@ export default function StockAssetPage() {
 
         <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
           {sameShootPicks.slice(0, 12).map((a) => (
-              <div key={`shoot-${a.id}`} className="w-56 shrink-0">
+              <div key={`shoot-${a.id}`} className="w-80 shrink-0">
                 <ImageCard
                   asset={{
                     id: a.id,
@@ -1526,7 +1526,7 @@ export default function StockAssetPage() {
             const sem = similarSemanticScores.get(a.id) ?? 0;
             const strength = sem >= 0.42 ? 'Very similar' : 'Similar';
             return (
-              <div key={`similar-${a.id}`} className="w-56 shrink-0">
+              <div key={`similar-${a.id}`} className="w-80 shrink-0">
                 <div className="relative">
                   <ImageCard
                     asset={{
@@ -1575,7 +1575,7 @@ export default function StockAssetPage() {
 
         <div className="flex flex-wrap gap-4">
           {relatedPicks.slice(0, 8).map((a) => (
-            <div key={a.id} className="w-56">
+            <div key={a.id} className="w-80">
               <ImageCard
                 asset={{
                   id: a.id,
