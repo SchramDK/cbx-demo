@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import {
   CheckCircle2,
   Clock,
@@ -133,17 +133,19 @@ export default function TeamPage() {
   const [demoFilled, setDemoFilled] = useState(false);
   const [showInviteSent, setShowInviteSent] = useState(false);
 
-  const searchParams = useSearchParams();
-  const demoMode = searchParams.get('demo') === '1';
+  const [demoMode, setDemoMode] = useState(false);
 
   useEffect(() => {
+    const demo = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('demo') === '1';
+    setDemoMode(demo);
+
     try {
       const filledKey = 'cbx_team_demo_filled_v1';
       const inviteKey = 'cbx_team_invite_sent_v1';
 
       const alreadyFilled = sessionStorage.getItem(filledKey) === '1';
 
-      if (demoMode) {
+      if (demo) {
         sessionStorage.setItem(filledKey, '1');
         sessionStorage.setItem(inviteKey, '1');
         setDemoFilled(true);
@@ -159,10 +161,10 @@ export default function TeamPage() {
 
       setDemoFilled(false);
     } catch {
-      // If sessionStorage is unavailable, fall back to the URL flag only.
+      // If sessionStorage is unavailable, fall back to empty state.
       setDemoFilled(false);
     }
-  }, [demoMode, router]);
+  }, [router]);
 
   useEffect(() => {
     if (!demoFilled) return;
