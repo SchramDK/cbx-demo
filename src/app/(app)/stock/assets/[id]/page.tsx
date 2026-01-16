@@ -593,8 +593,8 @@ export default function StockAssetPage() {
     for (const item of scored) {
       if (pool.length >= 22) break;
       if (seenSig.has(item.sig)) continue;
-      // If semantic is available, drop very low semantic matches early
-      if (hasSemantic && item.sem < 0.22) continue;
+      // If semantic is available, keep only clearly similar matches
+      if (hasSemantic && item.sem < 0.30) continue;
       seenSig.add(item.sig);
       pool.push(item);
     }
@@ -1485,16 +1485,13 @@ export default function StockAssetPage() {
         </div>
 
         <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-          {(sameShootPicks.length ? sameShootPicks : relatedPicks)
-            .slice(0, 12)
-            .map((a) => (
+          {sameShootPicks.slice(0, 12).map((a) => (
               <div key={`shoot-${a.id}`} className="w-56 shrink-0">
                 <ImageCard
                   asset={{
                     id: a.id,
                     title: a.title,
                     preview: getAssetImage(a) || fallbackImage,
-                    category: a.category,
                   }}
                   href={`/stock/assets/${a.id}`}
                   aspect="photo"
@@ -1527,7 +1524,7 @@ export default function StockAssetPage() {
           {similarPicks.slice(0, 12).map((a) => {
             const hint = overlapHint(baseMeaningfulSet, a, { limit: 3, fallback: 'Similar vibe' });
             const sem = similarSemanticScores.get(a.id) ?? 0;
-            const strength = sem >= 0.42 ? 'Very similar' : sem >= 0.30 ? 'Similar' : 'Related';
+            const strength = sem >= 0.42 ? 'Very similar' : 'Similar';
             return (
               <div key={`similar-${a.id}`} className="w-56 shrink-0">
                 <div className="relative">
@@ -1536,7 +1533,6 @@ export default function StockAssetPage() {
                       id: a.id,
                       title: a.title,
                       preview: getAssetImage(a) || fallbackImage,
-                      category: a.category,
                     }}
                     href={`/stock/assets/${a.id}`}
                     aspect="photo"
@@ -1577,21 +1573,21 @@ export default function StockAssetPage() {
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div className="flex flex-wrap gap-4">
           {relatedPicks.slice(0, 8).map((a) => (
-            <ImageCard
-              key={a.id}
-              asset={{
-                id: a.id,
-                title: a.title,
-                preview: getAssetImage(a) || fallbackImage,
-                category: a.category,
-              }}
-              href={`/stock/assets/${a.id}`}
-              aspect="photo"
-              inCart={cartIds.has(a.id)}
-              onAddToCartAction={() => addQuick(a)}
-            />
+            <div key={a.id} className="w-56">
+              <ImageCard
+                asset={{
+                  id: a.id,
+                  title: a.title,
+                  preview: getAssetImage(a) || fallbackImage,
+                }}
+                href={`/stock/assets/${a.id}`}
+                aspect="photo"
+                inCart={cartIds.has(a.id)}
+                onAddToCartAction={() => addQuick(a)}
+              />
+            </div>
           ))}
         </div>
       </section>

@@ -301,6 +301,7 @@ function StockSearchInner() {
   const q = normalize(rawQ);
   const hasQuery = q.length > 0;
   const [semanticScores, setSemanticScores] = useState<Map<string, number>>(() => new Map());
+  const [facesCountById, setFacesCountById] = useState<Map<string, number>>(() => new Map());
   const semanticSeq = useRef(0);
   const semanticCache = useRef<Map<string, Map<string, number>>>(new Map());
   const semanticPrewarmDone = useRef(false);
@@ -400,6 +401,26 @@ function StockSearchInner() {
       }
     })();
   }, [rawQ, setSemanticCache]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/demo/ai/stock-faces.json', { cache: 'force-cache' });
+        if (!res.ok) return;
+        const json = (await res.json()) as any;
+        const faces: Record<string, any[]> = json?.faces ?? {};
+        const map = new Map<string, number>();
+        for (const [id, arr] of Object.entries(faces)) map.set(String(id), Array.isArray(arr) ? arr.length : 0);
+        if (!cancelled) setFacesCountById(map);
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const cart = useCart() as any;
   const cartUI = useCartUI() as any;
@@ -527,6 +548,10 @@ function StockSearchInner() {
     let aiBoostUsed = false;
 
     const baseTerms = tokenize(q);
+    const qIntent = rawQ.toLowerCase();
+    const wantsPeople = /(person|people|portrait|family|team|man|woman|child|children)/i.test(qIntent);
+    const wantsGroup = /(group|team|family)/i.test(qIntent);
+    const wantsNoPeople = /(landscape|nature|empty|no people|without people)/i.test(qIntent);
     const useSynonyms = baseTerms.length === 1;
     const terms = useSynonyms ? expandTerms(baseTerms) : baseTerms;
 
@@ -629,6 +654,12 @@ function StockSearchInner() {
       const sem = semanticScores.get(asset.id) ?? 0;
       s += sem * 6;
 
+      // Face-aware boost (uses offline index loaded from /demo/ai/stock-faces.json)
+      const facesCount = facesCountById.get(asset.id) ?? 0;
+      if (wantsPeople && facesCount > 0) s += 0.08;
+      if (wantsGroup && facesCount >= 2) s += 0.06;
+      if (wantsNoPeople && facesCount > 0) s -= 0.05;
+
       return s;
     };
 
@@ -728,7 +759,7 @@ function StockSearchInner() {
       .map((x) => x.a);
 
     return { results: ranked, aiFallbackUsed, aiBoostUsed, keywordCount: filtered.length };
-  }, [q, rawQ, cat, semanticScores, indexedAssets]);
+  }, [q, rawQ, cat, semanticScores, indexedAssets, facesCountById]);
 
   const results = search.results;
   const aiFallbackUsed = search.aiFallbackUsed;
