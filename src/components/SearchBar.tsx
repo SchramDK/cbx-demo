@@ -341,21 +341,8 @@ export function SearchBar({
 
       if (isEditable) return;
 
-      const key = e.key;
-      const isSlashKey = e.code === "Slash" && !e.metaKey && !e.ctrlKey && !e.altKey;
-      const isCmdK = (e.metaKey || e.ctrlKey) && key.toLowerCase() === "k";
-
-      if (isSlashKey) {
-        e.preventDefault();
-        // Scope-aware shortcuts: / = Stock, ⇧/ = Files
-        if (onScopeChange) {
-          const target = e.shiftKey ? "drive" : "stock";
-          setScope(target);
-        }
-        inputRef.current?.focus();
-        setSuggestionsOpen(true);
-        return;
-      }
+      const key = (e.key || "").toLowerCase();
+      const isCmdK = (e.metaKey || e.ctrlKey) && !e.shiftKey && key === "k";
 
       if (isCmdK) {
         e.preventDefault();
@@ -604,15 +591,6 @@ export function SearchBar({
                   primaryShortcut
                 )}
               </kbd>
-              <span className="opacity-60">·</span>
-              <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">
-                /
-              </kbd>
-              {onScopeChange ? (
-                <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">
-                  ⇧/
-                </kbd>
-              ) : null}
             </div>
           ) : null}
 
@@ -645,7 +623,6 @@ export function SearchBar({
                 <CommandList>
                   <div className="px-3 py-2 text-xs text-muted-foreground">
                     Enter to search • ↑/↓ then Enter to select • Esc to close
-                    {onScopeChange ? " • / Stock • ⇧/ Files" : ""}
                   </div>
                   {showRecents && q.length === 0 && recents.length > 0 ? (
                     <CommandGroup

@@ -40,25 +40,34 @@ function ActionButton({
   label,
   children,
   onClick,
+  disabled,
 }: {
   label: string;
   children: React.ReactNode;
   onClick?: () => void;
+  disabled?: boolean;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="secondary"
-          size="icon"
-          className="h-9 w-9 bg-background/70 backdrop-blur supports-[backdrop-filter]:bg-background/50"
-          onClick={onClick}
-          aria-label={label}
-          title={label}
-        >
-          {children}
-        </Button>
+        <span className={cn(disabled ? "cursor-not-allowed" : "")}
+              aria-disabled={disabled ? true : undefined}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="icon"
+            className={cn(
+              "h-9 w-9 bg-background/70 backdrop-blur supports-[backdrop-filter]:bg-background/50",
+              disabled ? "opacity-50" : ""
+            )}
+            onClick={disabled ? undefined : onClick}
+            aria-label={label}
+            title={label}
+            disabled={disabled}
+          >
+            {children}
+          </Button>
+        </span>
       </TooltipTrigger>
       <TooltipContent side="top">{label}</TooltipContent>
     </Tooltip>
@@ -82,7 +91,11 @@ export function SelectionBar({
           className
         )}
       >
-        <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background/80 px-3 py-2 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-background/80 px-3 py-2 shadow-lg backdrop-blur supports-[backdrop-filter]:bg-background/60 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-2 motion-safe:duration-200"
+        >
           {/* Left */}
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex -space-x-2">
@@ -123,7 +136,8 @@ export function SelectionBar({
           {/* Actions */}
           <div className="flex items-center gap-2">
             <ActionButton
-              label="Open"
+              label={count === 1 ? "Open" : "Open (select 1)"}
+              disabled={count !== 1}
               onClick={() => onAction?.("open")}
             >
               <Eye className="h-4 w-4" />

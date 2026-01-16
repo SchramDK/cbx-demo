@@ -223,11 +223,17 @@ export function Topbar({
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const searchParamsString = React.useMemo(() => searchParams.toString(), [searchParams]);
+  const searchParamsEntries = React.useMemo(
+    () => Array.from(searchParams.entries()),
+    [searchParamsString]
+  );
+  const sp = React.useMemo(() => new URLSearchParams(searchParamsString), [searchParamsString]);
 
   const urlQ = (
-    searchParams.get("q") ??
-    searchParams.get("query") ??
-    searchParams.get("search") ??
+    sp.get("q") ??
+    sp.get("query") ??
+    sp.get("search") ??
     ""
   ).trim();
   const { open: openCart } = useCartUI();
@@ -265,6 +271,8 @@ export function Topbar({
 
   const [internalQuery, setInternalQuery] = React.useState(initialSearchQuery ?? "");
   const liveSyncTimerRef = React.useRef<number | null>(null);
+  const suppressNextDriveLiveSyncRef = React.useRef<string | null>(null);
+  const scopeTouchedRef = React.useRef(false);
   React.useEffect(() => {
     // Keep internal query in sync if the prop changes (only when uncontrolled)
     if (onSearchChange) return;
@@ -303,6 +311,7 @@ export function Topbar({
 
       // If we're in Drive, keep scope aligned
       if ((pathname ?? "").startsWith("/drive")) {
+        scopeTouchedRef.current = false;
         setSearchScope("drive");
       }
     };
@@ -319,8 +328,19 @@ export function Topbar({
 
     const q = (onSearchChange ? (searchValue ?? "") : internalQuery).trim();
 
-    const hasFolder = Boolean(searchParams.get("folder"));
-    const hasLegacy = Boolean(searchParams.get("query") || searchParams.get("search"));
+    // If we just performed an explicit navigation/replace to Drive for this exact query
+    // (submit/suggestion), skip one live-sync cycle to avoid double `router.replace`.
+    if (suppressNextDriveLiveSyncRef.current !== null) {
+      const suppressed = suppressNextDriveLiveSyncRef.current;
+      if (suppressed.trim() === q) {
+        suppressNextDriveLiveSyncRef.current = null;
+        return;
+      }
+      suppressNextDriveLiveSyncRef.current = null;
+    }
+
+    const hasFolder = Boolean(sp.get("folder"));
+    const hasLegacy = Boolean(sp.get("query") || sp.get("search"));
 
     if (q === urlQ) {
       if (!(q && (hasFolder || hasLegacy))) return;
@@ -333,7 +353,7 @@ export function Topbar({
 
     liveSyncTimerRef.current = window.setTimeout(() => {
       try {
-        const params = new URLSearchParams(Array.from(searchParams.entries()));
+        const params = new URLSearchParams(searchParamsEntries);
 
         if (q) {
           params.set("q", q);
@@ -368,13 +388,24 @@ export function Topbar({
     internalQuery,
     urlQ,
     router,
-    searchParams,
+    searchParamsString,
+    sp,
   ]);
 
   React.useEffect(() => {
-    // Keep search scope aligned with current section unless user explicitly toggles
+    if (!mounted) return;
+
+    // If the user manually changed scope, don't fight them.
+    // Once the route-derived product matches the current scope, we are "in sync" again.
+    if (scopeTouchedRef.current) {
+      if (searchScope === derivedActiveProduct) {
+        scopeTouchedRef.current = false;
+      }
+      return;
+    }
+
     setSearchScope(derivedActiveProduct);
-  }, [derivedActiveProduct]);
+  }, [mounted, derivedActiveProduct, searchScope]);
 
 
   // Only pass a placeholder when explicitly provided (lets SearchBar show scope-aware defaults)
@@ -390,14 +421,16 @@ export function Topbar({
     // If we're already in Drive and searching Drive, update the URL in-place and clear folder context.
     if (loggedIn && inDrive && searchScope === "drive") {
       try {
-        const params = new URLSearchParams(Array.from(searchParams.entries()));
+        const params = new URLSearchParams(searchParamsEntries);
         params.set("q", q);
         params.delete("folder");
         params.delete("query");
         params.delete("search");
+        suppressNextDriveLiveSyncRef.current = q;
         router.replace(`/drive?${params.toString()}`);
         return;
       } catch {
+        suppressNextDriveLiveSyncRef.current = q;
         router.replace(`/drive?q=${encodeURIComponent(q)}`);
         return;
       }
@@ -411,7 +444,7 @@ export function Topbar({
 
     const href = `${base}?q=${encodeURIComponent(q)}`;
     router.push(href);
-  }, [router, internalQuery, onSearchChange, searchValue, loggedIn, searchScope, pathname, searchParams]);
+  }, [router, internalQuery, onSearchChange, searchValue, loggedIn, searchScope, pathname, searchParamsEntries]);
 
   const handleLogout = React.useCallback(async () => {
     // Prefer app-provided logout (usually proto-auth). It may be async.
@@ -456,12 +489,13 @@ export function Topbar({
 
     emitAuthChanged();
 
+    scopeTouchedRef.current = false;
     router.replace("/drive/landing");
   }, [onLogout, router, refreshMe]);
 
   const shouldShowCart = showCart ?? true;
-  // When logged in, always show the built-in SearchBar unless a custom centerSlot is provided.
-  const shouldShowSearch = loggedIn ? true : (enableSearch || Boolean(onSearchChange));
+  // Show built-in SearchBar when enabled (default true). If controlled via onSearchChange, always show.
+  const shouldShowSearch = Boolean(onSearchChange) || (loggedIn ? enableSearch !== false : Boolean(enableSearch));
   const shouldShowLogo = showLogo && !loggedIn;
   const shouldShowSwitcher = Boolean(showProductSwitcher) && !loggedIn;
   const resolvedCartCount =
@@ -501,6 +535,7 @@ export function Topbar({
             loggedIn
               ? (next) => {
                   const v = next === 'stock' ? 'stock' : 'drive';
+                  scopeTouchedRef.current = true;
                   setSearchScope(v);
 
                   // If user toggles scope, keep query and navigate to the right section
@@ -536,13 +571,15 @@ export function Topbar({
               // If already in Drive, clear folder context
               if ((pathname ?? "").startsWith("/drive")) {
                 try {
-                  const params = new URLSearchParams(Array.from(searchParams.entries()));
+                  const params = new URLSearchParams(searchParamsEntries);
                   params.set("q", v);
                   params.delete("folder");
                   params.delete("query");
                   params.delete("search");
+                  suppressNextDriveLiveSyncRef.current = v;
                   router.replace(`/drive?${params.toString()}`);
                 } catch {
+                  suppressNextDriveLiveSyncRef.current = v;
                   router.replace(`/drive?q=${encodeURIComponent(v)}`);
                 }
                 return;

@@ -270,7 +270,7 @@ function CommandPalette({
 }) {
   const [open, setOpen] = React.useState(false);
 
-  // Cmd/Ctrl+Shift+K (and Cmd/Ctrl+P) opens the palette
+  // Cmd/Ctrl+Shift+K opens the palette
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -283,9 +283,8 @@ function CommandPalette({
       const key = e.key.toLowerCase();
       const mod = e.metaKey || e.ctrlKey;
       const isCmdShiftK = mod && e.shiftKey && key === "k";
-      const isCmdP = mod && !e.shiftKey && key === "p";
 
-      if ((isCmdShiftK || isCmdP) && !typingTarget) {
+      if (isCmdShiftK && !typingTarget) {
         e.preventDefault();
         setOpen(true);
       }
@@ -424,13 +423,17 @@ export function FolderSidebar({
 
   // Collapsed state (persisted)
   const [collapsed, setCollapsed] = React.useState(false);
+  const [collapsedReady, setCollapsedReady] = React.useState(false);
+
   React.useEffect(() => {
     setCollapsed(readString(LS_KEYS.sidebarCollapsed, '0') === '1');
+    setCollapsedReady(true);
   }, []);
 
   React.useEffect(() => {
+    if (!collapsedReady) return;
     writeString(LS_KEYS.sidebarCollapsed, collapsed ? '1' : '0');
-  }, [collapsed]);
+  }, [collapsed, collapsedReady]);
 
   React.useEffect(() => {
     const raw = readString(LS_KEYS.sidebarWidth, '');
@@ -486,7 +489,7 @@ export function FolderSidebar({
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [sidebarWidth]);
+  }, []);
 
   // Shared row classes for navigation rows
   const navRowBase =
@@ -1458,12 +1461,31 @@ function FolderRow({
           e.preventDefault();
           setDragOver(false);
 
-          const rawCustom = e.dataTransfer.getData("application/x-cbx-asset-id");
+          const rawIds = e.dataTransfer.getData("application/x-cbx-asset-ids");
+          const rawId = e.dataTransfer.getData("application/x-cbx-asset-id");
           const rawText = e.dataTransfer.getData("text/plain");
 
+          // 1) Preferred: JSON array of ids
+          if (rawIds) {
+            try {
+              const parsed = JSON.parse(rawIds) as unknown;
+              const ids = Array.isArray(parsed)
+                ? parsed.map((x) => Number(x)).filter((n) => Number.isFinite(n))
+                : [];
+
+              if (ids.length > 0) {
+                ids.forEach((id) => onDropAssetAction?.(id, node.id));
+                return;
+              }
+            } catch {
+              // fall through
+            }
+          }
+
+          // 2) Fallback: single id
           // Prefer our custom mime type. As a safe fallback, accept a tagged text format: "cbx-asset:<id>"
           const raw =
-            rawCustom ||
+            rawId ||
             (rawText?.startsWith("cbx-asset:") ? rawText.slice("cbx-asset:".length) : "");
 
           const assetId = Number(raw);

@@ -522,6 +522,8 @@ function ListRow({
   onToggleFavorite,
   onOpen,
   isCover,
+  onThumbDragStart,
+  thumbDraggable,
 }: {
   img: ImageItem;
   selected: boolean;
@@ -530,6 +532,8 @@ function ListRow({
   onToggleFavorite: (id: number) => void;
   onOpen: () => void;
   isCover?: boolean;
+  onThumbDragStart?: (e: React.DragEvent) => void;
+  thumbDraggable?: boolean;
 }) {
   return (
     <div
@@ -568,8 +572,12 @@ function ListRow({
       <img
         src={withUnsplashParams(img.src, { w: 96, q: 70 })}
         alt={img.title}
-        className="h-12 w-12 rounded-lg object-cover"
-        draggable={false}
+        className={cn(
+          "h-12 w-12 rounded-lg object-cover",
+          thumbDraggable ? "cursor-grab active:cursor-grabbing" : ""
+        )}
+        draggable={!!thumbDraggable}
+        onDragStart={onThumbDragStart}
         loading="lazy"
         decoding="async"
       />
@@ -879,6 +887,31 @@ export function ImageGrid({
       });
     },
     [onToggleSelect]
+  );
+
+  // DRAG PAYLOAD HELPERS
+  const getDragIdsFor = useCallback(
+    (id: number) => {
+      const isInSelection = selectedIds.has(id);
+      if (isInSelection && selectedIds.size >= 2) return Array.from(selectedIds);
+      return [id];
+    },
+    [selectedIds]
+  );
+
+  const onDragStartAsset = useCallback(
+    (e: React.DragEvent, id: number) => {
+      try {
+        const ids = getDragIdsFor(id);
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("application/x-cbx-asset-ids", JSON.stringify(ids));
+        e.dataTransfer.setData("application/x-cbx-asset-id", String(id));
+        e.dataTransfer.setData("text/plain", `cbx-asset:${id}`);
+      } catch {
+        // ignore
+      }
+    },
+    [getDragIdsFor]
   );
 
   const [localFavoriteIds, setLocalFavoriteIds] = useState<Set<number>>(() => new Set());
@@ -1214,6 +1247,8 @@ export function ImageGrid({
                   onToggleFavorite={toggleFavorite}
                   onOpen={() => setActive(img)}
                   isCover={typeof priorityAssetId === "number" && img.id === priorityAssetId}
+                  thumbDraggable
+                  onThumbDragStart={(e) => onDragStartAsset(e, img.id)}
                 />
               ))}
             </>
@@ -1274,7 +1309,12 @@ export function ImageGrid({
             style={{ ["--thumb" as any]: `${Math.max(140, Math.min(520, thumbSize ?? 220))}px` }}
           >
             {sortedImages.map((img) => (
-              <div key={img.id} className="relative">
+              <div
+                key={img.id}
+                className="relative"
+                draggable
+                onDragStart={(e) => onDragStartAsset(e, img.id)}
+              >
                 {isPurchasedAsset(img.folderId) ? (
                   <div className="pointer-events-none absolute left-3 top-3 z-10">
                     <PurchasedBadge />
