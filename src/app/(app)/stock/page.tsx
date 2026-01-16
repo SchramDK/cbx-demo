@@ -47,7 +47,38 @@ function safeParseLastSeen(raw: string | null): LastSeenItem[] {
 
 const getAssetImage = (asset?: Asset) => asset?.preview ?? asset?.src ?? asset?.image ?? asset?.url ?? '';
 const getImage = (asset: Asset, fallback: string) => getAssetImage(asset) || fallback;
+
 const isLocalDemoImage = (src: string) => src.startsWith('/demo/');
+
+// --- Robust cart id helpers ---
+function addIdVariants(set: Set<string>, raw: unknown) {
+  const v = (raw ?? '').toString().trim();
+  if (!v) return;
+  set.add(v);
+  const upper = v.toUpperCase();
+  set.add(upper);
+
+  const numeric = v.replace(/^COLOURBOX/i, '').trim();
+  if (numeric) {
+    set.add(numeric);
+    set.add(numeric.toUpperCase());
+    set.add(`COLOURBOX${numeric}`);
+    set.add(`COLOURBOX${numeric}`.toUpperCase());
+  }
+}
+
+function hasId(set: Set<string>, raw: unknown): boolean {
+  const v = (raw ?? '').toString().trim();
+  if (!v) return false;
+  const upper = v.toUpperCase();
+  const numeric = v.replace(/^COLOURBOX/i, '').trim();
+  return (
+    set.has(v) ||
+    set.has(upper) ||
+    (numeric ? set.has(numeric) || set.has(numeric.toUpperCase()) : false) ||
+    (numeric ? set.has(`COLOURBOX${numeric}`) || set.has(`COLOURBOX${numeric}`.toUpperCase()) : false)
+  );
+}
 
 // --- Seeded RNG and shuffle helpers for per-visit randomization ---
 function mulberry32(seed: number) {
@@ -74,13 +105,6 @@ function shuffleWithSeed<T>(input: T[], seed: number): T[] {
   return arr;
 }
 
-function Pill({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="inline-flex select-none items-center rounded-full bg-muted/20 px-3 py-1 text-xs font-medium text-muted-foreground ring-1 ring-border/15 transition hover:bg-muted/35 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/25">
-      {children}
-    </span>
-  );
-}
 
 function AddToCartOverlayButton({
   onClick,
@@ -253,15 +277,16 @@ export default function StockPage() {
     const ids = new Set<string>();
     const items = (cart?.items ?? []) as any[];
     for (const it of items) {
-      const id = (it?.id ?? it?.assetId ?? it?.asset?.id ?? '').toString();
-      if (id) ids.add(id);
+      addIdVariants(ids, it?.id);
+      addIdVariants(ids, it?.assetId);
+      addIdVariants(ids, it?.asset?.id);
     }
     return ids;
   }, [cart?.items]);
 
   const addToCart = useCallback(
     (asset: Asset) => {
-      if (cartIds.has(asset.id)) {
+      if (hasId(cartIds, asset.id)) {
         // Already in cart — just open cart UI.
         if (typeof openCart === 'function') openCart();
         return;
@@ -294,17 +319,32 @@ export default function StockPage() {
   const [q, setQ] = useState('');
   const [heroIndex, setHeroIndex] = useState(0);
   const [lastSeen, setLastSeen] = useState<LastSeenItem[]>([]);
+  const [reducedMotion, setReducedMotion] = useState(false);
 
   const featured = useMemo(() => {
-    // If we have configured featured ids, keep them on top but vary the remainder per visit.
+    // Keep configured featured ids pinned to the top, but shuffle them per visit.
     const byId = new Map(assets.map((a) => [a.id, a] as const));
-    const picked = STOCK_FEATURED_IDS.map((id) => byId.get(id)).filter(Boolean) as Asset[];
+    const pickedRaw = STOCK_FEATURED_IDS.map((id) => byId.get(id)).filter(Boolean) as Asset[];
+
+    const picked = shuffleReady && visitSeed != null ? shuffleWithSeed(pickedRaw, visitSeed ^ 0x9e3779b9) : pickedRaw;
 
     const base = shuffleReady ? shuffledAssets : assets;
     const pickedIds = new Set(picked.map((p) => p.id));
     const rest = base.filter((a) => !pickedIds.has(a.id));
 
     return [...picked, ...rest].slice(0, 10);
+  }, [assets, shuffledAssets, shuffleReady, visitSeed]);
+
+  const popularToday = useMemo(() => {
+    // Show a different set than Featured, but keep it stable per visit.
+    const pool = shuffleReady ? shuffledAssets : assets;
+    const featuredSet = new Set(STOCK_FEATURED_IDS);
+
+    const list = pool.filter((a) => !featuredSet.has(a.id));
+    // If filtering removes too many (e.g. bad config), fall back to pool.
+    const safe = list.length >= 12 ? list : pool;
+
+    return safe.slice(0, 12);
   }, [assets, shuffledAssets, shuffleReady]);
 
   const newest = useMemo(() => (shuffleReady ? shuffledAssets : assets).slice(0, 12), [assets, shuffledAssets, shuffleReady]);
@@ -327,11 +367,30 @@ export default function StockPage() {
 
   useEffect(() => {
     if (heroImages.length <= 1) return;
+    if (reducedMotion) return;
     const id = window.setInterval(() => {
       setHeroIndex((i) => (i + 1) % heroImages.length);
     }, 6000);
     return () => window.clearInterval(id);
-  }, [heroImages.length]);
+  }, [heroImages.length, reducedMotion]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReducedMotion(!!mq.matches);
+    update();
+
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', update);
+      return () => mq.removeEventListener('change', update);
+    }
+
+    // Safari fallback
+    // @ts-ignore
+    mq.addListener(update);
+    // @ts-ignore
+    return () => mq.removeListener(update);
+  }, []);
 
   useEffect(() => {
     if (!loggedIn) {
@@ -371,7 +430,7 @@ export default function StockPage() {
               fill
               sizes="100vw"
               unoptimized={isLocalDemoImage(String(src))}
-              className={`object-cover transition-opacity duration-[1400ms] ease-out ${
+              className={`object-cover transition-opacity ${reducedMotion ? 'duration-0' : 'duration-[1400ms] ease-out'} ${
                 idx === heroIndex ? 'opacity-100' : 'opacity-0'
               }`}
               priority={idx === 0}
@@ -502,23 +561,24 @@ export default function StockPage() {
                 <div className="relative -mx-4">
                   <div className="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-background/60 to-transparent" />
                   <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-background/60 to-transparent" />
+
                   <div className="overflow-x-auto px-4">
-                <div className="flex snap-x snap-mandatory gap-3 pr-6">
-                  {featured.slice(0, 12).map((a) => {
-                    const img = getImage(a, fallbackImage);
-                    return (
-                      <AssetCard
-                        key={a.id}
-                        asset={a}
-                        href={`/stock/assets/${a.id}`}
-                        imageSrc={img}
-                        variant="compact"
-                        onAdd={() => addToCart(a)}
-                        inCart={cartIds.has(a.id)}
-                      />
-                    );
-                  })}
-                </div>
+                    <div className="flex snap-x snap-mandatory gap-3 pr-6">
+                      {popularToday.map((a) => {
+                        const img = getImage(a, fallbackImage);
+                        return (
+                          <AssetCard
+                            key={a.id}
+                            asset={a}
+                            href={`/stock/assets/${a.id}`}
+                            imageSrc={img}
+                            variant="compact"
+                            onAdd={() => addToCart(a)}
+                            inCart={hasId(cartIds, a.id)}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -697,13 +757,13 @@ export default function StockPage() {
                 href={`/stock/assets/${a.id}`}
                 aspect="photo"
                 onAddToCartAction={() => {
-                  if (cartIds.has(a.id)) {
+                  if (hasId(cartIds, a.id)) {
                     if (typeof openCart === 'function') openCart();
                     return;
                   }
                   addToCart(a);
                 }}
-                inCart={cartIds.has(a.id)}
+                inCart={hasId(cartIds, a.id)}
               />
             );
           })}
@@ -742,7 +802,10 @@ export default function StockPage() {
                 className="group relative overflow-hidden rounded-xl bg-muted/10 transition hover:bg-muted/20 focus:outline-none focus:ring-2 focus:ring-foreground/20"
               >
                 <AddToCartOverlayButton
+                  disabled={hasId(cartIds, pick.id)}
+                  label={hasId(cartIds, pick.id) ? 'In cart' : 'Add'}
                   onClick={(e) => {
+                    if (hasId(cartIds, pick.id)) return;
                     e.preventDefault();
                     e.stopPropagation();
                     addToCart(pick);
@@ -807,13 +870,13 @@ export default function StockPage() {
                 href={`/stock/assets/${a.id}`}
                 aspect="wide"
                 onAddToCartAction={() => {
-                  if (cartIds.has(a.id)) {
+                  if (hasId(cartIds, a.id)) {
                     if (typeof openCart === 'function') openCart();
                     return;
                   }
                   addToCart(a);
                 }}
-                inCart={cartIds.has(a.id)}
+                inCart={hasId(cartIds, a.id)}
               />
             );
           })}

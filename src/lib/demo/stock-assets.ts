@@ -19,7 +19,7 @@ export const STOCK_CATEGORIES: { key: StockCategory; label: string }[] = [
   { key: 'energy', label: 'Energy' },
 ];
 
-export const STOCK_FEATURED_IDS = ['s-001', 's-004', 's-011', 's-012'] as const;
+export const STOCK_FEATURED_IDS: readonly string[] = ['s-001', 's-004', 's-011', 's-012'];
 
 const uniqLower = (items?: string[]) => {
   const out: string[] = [];
