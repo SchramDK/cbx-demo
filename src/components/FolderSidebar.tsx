@@ -78,6 +78,7 @@ const LS_KEYS = {
   folderOpen: 'CBX_FOLDER_OPEN_V1',
   sidebarWidth: 'CBX_SIDEBAR_WIDTH_V1',
   sidebarCollapsed: 'CBX_SIDEBAR_COLLAPSED_V1',
+  purchasesLastSeen: 'CBX_PURCHASES_LAST_SEEN_V1',
 } as const;
 
 
@@ -204,12 +205,35 @@ function isSmartFolderId(id?: string) {
   return Boolean(id && id.startsWith("smart:"));
 }
 
+
 const SYSTEM_VIEWS = new Set<string>([
   "all",
   "favorites",
   "purchases",
   "trash",
 ]);
+
+// Purchases helpers (moved from inside flattenFolders)
+const DRIVE_IMPORTED_ASSETS_KEY = 'CBX_DRIVE_IMPORTED_ASSETS_V1';
+const DRIVE_PURCHASES_IMPORTED_EVENT = 'CBX_PURCHASES_IMPORTED';
+
+function readPurchasesCount(): number {
+  try {
+    const raw = window.localStorage.getItem(DRIVE_IMPORTED_ASSETS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as any[]) : [];
+    if (!Array.isArray(parsed) || parsed.length === 0) return 0;
+
+    // Count items that are in purchases (default to purchases if missing folderId)
+    let count = 0;
+    for (const a of parsed) {
+      const fid = typeof a?.folderId === 'string' && a.folderId.trim().length ? a.folderId : 'purchases';
+      if (fid === 'purchases') count += 1;
+    }
+    return count;
+  } catch {
+    return 0;
+  }
+}
 
 function buildFolderIndex(nodes: FolderNode[]) {
   const map = new Map<string, FolderNode>();
@@ -416,6 +440,52 @@ export function FolderSidebar({
   const [createOpen, setCreateOpen] = React.useState(false);
   const [newFolderName, setNewFolderName] = React.useState("");
   const folderIndex = React.useMemo(() => buildFolderIndex(folders), [folders]);
+
+  // Purchases notification badge (like unread mail)
+  const [purchasesCount, setPurchasesCount] = React.useState<number>(0);
+  const [purchasesLastSeen, setPurchasesLastSeen] = React.useState<number>(0);
+
+  React.useEffect(() => {
+    // Load initial counts after mount
+    const current = readPurchasesCount();
+    setPurchasesCount(current);
+
+    const seenRaw = readString(LS_KEYS.purchasesLastSeen, '0');
+    const seen = Number(seenRaw);
+    setPurchasesLastSeen(Number.isFinite(seen) ? seen : 0);
+  }, []);
+
+  React.useEffect(() => {
+    const refresh = () => {
+      setPurchasesCount(readPurchasesCount());
+    };
+
+    const onImported = () => refresh();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === DRIVE_IMPORTED_ASSETS_KEY || e.key === LS_KEYS.purchasesLastSeen) {
+        refresh();
+      }
+    };
+
+    window.addEventListener(DRIVE_PURCHASES_IMPORTED_EVENT, onImported as EventListener);
+    window.addEventListener('storage', onStorage);
+
+    return () => {
+      window.removeEventListener(DRIVE_PURCHASES_IMPORTED_EVENT, onImported as EventListener);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  // Mark Purchases as seen when user opens Purchases
+  React.useEffect(() => {
+    if (selectedId !== 'purchases') return;
+    setPurchasesLastSeen(purchasesCount);
+    writeString(LS_KEYS.purchasesLastSeen, String(purchasesCount));
+  }, [selectedId, purchasesCount]);
+
+  const newPurchases = Math.max(0, purchasesCount - purchasesLastSeen);
+  const hasNewPurchases = newPurchases > 0;
+  const newPurchasesLabel = newPurchases > 9 ? '9+' : String(newPurchases);
 
   // Sidebar width (resizable, persisted)
   const [sidebarWidth, setSidebarWidth] = React.useState<number>(256);
@@ -1011,6 +1081,20 @@ export function FolderSidebar({
         >
           <Receipt className="h-4 w-4 text-muted-foreground" />
           <span className="truncate">Purchases</span>
+          {hasNewPurchases && selectedId !== 'purchases' ? (
+            <span
+              className="ml-auto relative inline-flex items-center"
+              aria-label={`${newPurchasesLabel} new purchases`}
+              title={`${newPurchasesLabel} new purchases`}
+            >
+              {/* subtle pulse ring */}
+              <span className="absolute -inset-1 rounded-full bg-red-500/20 animate-pulse motion-reduce:animate-none" />
+              {/* badge */}
+              <span className="relative inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold leading-none text-white">
+                {newPurchasesLabel}
+              </span>
+            </span>
+          ) : null}
         </button>
         <button
           type="button"
@@ -1387,6 +1471,13 @@ export function FolderSidebar({
 
           {/* hairline rail */}
           <div className="absolute left-1/2 top-0 z-[55] h-full w-px -translate-x-1/2 bg-border/60" />
+          {hasNewPurchases ? (
+            <div
+              className="absolute top-16 left-1/2 z-[80] -translate-x-1/2 h-2.5 w-2.5 rounded-full bg-red-500 shadow"
+              aria-label={`${newPurchasesLabel} new purchases`}
+              title={`${newPurchasesLabel} new purchases`}
+            />
+          ) : null}
 
           {/* slim grab handle (drag to resize + open) */}
           <button

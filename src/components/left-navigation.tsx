@@ -4,7 +4,7 @@ import * as React from 'react';
 import { createPortal } from 'react-dom';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import {
   Home,
   Folder,
@@ -33,11 +33,54 @@ type NavConfig = {
 
 const NAV_CONFIG_KEY = 'CBX_NAV_CONFIG_V1';
 
+
 const DEFAULT_NAV_CONFIG: NavConfig = {
   primaryOrder: ['home', 'stock', 'files'],
   moreOrder: ['team', 'consent', 'workflows', 'apps'],
   moreHidden: [],
 };
+
+// Purchases notification dot constants and helpers
+const DRIVE_IMPORTED_ASSETS_KEY = 'CBX_DRIVE_IMPORTED_ASSETS_V1';
+const PURCHASES_LAST_SEEN_KEY = 'CBX_PURCHASES_LAST_SEEN_V1';
+const DRIVE_PURCHASES_IMPORTED_EVENT = 'CBX_PURCHASES_IMPORTED';
+
+function readPurchasesCount(): number {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const raw = window.localStorage.getItem(DRIVE_IMPORTED_ASSETS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as any[]) : [];
+    if (!Array.isArray(parsed) || parsed.length === 0) return 0;
+
+    let count = 0;
+    for (const a of parsed) {
+      const fid = typeof a?.folderId === 'string' && a.folderId.trim().length ? a.folderId : 'purchases';
+      if (fid === 'purchases') count += 1;
+    }
+    return count;
+  } catch {
+    return 0;
+  }
+}
+
+function readPurchasesLastSeen(): number {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const raw = window.localStorage.getItem(PURCHASES_LAST_SEEN_KEY) ?? '0';
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writePurchasesLastSeen(n: number) {
+  try {
+    window.localStorage.setItem(PURCHASES_LAST_SEEN_KEY, String(Math.max(0, n)));
+  } catch {
+    // ignore
+  }
+}
 
 function readStoredNavConfig(): NavConfig | null {
   if (typeof window === 'undefined') return null;
@@ -508,8 +551,57 @@ function MoreMenuPortal({
 
 export function LeftNavigation() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const driveFolderParam = (searchParams?.get('folder') ?? '').trim();
   const [moreOpen, setMoreOpen] = React.useState(false);
   const moreAnchorRef = React.useRef<HTMLButtonElement | null>(null);
+
+  // Unread dot on Files when new purchases arrive
+  const [purchasesCount, setPurchasesCount] = React.useState(0);
+  const [purchasesLastSeen, setPurchasesLastSeen] = React.useState(0);
+
+  React.useEffect(() => {
+    // initial load
+    setPurchasesCount(readPurchasesCount());
+    setPurchasesLastSeen(readPurchasesLastSeen());
+  }, []);
+
+  React.useEffect(() => {
+    const refresh = () => {
+      setPurchasesCount(readPurchasesCount());
+      setPurchasesLastSeen(readPurchasesLastSeen());
+    };
+
+    const onImported = () => refresh();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === DRIVE_IMPORTED_ASSETS_KEY || e.key === PURCHASES_LAST_SEEN_KEY) {
+        refresh();
+      }
+    };
+
+    window.addEventListener(DRIVE_PURCHASES_IMPORTED_EVENT, onImported as EventListener);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener(DRIVE_PURCHASES_IMPORTED_EVENT, onImported as EventListener);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  const hasNewPurchases = purchasesCount > purchasesLastSeen;
+
+  React.useEffect(() => {
+    // Mark as seen ONLY when entering Purchases (the folder that has the dot)
+    if (!pathname) return;
+    if (!pathname.startsWith('/drive')) return;
+
+    const inPurchases = driveFolderParam === 'purchases';
+    if (!inPurchases) return;
+
+    const current = readPurchasesCount();
+    setPurchasesCount(current);
+    setPurchasesLastSeen(current);
+    writePurchasesLastSeen(current);
+  }, [pathname, driveFolderParam]);
 
   React.useEffect(() => {
     setMoreOpen(false);
@@ -628,7 +720,16 @@ export function LeftNavigation() {
                       : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground')
                   }
                 >
-                  <Icon className="h-5 w-5" />
+                  <span className="relative">
+                    <Icon className="h-5 w-5" />
+                    {href === '/drive' && hasNewPurchases ? (
+                      <span
+                        className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red-500 shadow"
+                        aria-label="New purchases"
+                        title="New purchases"
+                      />
+                    ) : null}
+                  </span>
                   <span className="leading-none">{label}</span>
                 </Link>
               );

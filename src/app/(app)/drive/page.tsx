@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useProtoAuth } from "@/lib/proto-auth";
-import { Menu, LayoutGrid, List, Upload, Share2, Trash2, Search, X } from "lucide-react";
+import { Menu, LayoutGrid, List, Upload, Share2, Trash2, Search, X, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
@@ -48,6 +48,7 @@ import { readJSON, readNumber, readString, remove, writeJSON, writeString } from
 
 type AssetSort = "name_asc" | "name_desc" | "id_asc" | "id_desc" | "color_asc" | "color_desc";
 
+
 function isAssetSort(v: string): v is AssetSort {
   return (
     v === "name_asc" ||
@@ -57,6 +58,18 @@ function isAssetSort(v: string): v is AssetSort {
     v === "color_asc" ||
     v === "color_desc"
   );
+}
+
+function hashToStableId(src: string) {
+  // Deterministic 32-bit hash (FNV-1a) -> safe positive integer id range
+  let h = 2166136261;
+  for (let i = 0; i < src.length; i++) {
+    h ^= src.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  // Keep within 1e9 span and offset high so it won't collide with demo ids
+  const n = (h >>> 0) % 1_000_000_000;
+  return 1_000_000_000 + n;
 }
 
 type FolderNode = {
@@ -713,9 +726,9 @@ function DrivePageInner() {
 
     const next = arr
       .map((a, idx) => {
-        const id = Number(a?.id) || 100000 + idx;
         const src = typeof a?.src === "string" ? a.src : "";
         if (!src) return null;
+        const id = hashToStableId(src);
         return {
           id,
           title: typeof a?.title === "string" && a.title.trim().length ? a.title : `Asset ${id}`,
@@ -739,10 +752,8 @@ function DrivePageInner() {
     setImportedImages(deduped);
   }, [mounted]);
 
-  useEffect(() => {
-    if (!mounted) return;
-
-    const onImported = (e: Event) => {
+  const handlePurchasesImported = useCallback(
+    (e: Event) => {
       const ce = e as CustomEvent<any[]>;
       const incomingRaw = Array.isArray(ce.detail) ? ce.detail : [];
       if (!incomingRaw.length) return;
@@ -750,15 +761,17 @@ function DrivePageInner() {
       // Normalize incoming to the same shape as `importedImages`
       const incoming = incomingRaw
         .map((a, idx) => {
-          const id = Number(a?.id) || 200000 + idx;
           const src = typeof a?.src === "string" ? a.src : "";
           if (!src) return null;
+          const id = hashToStableId(src);
           return {
             id,
-            title: typeof a?.title === "string" && a.title.trim().length ? a.title : `Asset ${id}`,
+            title:
+              typeof a?.title === "string" && a.title.trim().length ? a.title : `Asset ${id}`,
             src,
             ratio: a?.ratio ?? "landscape",
-            folderId: typeof a?.folderId === "string" && a.folderId ? a.folderId : "purchases",
+            folderId:
+              typeof a?.folderId === "string" && a.folderId ? a.folderId : "purchases",
             color: typeof a?.color === "string" ? a.color : "neutral",
           };
         })
@@ -795,22 +808,43 @@ function DrivePageInner() {
 
         return merged;
       });
-      setSelectedFolder("purchases");
-    };
 
-    window.addEventListener("CBX_PURCHASES_IMPORTED", onImported as EventListener);
-    return () => window.removeEventListener("CBX_PURCHASES_IMPORTED", onImported as EventListener);
-  }, [mounted]);
+      // Take user straight to Purchases after import
+      setSelectedFolder("purchases");
+    },
+    [setSelectedFolder]
+  );
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    window.addEventListener("CBX_PURCHASES_IMPORTED", handlePurchasesImported as EventListener);
+    return () =>
+      window.removeEventListener(
+        "CBX_PURCHASES_IMPORTED",
+        handlePurchasesImported as EventListener
+      );
+  }, [mounted, handlePurchasesImported]);
 
   const allImages = useMemo(() => {
     if (!importedImages.length) return baseDemoImages;
 
-    const bySrc = new Set(baseDemoImages.map((x) => x.src));
-    const merged = [...baseDemoImages];
+    const bySrc = new Set<string>();
+    const merged: (typeof baseDemoImages)[number][] = [];
+
+    // Imported first so purchases win in case of duplicates
     for (const img of importedImages) {
       if (bySrc.has(img.src)) continue;
+      bySrc.add(img.src);
       merged.push(img);
     }
+
+    for (const img of baseDemoImages) {
+      if (bySrc.has(img.src)) continue;
+      bySrc.add(img.src);
+      merged.push(img);
+    }
+
     return merged;
   }, [importedImages]);
 
@@ -1001,9 +1035,11 @@ function DrivePageInner() {
   }, [selectedFolder, folderIndex]);
   const isRealFolderView = isFolderView && isRealFolder;
   const canUploadHere = isRealFolderView;
-  const folderName = isRealFolderView
-    ? crumbNodes[crumbNodes.length - 1]?.name ?? "Folder"
-    : "";
+  const folderName = isPurchasesView
+    ? "Purchases"
+    : isRealFolderView
+      ? crumbNodes[crumbNodes.length - 1]?.name ?? "Folder"
+      : "";
 
   // Tell Topbar which folder we're in (for the search context chip)
   useEffect(() => {
@@ -1057,6 +1093,9 @@ function DrivePageInner() {
     isTrashView,
     query,
   });
+
+  const purchasesCount = folderCounts["purchases"] ?? 0;
+  const showPurchasesEmptyState = isPurchasesView && query.trim() === "" && purchasesCount === 0;
 
   if (!isReady) return null;
   if (!isLoggedIn) return null;
@@ -1456,11 +1495,10 @@ function DrivePageInner() {
                   </div>
                 ) : null}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {isRealFolderView ? (
-                    <span className="rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
-                      {folderAssets.length} assets
-                    </span>
-                  ) : null}
+                  <span className="rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
+                    {(isRealFolderView ? folderAssets.length : (folderCounts[selectedFolder] ?? 0))} assets
+                  </span>
+
                   {subfolderItems.length > 0 && isRealFolderView ? (
                     <span className="rounded-full border bg-background px-3 py-1 text-xs text-muted-foreground">
                       {subfolderItems.length} subfolders
@@ -1574,6 +1612,41 @@ function DrivePageInner() {
                         <div className="text-sm font-medium">Tip</div>
                         <div className="mt-1 text-sm text-muted-foreground">
                           Use the bulk action bar to move selected items to Trash.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : showPurchasesEmptyState ? (
+              <div className="mt-10 flex w-full justify-center">
+                <div className="w-full max-w-xl rounded-xl border border-border bg-card p-8">
+                  <div className="flex items-start gap-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-border bg-muted">
+                      <ShoppingBag className="h-6 w-6 text-muted-foreground" />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <h2 className="text-lg font-semibold">No purchases yet</h2>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Images you buy from Stock will automatically appear here.
+                      </p>
+
+                      <div className="mt-5 flex flex-wrap gap-2">
+                        <Button type="button" onClick={() => router.push("/stock")}
+                        >
+                          Browse Stock
+                        </Button>
+                        <Button type="button" variant="outline" onClick={() => navigateToFolder("all")}
+                        >
+                          Go to All files
+                        </Button>
+                      </div>
+
+                      <div className="mt-6 rounded-lg border border-border bg-background/40 p-4">
+                        <div className="text-sm font-medium">Tip</div>
+                        <div className="mt-1 text-sm text-muted-foreground">
+                          After checkout, your purchased images will show up in Purchases automatically.
                         </div>
                       </div>
                     </div>
