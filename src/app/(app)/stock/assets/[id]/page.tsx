@@ -383,8 +383,11 @@ export default function StockAssetPage() {
   const baseMeaningfulSet = useMemo(() => new Set(pickMeaningful(asset, 24)), [asset]);
 
   const semanticQuery = useMemo(() => buildSemanticQuery(asset), [asset]);
+  const [semanticEnabled, setSemanticEnabled] = useState(false);
 
   const semanticModel = useMemo(() => {
+    if (!semanticEnabled) return null;
+
     const docs = assets.map((a) => ({ id: a.id, text: buildDocText(a) }));
 
     // document frequency (df) for 3-grams
@@ -413,9 +416,12 @@ export default function StockAssetPage() {
     }
 
     return { idf, docVecs };
-  }, [assets]);
+  }, [assets, semanticEnabled]);
 
   const similarSemanticScores = useMemo(() => {
+    if (!semanticEnabled) return new Map<string, number>();
+    if (!semanticModel) return new Map<string, number>();
+
     const q = semanticQuery.trim();
     if (!q) return new Map<string, number>();
 
@@ -431,7 +437,7 @@ export default function StockAssetPage() {
     }
 
     return scores;
-  }, [asset, id, semanticQuery, semanticModel]);
+  }, [asset, id, semanticQuery, semanticModel, semanticEnabled]);
 
   const relatedPicks = useMemo(() => {
     if (!assets.length) return [] as Asset[];
@@ -814,6 +820,35 @@ export default function StockAssetPage() {
       else mq.removeListener(onChange);
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    // Reset when navigating to another asset
+    setSemanticEnabled(false);
+
+    const el = similarRef.current;
+    if (!el) return;
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting) {
+          setSemanticEnabled(true);
+          obs.disconnect();
+        }
+      },
+      {
+        root: null,
+        // Start building a bit before the section is visible
+        rootMargin: '600px 0px 600px 0px',
+        threshold: 0.01,
+      }
+    );
+
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [id]);
 
   useEffect(() => {
     const el = heroRef.current;
@@ -1470,7 +1505,7 @@ export default function StockAssetPage() {
       <section ref={shootRef} id="shoot" className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] mt-8">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold">From the same shoot</h2>
+            <h2 className="text-base font-semibold">From the same shoot</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
               More from the same series — based on category and keyword overlap.
             </p>
@@ -1484,8 +1519,13 @@ export default function StockAssetPage() {
           </button>
         </div>
 
-        <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-          {sameShootPicks.slice(0, 12).map((a) => (
+        {sameShootPicks.length === 0 ? (
+          <div className="rounded-xl border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+            No results yet.
+          </div>
+        ) : (
+          <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+            {sameShootPicks.slice(0, 12).map((a) => (
               <div key={`shoot-${a.id}`} className="w-80 shrink-0">
                 <ImageCard
                   asset={{
@@ -1500,13 +1540,14 @@ export default function StockAssetPage() {
                 />
               </div>
             ))}
-        </div>
+          </div>
+        )}
       </section>
 
       <section ref={similarRef} id="similar" className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] mt-8">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold">Similar images</h2>
+            <h2 className="text-base font-semibold">Similar images</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
               Same vibe, subject or style — based on tags and keywords.
             </p>
@@ -1520,46 +1561,52 @@ export default function StockAssetPage() {
           </button>
         </div>
 
-        <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-          {similarPicks.slice(0, 12).map((a) => {
-            const hint = overlapHint(baseMeaningfulSet, a, { limit: 3, fallback: 'Similar vibe' });
-            const sem = similarSemanticScores.get(a.id) ?? 0;
-            const strength = sem >= 0.42 ? 'Very similar' : 'Similar';
-            return (
-              <div key={`similar-${a.id}`} className="w-80 shrink-0">
-                <div className="relative">
-                  <ImageCard
-                    asset={{
-                      id: a.id,
-                      title: a.title,
-                      preview: getAssetImage(a) || fallbackImage,
-                    }}
-                    href={`/stock/assets/${a.id}`}
-                    aspect="photo"
-                    inCart={cartIds.has(a.id)}
-                    onAddToCartAction={() => addQuick(a)}
-                  />
+        {similarPicks.length === 0 ? (
+          <div className="rounded-xl border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+            No results yet.
+          </div>
+        ) : (
+          <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+            {similarPicks.slice(0, 12).map((a) => {
+              const hint = overlapHint(baseMeaningfulSet, a, { limit: 3, fallback: 'Similar vibe' });
+              const sem = similarSemanticScores.get(a.id) ?? 0;
+              const strength = sem >= 0.42 ? 'Very similar' : 'Similar';
+              return (
+                <div key={`similar-${a.id}`} className="w-80 shrink-0">
+                  <div className="relative">
+                    <ImageCard
+                      asset={{
+                        id: a.id,
+                        title: a.title,
+                        preview: getAssetImage(a) || fallbackImage,
+                      }}
+                      href={`/stock/assets/${a.id}`}
+                      aspect="photo"
+                      inCart={cartIds.has(a.id)}
+                      onAddToCartAction={() => addQuick(a)}
+                    />
 
-                  {sem > 0 ? (
-                    <div className="pointer-events-none absolute left-2 top-2 rounded-full bg-background/80 px-2 py-0.5 text-[10px] font-semibold text-foreground/80 ring-1 ring-black/5 backdrop-blur dark:ring-white/10">
-                      {strength}
-                    </div>
-                  ) : null}
-                </div>
+                    {sem > 0 ? (
+                      <div className="pointer-events-none absolute left-2 top-2 rounded-full bg-background/80 px-2 py-0.5 text-[10px] font-semibold text-foreground/80 ring-1 ring-black/5 backdrop-blur dark:ring-white/10">
+                        {strength}
+                      </div>
+                    ) : null}
+                  </div>
 
-                <div className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
-                  Match: <span className="text-foreground/70">{hint}</span>
+                  <div className="mt-1 line-clamp-2 text-[11px] text-muted-foreground">
+                    Match: <span className="text-foreground/70">{hint}</span>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section ref={relatedRef} id="related" className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] mt-8">
         <div className="mb-4 flex items-end justify-between gap-3">
           <div>
-            <h2 className="text-sm font-semibold">Related images</h2>
+            <h2 className="text-base font-semibold">Related images</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
               Picked by category and shared tags.
             </p>
@@ -1573,23 +1620,29 @@ export default function StockAssetPage() {
           </button>
         </div>
 
-        <div className="flex flex-wrap gap-4">
-          {relatedPicks.slice(0, 8).map((a) => (
-            <div key={a.id} className="w-80">
-              <ImageCard
-                asset={{
-                  id: a.id,
-                  title: a.title,
-                  preview: getAssetImage(a) || fallbackImage,
-                }}
-                href={`/stock/assets/${a.id}`}
-                aspect="photo"
-                inCart={cartIds.has(a.id)}
-                onAddToCartAction={() => addQuick(a)}
-              />
-            </div>
-          ))}
-        </div>
+        {relatedPicks.length === 0 ? (
+          <div className="rounded-xl border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+            No results yet.
+          </div>
+        ) : (
+          <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+            {relatedPicks.slice(0, 12).map((a) => (
+              <div key={a.id} className="w-80 shrink-0">
+                <ImageCard
+                  asset={{
+                    id: a.id,
+                    title: a.title,
+                    preview: getAssetImage(a) || fallbackImage,
+                  }}
+                  href={`/stock/assets/${a.id}`}
+                  aspect="photo"
+                  inCart={cartIds.has(a.id)}
+                  onAddToCartAction={() => addQuick(a)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {lightboxOpen ? (
