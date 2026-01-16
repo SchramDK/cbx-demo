@@ -449,11 +449,33 @@ export function Topbar({
   const resolvedSearchPlaceholder = searchPlaceholder;
 
   const clearFolderContext = React.useCallback(() => {
+    // Clearing folder context should be sticky even when query is empty.
+    // Drive restores last selected folder from localStorage when there is no `q` and no `folder`.
+    // So we also reset the stored folder to "all".
     try {
+      try {
+        window.localStorage.setItem("CBX_SELECTED_FOLDER_V1", "all");
+      } catch {
+        // ignore
+      }
+
+      // Clear chip immediately (in case Drive event arrives later)
+      setDriveFolderContextName("");
+
       const params = new URLSearchParams(searchParamsString);
       params.delete("folder");
+
       const next = params.toString();
       router.replace(`/drive${next ? `?${next}` : ""}`);
+
+      // Notify listeners that folder context is cleared
+      try {
+        window.dispatchEvent(
+          new CustomEvent("CBX_DRIVE_FOLDER_CONTEXT", { detail: { id: "", name: "" } })
+        );
+      } catch {
+        // ignore
+      }
     } catch {
       // ignore
     }
@@ -569,7 +591,7 @@ export function Topbar({
           onChange={onSearchChange ?? setInternalQuery}
           {...(resolvedSearchPlaceholder ? { placeholder: resolvedSearchPlaceholder } : {})}
           contextLabel={(driveFolderContextName || folderContextLabelPretty || folderContextLabel) || undefined}
-          onClearContext={folderContextLabel ? clearFolderContext : undefined}
+          onClearContext={driveFolderId && driveFolderId !== "all" ? clearFolderContext : undefined}
           scope={loggedIn ? searchScope : undefined}
           scopes={
             loggedIn

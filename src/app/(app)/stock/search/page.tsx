@@ -393,12 +393,12 @@ function StockSearchInner() {
   }, [q, rawQ, cat]);
 
   const didYouMean = useMemo(() => {
-    if (!q) return null;
+    if (!rawQ) return null;
     if (results.length > 0) return null;
 
     const assets = ASSETS as Asset[];
-    return suggestDidYouMean(q, assets);
-  }, [q, results.length]);
+    return suggestDidYouMean(rawQ, assets);
+  }, [rawQ, results.length]);
 
   return (
     <div className="w-full px-4 py-6 sm:px-6">
