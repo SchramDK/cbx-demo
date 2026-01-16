@@ -48,12 +48,65 @@ const validateStockAssets = (assets: StockAsset[]) => {
   if (process.env.NODE_ENV === 'production') return;
 
   const ids = new Set<string>();
+  const titles = new Map<string, string>();
   for (const a of assets) {
     if (ids.has(a.id)) {
       // eslint-disable-next-line no-console
       console.warn(`[stock-assets] Duplicate id detected: ${a.id}`);
     }
     ids.add(a.id);
+
+    // Basic required fields
+    if (!a.title || !a.title.trim()) {
+      // eslint-disable-next-line no-console
+      console.warn(`[stock-assets] Missing title for ${a.id}`);
+    }
+    if (!a.category) {
+      // eslint-disable-next-line no-console
+      console.warn(`[stock-assets] Missing category for ${a.id}`);
+    }
+
+    // Duplicate titles (case-insensitive)
+    const tKey = (a.title ?? '').toString().trim().toLowerCase();
+    if (tKey) {
+      const existingId = titles.get(tKey);
+      if (existingId && existingId !== a.id) {
+        // eslint-disable-next-line no-console
+        console.warn(`[stock-assets] Duplicate title detected: "${a.title}" (${existingId} and ${a.id})`);
+      } else {
+        titles.set(tKey, a.id);
+      }
+    }
+
+    // Keyword + tag hygiene (defineStockAsset should normalize these)
+    const kws = a.keywords ?? [];
+    const tgs = a.tags ?? [];
+
+    const hasUpper = (s: string) => /[A-Z]/.test(s);
+    if (kws.some(hasUpper)) {
+      // eslint-disable-next-line no-console
+      console.warn(`[stock-assets] Keywords not lowercased for ${a.id}`);
+    }
+    if (tgs.some(hasUpper)) {
+      // eslint-disable-next-line no-console
+      console.warn(`[stock-assets] Tags not lowercased for ${a.id}`);
+    }
+
+    for (const raw of kws) {
+      const k = (raw ?? '').toString();
+      if (k !== k.trim()) {
+        // eslint-disable-next-line no-console
+        console.warn(`[stock-assets] Keyword has leading/trailing whitespace for ${a.id}: "${k}"`);
+      }
+      if (/\s{2,}/.test(k)) {
+        // eslint-disable-next-line no-console
+        console.warn(`[stock-assets] Keyword has double spaces for ${a.id}: "${k}"`);
+      }
+      if (/^[a-z]\s+/.test(k)) {
+        // eslint-disable-next-line no-console
+        console.warn(`[stock-assets] Suspicious keyword (single-letter prefix) for ${a.id}: "${k}"`);
+      }
+    }
 
     if (!a.preview || !a.preview.startsWith('/demo/stock/')) {
       // eslint-disable-next-line no-console
@@ -304,8 +357,285 @@ export const STOCK_ASSETS: StockAsset[] = [
     tags: ["lifestyle", "people", "couple", "love", "getaway"],
     preview: "/demo/stock/COLOURBOX66668909.jpg",
   }),
-    
-  
+  defineStockAsset({
+    id: "s-026",
+    title: "Mysterious swamp forest",
+    category: "nature",
+    description:
+      "Mysterious swamp forest with misty atmosphere and dense trees. Moody, cinematic woodland scene ideal for concepts like mystery, adventure, nature, wilderness, and dark forest landscapes.",
+    keywords: [
+      "swamp",
+      "swamp forest",
+      "mysterious forest",
+      "mist",
+      "fog",
+      "woods",
+      "woodland",
+      "trees",
+      "marsh",
+      "wetland",
+      "dark forest",
+      "moody",
+      "c cinematic",
+      "nature",
+      "landscape",
+      "wilderness",
+    ],
+    tags: ["nature", "forest", "swamp", "mist", "moody"],
+    preview: "/demo/stock/COLOURBOX22183537.jpg",
+  }),
+  defineStockAsset({
+    id: "s-027",
+    title: "Aerial view of boats and yachts in marina, Norway",
+    category: "city",
+    description:
+      "Drone aerial view of a marina filled with white boats and yachts moored in calm water. Summer waterfront scene from Norway (Orstafjorden / Ørstafjorden, Ørsta), captured from above. Ideal for travel, sailing, boating, and coastal city concepts.",
+    keywords: [
+      "aerial",
+      "drone",
+      "marina",
+      "boats",
+      "boat",
+      "yachts",
+      "yacht",
+      "harbor",
+      "harbour",
+      "port",
+      "moored",
+      "docked",
+      "sailing",
+      "nautical",
+      "waterfront",
+      "coast",
+      "sea",
+      "fjord",
+      "orsta",
+      "orstafjorden",
+      "norway",
+      "scandinavia",
+      "summer",
+      "travel",
+    ],
+    tags: ["city", "travel", "marina", "boats", "aerial"],
+    preview: "/demo/stock/COLOURBOX60032839.jpg",
+  }),
+  defineStockAsset({
+    id: "s-028",
+    title: "Sunset beach with orange horizon, Denmark",
+    category: "nature",
+    description:
+      "Sunset sky over a sandy beach with an orange horizon and calm ocean view in Denmark. Minimal coastal landscape with mockup/copy space—ideal for travel, nature, seaside destination, and summer environment concepts.",
+    keywords: [
+      "sunset",
+      "beach",
+      "sand",
+      "coast",
+      "coastal",
+      "seaside",
+      "sea",
+      "ocean",
+      "horizon",
+      "orange sky",
+      "sunset sky",
+      "landscape",
+      "nature",
+      "travel",
+      "denmark",
+      "scandinavia",
+      "outdoor",
+      "minimal",
+      "copy space",
+      "mockup space",
+      "destination",
+    ],
+    tags: ["nature", "beach", "sunset", "denmark", "travel"],
+    preview: "/demo/stock/COLOURBOX61446375.jpg",
+  }),
+  defineStockAsset({
+    id: "s-029",
+    title: "Aerial view of fast boat on blue Mediterranean sea",
+    category: "nature",
+    description:
+      "Drone aerial view of a fast boat speeding across the blue Mediterranean sea on a sunny day. Dynamic seascape with wake trails on the water surface—ideal for travel, vacation, leisure, boating, and summer ocean concepts.",
+    keywords: [
+      "aerial",
+      "drone",
+      "fast boat",
+      "speedboat",
+      "motorboat",
+      "boat",
+      "ship",
+      "sea",
+      "ocean",
+      "mediterranean",
+      "blue water",
+      "seascape",
+      "water surface",
+      "wake",
+      "waves",
+      "sunny",
+      "summer",
+      "travel",
+      "vacation",
+      "leisure",
+      "coast",
+    ],
+    tags: ["nature", "travel", "sea", "boat", "aerial"],
+    preview: "/demo/stock/COLOURBOX60314794.jpg",
+  }),
+  defineStockAsset({
+    id: "s-030",
+    title: "Electric car charging at station with nature background",
+    category: "energy",
+    description:
+      "Electric car (EV) charging at a station as a man plugs in a white power cable. Clean mobility and renewable energy concept with a natural outdoor background—ideal for sustainability, green technology, and transportation themes.",
+    keywords: [
+      "electric car",
+      "ev",
+      "charging",
+      "charging station",
+      "charger",
+      "plug",
+      "cable",
+      "power cable",
+      "electric vehicle",
+      "e-mobility",
+      "mobility",
+      "transportation",
+      "sustainability",
+      "green energy",
+      "renewable energy",
+      "clean energy",
+      "green technology",
+      "eco",
+      "climate",
+      "nature background",
+    ],
+    tags: ["energy", "sustainability", "ev", "charging", "transport"],
+    preview: "/demo/stock/COLOURBOX62377702.jpg",
+  }),
+  defineStockAsset({
+    id: "s-031",
+    title: "Wind turbines along Danish coastline near Copenhagen",
+    category: "energy",
+    description:
+      "Renewable energy wind power plant with wind turbines along the Danish sea shoreline near Copenhagen. Clean green electricity generation by the coast—ideal for sustainability, climate, renewable energy, and Scandinavian infrastructure concepts.",
+    keywords: [
+      "wind turbines",
+      "wind turbine",
+      "wind power",
+      "wind farm",
+      "renewable energy",
+      "green energy",
+      "clean energy",
+      "sustainability",
+      "electricity",
+      "power generation",
+      "coast",
+      "coastline",
+      "shoreline",
+      "sea",
+      "denmark",
+      "copenhagen",
+      "scandinavia",
+      "climate",
+      "infrastructure",
+    ],
+    tags: ["energy", "renewable", "wind", "denmark", "sustainability"],
+    preview: "/demo/stock/COLOURBOX61870711.jpg",
+  }),
+  defineStockAsset({
+    id: "s-032",
+    title: "Golden eagle (Aquila chrysaetos)",
+    category: "wildlife",
+    description:
+      "Golden eagle (Aquila chrysaetos) in the wild—majestic bird of prey captured in its natural habitat. Ideal for wildlife, nature, predator, and conservation themes.",
+    keywords: [
+      "golden eagle",
+      "aquila chrysaetos",
+      "eagle",
+      "bird of prey",
+      "raptor",
+      "predator",
+      "wildlife",
+      "nature",
+      "wings",
+      "feathers",
+      "beak",
+      "talons",
+      "hunting",
+      "conservation",
+      "wilderness",
+    ],
+    tags: ["wildlife", "eagle", "bird", "raptor", "nature"],
+    preview: "/demo/stock/COLOURBOX65946422.jpg",
+  }),
+  defineStockAsset({
+    id: "s-033",
+    title: "Two puffins displaying courtship behavior, Newfoundland",
+    category: "wildlife",
+    description:
+      "Two Atlantic puffins (Fratercula arctica) displaying billing courtship behavior at Elliston on the Bonavista Peninsula, Newfoundland, Canada. Charming seabird wildlife scene ideal for nature, birds, mating behavior, and coastal travel themes.",
+    keywords: [
+      "puffin",
+      "puffins",
+      "atlantic puffin",
+      "fratercula arctica",
+      "seabird",
+      "seabirds",
+      "bird",
+      "birds",
+      "courtship",
+      "mating",
+      "billing",
+      "pair",
+      "wildlife",
+      "nature",
+      "coast",
+      "cliff",
+      "newfoundland",
+      "bonavista",
+      "elliston",
+      "canada",
+      "north atlantic",
+    ],
+    tags: ["wildlife", "birds", "puffins", "nature", "canada"],
+    preview: "/demo/stock/COLOURBOX68711360.jpg",
+  }),
+  defineStockAsset({
+    id: "s-034",
+    title: "Pontoon at Moesgaard Beach, Aarhus, Denmark",
+    category: "nature",
+    description:
+      "Pontoon and wooden pier at Moesgaard Beach near Aarhus, Denmark. Calm Scandinavian coastline scene with sea, sand, and minimal horizon—ideal for travel, nature, seaside destination, and summer outdoor concepts.",
+    keywords: [
+      "pontoon",
+      "pier",
+      "jetty",
+      "wooden pier",
+      "boardwalk",
+      "beach",
+      "moesgaard",
+      "moesgaard beach",
+      "aarhus",
+      "denmark",
+      "coast",
+      "coastal",
+      "seaside",
+      "sea",
+      "ocean",
+      "shore",
+      "sand",
+      "horizon",
+      "scandinavia",
+      "summer",
+      "travel",
+      "outdoor",
+      "landscape",
+    ],
+    tags: ["nature", "beach", "denmark", "aarhus", "travel"],
+    preview: "/demo/stock/COLOURBOX69331493.jpg",
+  }),
   // ... flere
 ];
 

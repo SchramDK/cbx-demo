@@ -25,6 +25,35 @@ function getImage(asset: Asset) {
   return asset.preview;
 }
 
+function addIdVariants(set: Set<string>, raw: unknown) {
+  const v = (raw ?? '').toString().trim();
+  if (!v) return;
+  set.add(v);
+  const upper = v.toUpperCase();
+  set.add(upper);
+
+  const numeric = v.replace(/^COLOURBOX/i, '').trim();
+  if (numeric) {
+    set.add(numeric);
+    set.add(numeric.toUpperCase());
+    set.add(`COLOURBOX${numeric}`);
+    set.add(`COLOURBOX${numeric}`.toUpperCase());
+  }
+}
+
+function hasId(set: Set<string>, raw: unknown): boolean {
+  const v = (raw ?? '').toString().trim();
+  if (!v) return false;
+  const upper = v.toUpperCase();
+  const numeric = v.replace(/^COLOURBOX/i, '').trim();
+  return (
+    set.has(v) ||
+    set.has(upper) ||
+    (numeric ? set.has(numeric) || set.has(numeric.toUpperCase()) : false) ||
+    (numeric ? set.has(`COLOURBOX${numeric}`) || set.has(`COLOURBOX${numeric}`.toUpperCase()) : false)
+  );
+}
+
 const SYNONYMS: Record<string, string[]> = {
   aurora: ['northern lights', 'aurora borealis', 'nordlys'],
   'aurora borealis': ['aurora', 'northern lights', 'nordlys'],
@@ -181,12 +210,16 @@ const buildVocab = (assets: Asset[]) => {
   return Array.from(vocab);
 };
 
-const suggestDidYouMean = (query: string, assets: Asset[]) => {
+const suggestDidYouMean = (
+  query: string,
+  assets: Asset[],
+  pre?: { vocab: string[]; vocabSet: Set<string> }
+) => {
   const base = tokenize(query);
   if (!base.length) return null;
 
-  const vocab = buildVocab(assets);
-  const vocabSet = new Set(vocab);
+  const vocab = pre?.vocab ?? buildVocab(assets);
+  const vocabSet = pre?.vocabSet ?? new Set(vocab);
 
   let changed = false;
 
@@ -239,8 +272,9 @@ function StockSearchInner() {
     const ids = new Set<string>();
     const items = (cart?.items ?? []) as any[];
     for (const it of items) {
-      const id = (it?.id ?? it?.assetId ?? it?.asset?.id ?? '').toString();
-      if (id) ids.add(id);
+      addIdVariants(ids, it?.id);
+      addIdVariants(ids, it?.assetId);
+      addIdVariants(ids, it?.asset?.id);
     }
     return ids;
   }, [cart?.items]);
@@ -281,22 +315,37 @@ function StockSearchInner() {
 
   const [visibleCount, setVisibleCount] = useState(40);
 
+  const vocabPre = useMemo(() => {
+    const assets = ASSETS as Asset[];
+    const vocab = buildVocab(assets);
+    return { vocab, vocabSet: new Set(vocab) };
+  }, []);
+
   useEffect(() => {
     // reset pagination when query or category changes
     setVisibleCount(40);
+
+    // Make navigation between chips/search feel consistent (return user to top)
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   }, [q, cat]);
 
   const buildHref = useCallback(
     (next: { q?: string; cat?: string }) => {
       const params = new URLSearchParams();
-      const nq = (next.q ?? q).trim();
+
+      // Keep the URL query as the user typed it (rawQ). Normalization is only for matching.
+      const nq = (next.q ?? rawQ).trim();
       const nc = (next.cat ?? cat).trim();
+
       if (nq) params.set('q', nq);
       if (nc) params.set('cat', nc);
+
       const qs = params.toString();
       return qs ? `/stock/search?${qs}` : '/stock/search';
     },
-    [q, cat]
+    [rawQ, cat]
   );
 
   const results = useMemo(() => {
@@ -305,20 +354,65 @@ function StockSearchInner() {
     const baseTerms = tokenize(q);
     const terms = expandTerms(baseTerms);
 
-    const catFilter = cat && cat !== 'all' ? cat : '';
-
-    const scoreAsset = (asset: Asset) => {
-      let s = 0;
-
-      const title = normalize(asset.title ?? '');
-      const desc = normalize(asset.description ?? '');
-      const category = normalize(asset.category ?? '');
-      const keywords = (asset.keywords ?? []).map((k) => normalize(String(k)));
-      const tags = (asset.tags ?? []).map((t) => normalize(String(t)));
+    // Build per-asset precomputed index
+    const indexed = assets.map((asset) => {
+      const titleNorm = normalize(asset.title ?? '');
+      const descNorm = normalize(asset.description ?? '');
+      const categoryNorm = normalize(asset.category ?? '');
+      const keywordsNorm = (asset.keywords ?? []).map((k) => normalize(String(k)));
+      const tagsNorm = (asset.tags ?? []).map((t) => normalize(String(t)));
 
       const titleTokens = tokenize(asset.title ?? '');
       const keywordTokens = tokenize((asset.keywords ?? []).join(' '));
       const tagTokens = tokenize((asset.tags ?? []).join(' '));
+
+      const allTokens = [
+        ...titleTokens,
+        ...tokenize(asset.description ?? ''),
+        ...tokenize(asset.category ?? ''),
+        ...keywordTokens,
+        ...tagTokens,
+      ];
+
+      return {
+        asset,
+        titleNorm,
+        descNorm,
+        categoryNorm,
+        keywordsNorm,
+        tagsNorm,
+        titleTokens,
+        keywordTokens,
+        tagTokens,
+        allTokens,
+      };
+    });
+
+    const catFilter = cat && cat !== 'all' ? cat : '';
+
+    const scoreAsset = (entry: {
+      asset: Asset;
+      titleNorm: string;
+      descNorm: string;
+      categoryNorm: string;
+      keywordsNorm: string[];
+      tagsNorm: string[];
+      titleTokens: string[];
+      keywordTokens: string[];
+      tagTokens: string[];
+    }) => {
+      const asset = entry.asset;
+      let s = 0;
+
+      const title = entry.titleNorm;
+      const desc = entry.descNorm;
+      const category = entry.categoryNorm;
+      const keywords = entry.keywordsNorm;
+      const tags = entry.tagsNorm;
+
+      const titleTokens = entry.titleTokens;
+      const keywordTokens = entry.keywordTokens;
+      const tagTokens = entry.tagTokens;
 
       // Phrase match is a strong signal
       if (q && title.includes(q)) s += 10;
@@ -345,13 +439,14 @@ function StockSearchInner() {
         if (hitTags) s += 3;
         if (hitDesc) s += 2;
 
-        // Extra boosts for exact token hits (keeps relevance feeling snappy)
-        if (titleTokens.includes(term)) s += 2;
-        if (keywordTokens.includes(term)) s += 1.5;
-        if (tagTokens.includes(term)) s += 1;
+        // Extra boosts for exact token hits (predictable ranking)
+        // Title token hits should dominate over keywords/tags.
+        if (titleTokens.includes(term)) s += 6;
+        if (keywordTokens.includes(term)) s += 2.5;
+        if (tagTokens.includes(term)) s += 2;
 
         // tiny bonus if the exact term (not only synonym) is in title
-        if (title.includes(term)) s += 0.5;
+        if (title.includes(term)) s += 0.75;
       }
 
       // slight boost for featured-looking categories (keeps results feeling curated)
@@ -360,34 +455,42 @@ function StockSearchInner() {
       return s;
     };
 
-    const filtered = assets.filter((asset) => {
-      if (catFilter && normalize(asset.category).toLowerCase() !== catFilter) return false;
+    const filtered = indexed.filter((entry) => {
+      const asset = entry.asset;
+      if (catFilter && entry.categoryNorm.toLowerCase() !== catFilter) return false;
       if (!terms.length) return true;
 
-      const tokens = [
-        ...tokenize(asset.title ?? ''),
-        ...tokenize(asset.description ?? ''),
-        ...tokenize(asset.category ?? ''),
-        ...tokenize((asset.keywords ?? []).join(' ')),
-        ...tokenize((asset.tags ?? []).join(' ')),
-      ];
+      const tokens = entry.allTokens;
 
-      // Require that every base term is satisfied by something in tokens OR its synonyms.
-      // We use baseTerms here for strictness, but allow synonym/fuzzy via tokenMatch.
+      // Require that base terms are satisfied by something in tokens OR its synonyms.
+      // For multi-word queries (3+ terms), require a majority hit to avoid 0-result dead ends.
       const required = baseTerms.length ? baseTerms : terms;
-      return required.every((t) => {
+      const requiredCount = required.filter(Boolean).length;
+      const minHits =
+        requiredCount <= 2
+          ? requiredCount
+          : Math.max(2, Math.ceil(requiredCount * 0.66));
+
+      let hits = 0;
+      for (const t of required) {
         const tNorm = normalize(t);
-        if (!tNorm) return true;
+        if (!tNorm) continue;
 
         const syn = expandTerms([tNorm]);
-        return syn.some((candidate) => tokenMatch(candidate, tokens));
-      });
+        const ok = syn.some((candidate) => tokenMatch(candidate, tokens));
+        if (ok) hits++;
+
+        // early exit
+        if (hits >= minHits) return true;
+      }
+
+      return false;
     });
 
-    if (!terms.length) return filtered;
+    if (!terms.length) return filtered.map((e) => e.asset);
 
     return filtered
-      .map((a) => ({ a, s: scoreAsset(a) }))
+      .map((e) => ({ a: e.asset, s: scoreAsset(e) }))
       .sort((x, y) => (y.s === x.s ? x.a.title.localeCompare(y.a.title) : y.s - x.s))
       .map((x) => x.a);
   }, [q, rawQ, cat]);
@@ -397,8 +500,8 @@ function StockSearchInner() {
     if (results.length > 0) return null;
 
     const assets = ASSETS as Asset[];
-    return suggestDidYouMean(rawQ, assets);
-  }, [rawQ, results.length]);
+    return suggestDidYouMean(rawQ, assets, vocabPre);
+  }, [rawQ, results.length, vocabPre]);
 
   return (
     <div className="w-full px-4 py-6 sm:px-6">
@@ -452,10 +555,10 @@ function StockSearchInner() {
 
           {(rawQ || cat) ? (
             <Link
-              href="/stock/search"
+              href={rawQ ? buildHref({ q: '' }) : '/stock/search'}
               className="ml-2 text-xs text-muted-foreground underline-offset-4 hover:underline"
             >
-              Clear
+              {rawQ ? 'Clear search' : 'Clear filter'}
             </Link>
           ) : null}
         </div>
@@ -525,7 +628,7 @@ function StockSearchInner() {
                 }}
                 href={`/stock/assets/${asset.id}`}
                 aspect="photo"
-                inCart={cartIds.has(asset.id)}
+                inCart={hasId(cartIds, asset.id)}
                 onAddToCartAction={() => addToCart(asset)}
               />
             ))}

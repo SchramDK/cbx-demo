@@ -6,6 +6,7 @@ import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from "@
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 type SearchBarProps = {
   value: string;
@@ -82,6 +83,29 @@ export function SearchBar({
   className,
 }: SearchBarProps) {
   const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const isStockSearchPage = pathname?.startsWith("/stock/search");
+  const urlQ = (searchParams?.get("q") ?? "").trim();
+  const urlCat = (searchParams?.get("cat") ?? "").trim();
+  const [isFocused, setIsFocused] = React.useState(false);
+  const lastUrlQRef = React.useRef<string>(urlQ);
+  // Keep the input value in sync with the URL on the stock search page.
+  // Never override while the user is editing (focused).
+  React.useEffect(() => {
+    if (!isStockSearchPage) return;
+
+    // Only react to actual URL changes
+    if (lastUrlQRef.current === urlQ) return;
+    lastUrlQRef.current = urlQ;
+
+    if (isFocused) return;
+
+    if (urlQ === value) return;
+    onChange(urlQ);
+  }, [isStockSearchPage, urlQ, isFocused, value, onChange]);
   const triggerRef = React.useRef<HTMLDivElement | null>(null);
   const popoverRef = React.useRef<HTMLDivElement | null>(null);
   const blurCloseTimerRef = React.useRef<number | null>(null);
@@ -89,7 +113,6 @@ export function SearchBar({
   const valueRef = React.useRef(value);
   const showRecentsRef = React.useRef(showRecents);
   const loadRecentsRef = React.useRef<() => string[]>(() => []);
-  const [isFocused, setIsFocused] = React.useState(false);
   const [popoverWidth, setPopoverWidth] = React.useState<number | undefined>(undefined);
 
   const effectiveRecentsKey = React.useMemo(() => {
@@ -119,10 +142,21 @@ export function SearchBar({
 
   const [recents, setRecents] = React.useState<string[]>([]);
 
+  const maxSug = maxSuggestions ?? 8;
+  const minChars = minSuggestionChars ?? 1;
+
   const selectableItems = React.useMemo(() => {
     const q = value.trim();
-    return q.length === 0 ? recents : suggestions;
-  }, [value, recents, suggestions]);
+    if (q.length === 0) return recents;
+
+    // Keep in sync with UI: only show/select the “Search for …” row when query is long enough.
+    if (q.length < minChars) return [];
+
+    const items: string[] = [];
+    items.push(`__SEARCH_FOR__:${q}`);
+    for (const s of suggestions) items.push(s);
+    return items;
+  }, [value, recents, suggestions, minChars]);
 
   const loadRecents = React.useCallback(() => {
     if (!showRecents) return [];
@@ -210,8 +244,6 @@ export function SearchBar({
     setRecents(loadRecents());
   }, [onScopeChange, showRecents, loadRecents, effectiveRecentsKey]);
 
-  const maxSug = maxSuggestions ?? 8;
-  const minChars = minSuggestionChars ?? 1;
 
   const setScope = React.useCallback(
     (next: string) => {
@@ -434,24 +466,62 @@ export function SearchBar({
   }, []);
 
   const clear = React.useCallback(() => {
+    // Keep URL and input in sync on the stock search page
+    if (isStockSearchPage) {
+      const params = new URLSearchParams();
+      if (urlCat) params.set("cat", urlCat);
+      const qs = params.toString();
+      router.push(qs ? `/stock/search?${qs}` : "/stock/search");
+    }
+
     onChange("");
     setSuggestionsOpen(false);
     setSuggestions([]);
     // keep focus so user can continue typing
     inputRef.current?.focus();
-  }, [onChange]);
+  }, [onChange, isStockSearchPage, router, urlCat]);
 
   const selectSuggestion = React.useCallback(
     (s: string) => {
+      const trimmed = (valueRef.current ?? '').trim();
+      const isSearchFor = s.startsWith('__SEARCH_FOR__:');
+      const term = isSearchFor ? trimmed : s;
+
       suppressOpenRef.current = true;
-      addRecent(s);
+
+      if (term) addRecent(term);
+
+      // Close popover on selection
+      setSuggestionsOpen(false);
+      setHighlight('');
+
+      if (isSearchFor) {
+        if (onSubmit) {
+          onSubmit(term);
+        } else if (isStockSearchPage) {
+          const params = new URLSearchParams();
+          if (term) params.set("q", term);
+          if (urlCat) params.set("cat", urlCat);
+          const qs = params.toString();
+          router.push(qs ? `/stock/search?${qs}` : "/stock/search");
+          onChange(term);
+        } else if (onSelectSuggestion) {
+          onSelectSuggestion(term);
+        } else {
+          onChange(term);
+        }
+        // keep focus so user can keep typing
+        inputRef.current?.focus();
+        return;
+      }
+
       if (onSelectSuggestion) onSelectSuggestion(s);
       else onChange(s);
-      setSuggestionsOpen(false);
+
       // keep focus so user can continue typing
       inputRef.current?.focus();
     },
-    [onSelectSuggestion, onChange, addRecent]
+    [onSelectSuggestion, onChange, addRecent, onSubmit, router, isStockSearchPage, urlCat]
   );
 
   React.useEffect(() => {
@@ -462,6 +532,7 @@ export function SearchBar({
 
   // Consistent trimmed query for checks
   const q = value.trim();
+  const searchForToken = q && q.length >= minChars ? `__SEARCH_FOR__:${q}` : "";
 
   return (
     <div className={cn("flex w-full items-center gap-3", className)}>
@@ -524,7 +595,7 @@ export function SearchBar({
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     const q = value.trim();
                     const canNavigate =
-                      (q.length >= minChars && suggestions.length > 0) ||
+                      (q.length >= minChars && selectableItems.length > 0) ||
                       (q.length === 0 && showRecents && recents.length > 0);
 
                     if (canNavigate) {
@@ -751,7 +822,7 @@ export function SearchBar({
               <Command className="rounded-xl border border-border bg-popover shadow-md">
                 <CommandList>
                   <div className="px-3 py-2 text-xs text-muted-foreground">
-                    Enter to search • ↑/↓ then Enter to select • Esc to close
+                    Type to search • ↑/↓ to navigate • Enter to select • Esc to close
                   </div>
                   {showRecents && q.length === 0 && recents.length > 0 ? (
                     <CommandGroup
@@ -792,11 +863,48 @@ export function SearchBar({
                     </CommandGroup>
                   ) : null}
 
-                  {!suggestionsLoading && q.length >= minChars && suggestions.length === 0 ? (
-                    <CommandEmpty>No suggestions</CommandEmpty>
-                  ) : null}
+                  {!suggestionsLoading && q.length >= minChars && suggestions.length === 0 ? null : null}
 
-                  {suggestions.length > 0 ? (
+                  {q.length >= minChars ? (
+                    <CommandGroup heading="Suggestions">
+                      <CommandItem
+                        key={searchForToken}
+                        value={searchForToken}
+                        onSelect={() => selectSuggestion(searchForToken)}
+                        className={cn(
+                          "flex items-center justify-between",
+                          highlight === searchForToken && "bg-accent text-accent-foreground"
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Search className="h-4 w-4 opacity-70" />
+                          <div className="flex flex-col">
+                            <span>Search for “{q}”</span>
+                            {onScopeChange ? (
+                              <span className="text-[11px] text-muted-foreground">in {scopeLabel}</span>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <kbd className="ml-3 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                          Enter
+                        </kbd>
+                      </CommandItem>
+
+                      {suggestions.map((s) => (
+                        <CommandItem
+                          key={s}
+                          value={s}
+                          onSelect={() => selectSuggestion(s)}
+                          className={cn(
+                            highlight === s && "bg-accent text-accent-foreground"
+                          )}
+                        >
+                          {s}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  ) : suggestions.length > 0 ? (
                     <CommandGroup heading="Suggestions">
                       {suggestions.map((s) => (
                         <CommandItem
