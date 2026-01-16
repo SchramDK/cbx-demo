@@ -262,9 +262,13 @@ export function Topbar({
   const { count: liveCartCount } = useCart();
 
   const [mounted, setMounted] = React.useState(false);
-  const [driveFolderContextName, setDriveFolderContextName] = React.useState<string>(""
-  );
+  const [driveFolderContextName, setDriveFolderContextName] = React.useState<string>("");
   React.useEffect(() => setMounted(true), []);
+
+  const driveContextLabel = React.useMemo(() => {
+    const label = (driveFolderContextName || folderContextLabelPretty || folderContextLabel).trim();
+    return label.length ? label : undefined;
+  }, [driveFolderContextName, folderContextLabelPretty, folderContextLabel]);
 
   React.useEffect(() => {
     if (!mounted) return;
@@ -465,6 +469,20 @@ export function Topbar({
       const params = new URLSearchParams(searchParamsString);
       params.delete("folder");
 
+      // Normalize legacy query params to `q`
+      const q = (
+        params.get("q") ??
+        params.get("query") ??
+        params.get("search") ??
+        ""
+      ).trim();
+
+      if (q) params.set("q", q);
+      else params.delete("q");
+
+      params.delete("query");
+      params.delete("search");
+
       const next = params.toString();
       router.replace(`/drive${next ? `?${next}` : ""}`);
 
@@ -590,8 +608,8 @@ export function Topbar({
           value={onSearchChange ? (searchValue ?? "") : internalQuery}
           onChange={onSearchChange ?? setInternalQuery}
           {...(resolvedSearchPlaceholder ? { placeholder: resolvedSearchPlaceholder } : {})}
-          contextLabel={(driveFolderContextName || folderContextLabelPretty || folderContextLabel) || undefined}
-          onClearContext={driveFolderId && driveFolderId !== "all" ? clearFolderContext : undefined}
+          contextLabel={driveContextLabel}
+          onClearContext={driveFolderId && driveFolderId !== "all" && driveContextLabel ? clearFolderContext : undefined}
           scope={loggedIn ? searchScope : undefined}
           scopes={
             loggedIn

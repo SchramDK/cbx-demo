@@ -7,6 +7,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { getOrder } from "@/lib/stock/commerce";
 import { Button } from "@/components/ui/button";
 
+const DRIVE_IMPORTED_ASSETS_KEY = "CBX_DRIVE_IMPORTED_ASSETS_V1";
+const DRIVE_PURCHASES_IMPORTED_EVENT = "CBX_PURCHASES_IMPORTED";
+
 type DemoUser = { id: string; name: string; org: string };
 
 function safeFilename(name: string) {
@@ -251,6 +254,106 @@ useEffect(() => {
       return [] as any[];
     }
   }, [resolvedOrderId]);
+
+
+  useEffect(() => {
+    if (!resolvedOrderId) return;
+    if (!purchased.length) return;
+    if (typeof window === "undefined") return;
+
+    try {
+      const guardKey = `cbx_drive_imported_order_${resolvedOrderId}`;
+      if (sessionStorage.getItem(guardKey) === "1") return;
+      sessionStorage.setItem(guardKey, "1");
+
+      const mapped = purchased
+        .map((it: any, idx: number) => {
+          const rawId = it?.assetId ?? it?.id ?? it?.asset?.id ?? it?.asset?.assetId;
+          const idNum = Number(rawId);
+          const id = Number.isFinite(idNum) ? idNum : 100000 + idx;
+
+          const title = String(it?.title ?? it?.name ?? it?.asset?.title ?? it?.asset?.name ?? `Asset ${id}`);
+
+          const src =
+            it?.thumbUrl ??
+            it?.thumbnailUrl ??
+            it?.previewUrl ??
+            it?.image ??
+            it?.preview ??
+            it?.thumbnail ??
+            it?.asset?.thumbUrl ??
+            it?.asset?.thumbnailUrl ??
+            it?.asset?.previewUrl ??
+            it?.asset?.image ??
+            it?.asset?.preview ??
+            it?.asset?.thumbnail ??
+            "";
+
+          if (!src || typeof src !== "string") return null;
+
+          let ratio: any = it?.ratio;
+          if (!ratio) {
+            const o = String(it?.orientation ?? it?.asset?.orientation ?? "").toLowerCase();
+            if (o.includes("portrait")) ratio = "portrait";
+            else if (o.includes("square")) ratio = "square";
+            else if (o.includes("landscape")) ratio = "landscape";
+          }
+          if (!ratio) ratio = "landscape";
+
+          const color = typeof it?.color === "string" ? it.color : "neutral";
+
+          return {
+            id,
+            title,
+            src,
+            ratio,
+            folderId: "purchases",
+            color,
+          };
+        })
+        .filter(Boolean) as any[];
+
+      if (!mapped.length) return;
+
+      const existingRaw = (() => {
+        try {
+          const txt = localStorage.getItem(DRIVE_IMPORTED_ASSETS_KEY);
+          return txt ? JSON.parse(txt) : [];
+        } catch {
+          return [];
+        }
+      })();
+
+      const existing = Array.isArray(existingRaw) ? existingRaw : [];
+      const seen = new Set<string>(existing.map((x: any) => x?.src).filter(Boolean));
+      const merged = [...existing];
+      const newlyAdded: any[] = [];
+
+      for (const m of mapped) {
+        if (!m?.src) continue;
+        if (seen.has(m.src)) continue;
+        seen.add(m.src);
+        merged.push(m);
+        newlyAdded.push(m);
+      }
+
+      if (!newlyAdded.length) return;
+
+      try {
+        localStorage.setItem(DRIVE_IMPORTED_ASSETS_KEY, JSON.stringify(merged));
+      } catch {
+        // ignore
+      }
+
+      try {
+        window.dispatchEvent(new CustomEvent(DRIVE_PURCHASES_IMPORTED_EVENT, { detail: newlyAdded }));
+      } catch {
+        // ignore
+      }
+    } catch {
+      // ignore
+    }
+  }, [resolvedOrderId, purchased]);
 
 
   const isBootstrapping = !meLoaded || !minDelayDone || didAutoReload;

@@ -115,9 +115,11 @@ function useDriveFolderData(args: DriveFolderDataArgs & { isTrashView: boolean; 
 
     // Ensure smart folders exist even when empty
     counts["favorites"] = 0;
+    counts["purchases"] = 0;
     counts["trash"] = 0;
     counts["all"] = 0;
     map["favorites"] = [];
+    map["purchases"] = [];
     map["trash"] = [];
     map["all"] = [];
 
@@ -138,6 +140,12 @@ function useDriveFolderData(args: DriveFolderDataArgs & { isTrashView: boolean; 
       if (fid !== "trash" && favoriteAssetIds.has(img.id)) {
         counts["favorites"] += 1;
         map["favorites"].push({ id: img.id, title: img.title, src: img.src });
+      }
+
+      // Purchases is a smart folder (exclude trash)
+      if (fid !== "trash" && fid === "purchases") {
+        counts["purchases"] += 1;
+        map["purchases"].push({ id: img.id, title: img.title, src: img.src });
       }
     }
 
@@ -161,6 +169,7 @@ function useDriveFolderData(args: DriveFolderDataArgs & { isTrashView: boolean; 
   const folderAssets = useMemo(() => {
     // Smart folders
     if (selectedFolder === "favorites") return assetsByFolder["favorites"] ?? [];
+    if (selectedFolder === "purchases") return assetsByFolder["purchases"] ?? [];
     if (selectedFolder === "trash") return assetsByFolder["trash"] ?? [];
     if (selectedFolder === "all") return assetsByFolder["all"] ?? [];
 
@@ -660,6 +669,16 @@ function DrivePageInner() {
 
   useEffect(() => {
     if (!mounted) return;
+
+    setFolderTree((prev) => {
+      const hasPurchases = Array.isArray(prev) && prev.some((n) => n.id === "purchases");
+      if (hasPurchases) return prev;
+      return [{ id: "purchases", name: "Purchases" }, ...(prev ?? [])];
+    });
+  }, [mounted]);
+
+  useEffect(() => {
+    if (!mounted) return;
     writeJSON(LS_KEYS.folderTree, folderTree);
   }, [mounted, folderTree]);
 
@@ -720,6 +739,69 @@ function DrivePageInner() {
     setImportedImages(deduped);
   }, [mounted]);
 
+  useEffect(() => {
+    if (!mounted) return;
+
+    const onImported = (e: Event) => {
+      const ce = e as CustomEvent<any[]>;
+      const incomingRaw = Array.isArray(ce.detail) ? ce.detail : [];
+      if (!incomingRaw.length) return;
+
+      // Normalize incoming to the same shape as `importedImages`
+      const incoming = incomingRaw
+        .map((a, idx) => {
+          const id = Number(a?.id) || 200000 + idx;
+          const src = typeof a?.src === "string" ? a.src : "";
+          if (!src) return null;
+          return {
+            id,
+            title: typeof a?.title === "string" && a.title.trim().length ? a.title : `Asset ${id}`,
+            src,
+            ratio: a?.ratio ?? "landscape",
+            folderId: typeof a?.folderId === "string" && a.folderId ? a.folderId : "purchases",
+            color: typeof a?.color === "string" ? a.color : "neutral",
+          };
+        })
+        .filter(Boolean) as (typeof baseDemoImages)[number][];
+
+      if (!incoming.length) return;
+
+      setImportedImages((prev) => {
+        const bySrc = new Set(prev.map((x) => x.src));
+        const merged = [...prev];
+        let changed = false;
+
+        for (const img of incoming) {
+          if (bySrc.has(img.src)) continue;
+          bySrc.add(img.src);
+          merged.push(img);
+          changed = true;
+        }
+
+        if (!changed) return prev;
+
+        // Persist as raw objects
+        writeJSON(
+          LS_KEYS.importedAssets,
+          merged.map((m) => ({
+            id: m.id,
+            title: m.title,
+            src: m.src,
+            ratio: m.ratio,
+            folderId: m.folderId ?? "purchases",
+            color: m.color,
+          }))
+        );
+
+        return merged;
+      });
+      setSelectedFolder("purchases");
+    };
+
+    window.addEventListener("CBX_PURCHASES_IMPORTED", onImported as EventListener);
+    return () => window.removeEventListener("CBX_PURCHASES_IMPORTED", onImported as EventListener);
+  }, [mounted]);
+
   const allImages = useMemo(() => {
     if (!importedImages.length) return baseDemoImages;
 
@@ -741,7 +823,9 @@ function DrivePageInner() {
     if (!mounted) return;
     const f = urlFolder.trim();
     if (!f) return;
-    if (!folderIndex.has(f)) return;
+
+    const isSmart = f === "all" || f === "favorites" || f === "purchases" || f === "trash";
+    if (!isSmart && !folderIndex.has(f)) return;
 
     setSelectedFolder(f);
     setQuery("");
@@ -879,34 +963,39 @@ function DrivePageInner() {
   }, [selectedIdList, allById]);
 
   const isFavoritesView = selectedFolder === "favorites";
+  const isPurchasesView = selectedFolder === "purchases";
   const isTrashView = selectedFolder === "trash";
   const crumbNodes = useMemo(() => {
     return folderPathIndex.get(selectedFolder) ?? [];
   }, [selectedFolder, folderPathIndex]);
   const fullBreadcrumbLabel = useMemo(() => {
     if (isFavoritesView) return "All files / Favorites";
+    if (isPurchasesView) return "All files / Purchases";
     if (isTrashView) return "All files / Trash";
     if (!crumbNodes.length) return "All files";
     return ["All files", ...crumbNodes.map((n) => n.name ?? "")].filter(Boolean).join(" / ");
-  }, [crumbNodes, isFavoritesView, isTrashView]);
+  }, [crumbNodes, isFavoritesView, isPurchasesView, isTrashView]);
   const breadcrumbNodes = useMemo<FolderNode[]>(() => {
     // For real folders: show first + … + last two when deep.
-    if (isFavoritesView || isTrashView) return [];
+    if (isFavoritesView || isPurchasesView || isTrashView) return [];
     if (crumbNodes.length <= 3) return crumbNodes;
 
     const first = crumbNodes[0];
     const lastTwo = crumbNodes.slice(-2);
     const ellipsis = { id: "__ellipsis__", name: "…" } as FolderNode;
     return [first, ellipsis, ...lastTwo];
-  }, [crumbNodes, isFavoritesView, isTrashView]);
+  }, [crumbNodes, isFavoritesView, isPurchasesView, isTrashView]);
   const hiddenBreadcrumbNodes = useMemo<FolderNode[]>(() => {
-    if (isFavoritesView || isTrashView) return [];
+    if (isFavoritesView || isPurchasesView || isTrashView) return [];
     if (crumbNodes.length <= 3) return [];
     // Hidden = everything between first and last two
     return crumbNodes.slice(1, -2);
-  }, [crumbNodes, isFavoritesView, isTrashView]);
+  }, [crumbNodes, isFavoritesView, isPurchasesView, isTrashView]);
   const isFolderView =
-    selectedFolder !== "all" && selectedFolder !== "favorites" && selectedFolder !== "trash";
+    selectedFolder !== "all" &&
+    selectedFolder !== "favorites" &&
+    selectedFolder !== "purchases" &&
+    selectedFolder !== "trash";
   const isRealFolder = useMemo(() => {
     return folderIndex.has(selectedFolder);
   }, [selectedFolder, folderIndex]);
@@ -934,7 +1023,7 @@ function DrivePageInner() {
       return;
     }
 
-    const name = (isRealFolderView ? folderName : "") || folderIndex.get(id)?.name || id;
+    const name = (isPurchasesView ? "Purchases" : (isRealFolderView ? folderName : "")) || folderIndex.get(id)?.name || id;
 
     try {
       window.dispatchEvent(
@@ -945,7 +1034,7 @@ function DrivePageInner() {
     } catch {
       // ignore
     }
-  }, [mounted, selectedFolder, isRealFolderView, folderName, folderIndex]);
+  }, [mounted, selectedFolder, isRealFolderView, isPurchasesView, folderName, folderIndex]);
 
 
   const {
@@ -1245,11 +1334,13 @@ function DrivePageInner() {
                 <h1 className="text-2xl font-semibold">
                   {isFavoritesView
                     ? "Favorites"
-                    : isTrashView
-                      ? "Trash"
-                      : isFolderView
-                        ? folderName
-                        : "All files"}
+                    : isPurchasesView
+                      ? "Purchases"
+                      : isTrashView
+                        ? "Trash"
+                        : isFolderView
+                          ? folderName
+                          : "All files"}
                 </h1>
                 {selectedFolder !== "all" ? (
                   <div className="mt-1 relative max-w-full sm:max-w-[80%] pr-10" title={fullBreadcrumbLabel} aria-label={fullBreadcrumbLabel}>
@@ -1280,6 +1371,14 @@ function DrivePageInner() {
                               </BreadcrumbItem>
                             </span>
                           )}
+                          {isPurchasesView && (
+                            <span className="flex items-center">
+                              <BreadcrumbSeparator />
+                              <BreadcrumbItem>
+                                <BreadcrumbPage>Purchases</BreadcrumbPage>
+                              </BreadcrumbItem>
+                            </span>
+                          )}
                           {isTrashView && (
                             <span className="flex items-center">
                               <BreadcrumbSeparator />
@@ -1290,6 +1389,7 @@ function DrivePageInner() {
                           )}
 
                           {!isFavoritesView &&
+                            !isPurchasesView &&
                             !isTrashView &&
                             breadcrumbNodes.map((n, idx) => {
                               const isEllipsis = n.id === "__ellipsis__";

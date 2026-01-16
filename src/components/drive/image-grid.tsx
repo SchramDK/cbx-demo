@@ -169,6 +169,81 @@ const COLOR_ORDER: Record<ImageItem["color"], number> = {
   neutral: 7,
 };
 
+
+const DRIVE_IMPORTED_ASSETS_KEY = "CBX_DRIVE_IMPORTED_ASSETS_V1";
+const DRIVE_PURCHASES_IMPORTED_EVENT = "CBX_PURCHASES_IMPORTED";
+
+function hashToStableId(src: string) {
+  // Deterministic 32-bit hash (FNV-1a) -> safe positive integer id range
+  let h = 2166136261;
+  for (let i = 0; i < src.length; i++) {
+    h ^= src.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  // Keep within 1e9 span and offset high so it won't collide with demo ids
+  const n = (h >>> 0) % 1_000_000_000;
+  return 1_000_000_000 + n;
+}
+
+function normalizeImportedAsset(a: any, idx: number): ImageItem | null {
+  const src = typeof a?.src === "string" ? a.src : "";
+  if (!src) return null;
+
+  // Use a stable id derived from src to avoid duplicate keys (e.g. multiple items with id=100000)
+  const id = hashToStableId(src);
+
+  const title =
+    typeof a?.title === "string" && a.title.trim().length ? a.title : `Asset ${id}`;
+
+  const ratioRaw = String(a?.ratio ?? "").trim();
+  const ratio =
+    ratioRaw === "3/4" || ratioRaw === "4/3" || ratioRaw === "1/1" || ratioRaw === "16/9"
+      ? (ratioRaw as ImageItem["ratio"])
+      : "4/3";
+
+  const folderId =
+    typeof a?.folderId === "string" && a.folderId.trim().length ? a.folderId : "purchases";
+
+  const colorRaw = String(a?.color ?? "neutral");
+  const color =
+    (colorRaw === "red" ||
+    colorRaw === "orange" ||
+    colorRaw === "yellow" ||
+    colorRaw === "green" ||
+    colorRaw === "blue" ||
+    colorRaw === "purple" ||
+    colorRaw === "pink" ||
+    colorRaw === "neutral")
+      ? (colorRaw as ImageItem["color"])
+      : "neutral";
+
+  return { id, title, ratio, src, folderId, color };
+}
+
+function readImportedAssetsFromStorage(): ImageItem[] {
+  try {
+    const raw = window.localStorage.getItem(DRIVE_IMPORTED_ASSETS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as any[]) : [];
+    if (!Array.isArray(parsed) || parsed.length === 0) return [];
+
+    const out: ImageItem[] = [];
+    const seen = new Set<string>();
+
+    parsed.forEach((a, idx) => {
+      const n = normalizeImportedAsset(a, idx);
+      if (!n) return;
+      const key = n.src || `id:${n.id}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(n);
+    });
+
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 function isPurchasedAsset(folderId: string) {
   return String(folderId || "").toLowerCase() === "purchases";
 }
@@ -668,7 +743,31 @@ export function ImageGrid({
   priorityAssetId?: number;
   thumbSize?: number;
 }) {
+
   const [active, setActive] = useState<ImageItem | null>(null);
+
+  const [imported, setImported] = useState<ImageItem[]>([]);
+
+  useEffect(() => {
+    try {
+      setImported(readImportedAssetsFromStorage());
+    } catch {
+      setImported([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    const onImported = () => {
+      try {
+        setImported(readImportedAssetsFromStorage());
+      } catch {
+        // ignore
+      }
+    };
+
+    window.addEventListener(DRIVE_PURCHASES_IMPORTED_EVENT, onImported as EventListener);
+    return () => window.removeEventListener(DRIVE_PURCHASES_IMPORTED_EVENT, onImported as EventListener);
+  }, []);
 
   const [marquee, setMarquee] = useState<null | {
     startX: number;
@@ -1052,6 +1151,14 @@ export function ImageGrid({
     const seen = new Set<string>();
     const out: ImageItem[] = [];
 
+    // Imported/purchased assets first (so they win in case of duplicates)
+    for (const img of imported) {
+      const key = String(img.src || "") || `id:${img.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(img);
+    }
+
     for (const img of images) {
       const key = String(img.src || "") || `id:${img.id}`;
       if (seen.has(key)) continue;
@@ -1060,7 +1167,7 @@ export function ImageGrid({
     }
 
     return out;
-  }, []);
+  }, [imported]);
 
   const allImagesEffective = useMemo(() => {
     if (!folderOverrides) return allImages;
