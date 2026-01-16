@@ -108,6 +108,67 @@ function readPurchasesLastSeen(): number {
   }
 }
 
+// Lightweight semantic similarity (char 3-grams TF-IDF)
+function charNgrams(text: string, n = 3): string[] {
+  const s = (text ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  if (!s) return [];
+  const padded = `  ${s}  `;
+  const out: string[] = [];
+  for (let i = 0; i <= padded.length - n; i++) out.push(padded.slice(i, i + n));
+  return out;
+}
+
+function toTfidf(grams: string[], idf: Map<string, number>): Map<string, number> {
+  const tf = new Map<string, number>();
+  for (const g of grams) tf.set(g, (tf.get(g) ?? 0) + 1);
+  const vec = new Map<string, number>();
+  let norm = 0;
+  for (const [g, c] of tf) {
+    const w = (c as number) * (idf.get(g) ?? 0);
+    if (w === 0) continue;
+    vec.set(g, w);
+    norm += w * w;
+  }
+  norm = Math.sqrt(norm) || 1;
+  for (const [g, w] of vec) vec.set(g, w / norm);
+  return vec;
+}
+
+function cosine(a: Map<string, number>, b: Map<string, number>): number {
+  if (!a.size || !b.size) return 0;
+  let dot = 0;
+  const [small, big] = a.size <= b.size ? [a, b] : [b, a];
+  for (const [k, v] of small) {
+    const w = big.get(k);
+    if (w) dot += v * w;
+  }
+  return dot;
+}
+
+function buildStockDocText(a: any): string {
+  const parts: string[] = [];
+  if (a?.title) parts.push(String(a.title));
+  if (a?.description) parts.push(String(a.description));
+  const kws = Array.isArray(a?.keywords) ? a.keywords : [];
+  if (kws.length) parts.push(kws.map(String).join(' '));
+  const tags = Array.isArray(a?.tags) ? a.tags : [];
+  if (tags.length) parts.push(tags.map(String).join(' '));
+  if (a?.category) parts.push(String(a.category));
+  return parts.join(' ');
+}
+
+function getStockColourboxId(a: any): string {
+  const direct = String(a?.colourboxId ?? a?.cbxId ?? a?.externalId ?? '').trim();
+  if (direct) return direct;
+
+  const p = String(a?.preview ?? a?.src ?? a?.image ?? a?.url ?? '').trim();
+  // matches "/demo/stock/COLOURBOX123.jpg" or similar
+  const m = p.match(/(COLOURBOX\d+)/i);
+  return m ? m[1].toUpperCase() : '';
+}
 // Lightweight seeded PRNG and shuffle (mulberry32)
 function mulberry32(seed: number) {
   return function () {
@@ -299,6 +360,151 @@ export default function HomePage() {
   }, [heroSeed]);
 
   const heroSrcs = useMemo(() => heroItems.map((x) => x.src), [heroItems]);
+
+  // Build a lightweight semantic model for Stock assets (client-only usage)
+  const stockSemanticModel = useMemo(() => {
+    const pool = (STOCK_ASSETS as any[]) ?? [];
+    const docs = pool
+      .map((a) => {
+        const id = String(a?.id ?? '').trim();
+        if (!id) return null;
+        return { id, text: buildStockDocText(a) };
+      })
+      .filter(Boolean) as { id: string; text: string }[];
+
+    if (!docs.length) return null;
+
+    const df = new Map<string, number>();
+    const docGrams = new Map<string, string[]>();
+
+    for (const d of docs) {
+      const grams = charNgrams(d.text, 3);
+      docGrams.set(d.id, grams);
+      const set = new Set(grams);
+      for (const g of set) df.set(g, (df.get(g) ?? 0) + 1);
+    }
+
+    const N = Math.max(1, docs.length);
+    const idf = new Map<string, number>();
+    for (const [g, c] of df) idf.set(g, Math.log(1 + N / (1 + c)));
+
+    const docVecs = new Map<string, Map<string, number>>();
+    for (const d of docs) {
+      const grams = docGrams.get(d.id) ?? [];
+      docVecs.set(d.id, toTfidf(grams, idf));
+    }
+
+    return { idf, docVecs, docs };
+  }, []);
+
+  const purchasedStockIds = useMemo(() => {
+    if (typeof window === 'undefined') return [] as string[];
+    try {
+      const raw = window.localStorage.getItem(DRIVE_IMPORTED_ASSETS_KEY);
+      const parsed = raw ? (JSON.parse(raw) as any[]) : [];
+      if (!Array.isArray(parsed) || parsed.length === 0) return [] as string[];
+
+      const out: string[] = [];
+      for (const a of parsed) {
+        const fid = typeof a?.folderId === 'string' && a.folderId.trim().length ? a.folderId : 'purchases';
+        if (fid !== 'purchases') continue;
+
+        const raw = String(a?.id ?? a?.assetId ?? a?.stockId ?? a?.cbxId ?? a?.colourboxId ?? '').trim();
+        // Normalize to COLOURBOX ids when possible
+        const m = raw.match(/(COLOURBOX\d+)/i);
+        const id = m ? m[1].toUpperCase() : raw;
+        if (!id) continue;
+        out.push(id);
+      }
+
+      // unique
+      return Array.from(new Set(out));
+    } catch {
+      return [] as string[];
+    }
+  }, [purchasesCount]);
+
+  const recommendedBasedOnPurchases = useMemo(() => {
+    const pool = (STOCK_ASSETS as any[]) ?? [];
+    if (!pool.length) return [] as any[];
+    if (!stockSemanticModel) return [] as any[];
+    if (!purchasedStockIds.length) return [] as any[];
+
+    // Build query text from the purchased stock assets we can match in our pool
+    const purchasedSet = new Set(purchasedStockIds);
+
+    const byColourboxId = new Map<string, any>();
+    for (const a of pool) {
+      const cbx = getStockColourboxId(a);
+      if (cbx && !byColourboxId.has(cbx)) byColourboxId.set(cbx, a);
+    }
+
+    const purchasedDocs: string[] = [];
+    for (const id of purchasedStockIds) {
+      const hit = byColourboxId.get(id) ?? pool.find((a) => String(a?.id ?? '').trim() === id);
+      if (hit) purchasedDocs.push(buildStockDocText(hit));
+    }
+
+    // Fallback: if we can't match, just use ids as weak tokens
+    const queryText = purchasedDocs.length ? purchasedDocs.join(' ') : purchasedStockIds.join(' ');
+
+    const qVec = toTfidf(charNgrams(queryText, 3), stockSemanticModel.idf);
+
+    const scores: { id: string; score: number }[] = [];
+    for (const [docId, dVec] of stockSemanticModel.docVecs) {
+      // Exclude anything the user already bought (match by COLOURBOX id)
+      const cbx = byColourboxId.get(docId) ? docId : getStockColourboxId(pool.find((a) => String(a?.id ?? '').trim() === docId));
+      if (purchasedSet.has(docId) || (cbx && purchasedSet.has(cbx))) continue;
+      const s = cosine(qVec, dVec);
+      if (s > 0) scores.push({ id: docId, score: s });
+    }
+
+    scores.sort((a, b) => b.score - a.score);
+
+    // Take top and add slight daily shuffle to avoid looking static
+    const seedBase = (() => {
+      let h = 0;
+      const s = `${dailySeed || ''}:${purchasedStockIds.join(',')}`;
+      for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+      return h || heroSeed || 1;
+    })();
+
+    const topIds = scores.slice(0, 24).map((x) => x.id);
+    const shuffledTop = shuffleWithSeed(topIds, seedBase);
+
+    const isPurchased = (a: any) => {
+      if (!a) return false;
+      const sid = String(a?.id ?? '').trim();
+      const cbx = getStockColourboxId(a);
+      return (sid && purchasedSet.has(sid)) || (cbx && purchasedSet.has(cbx));
+    };
+
+    const picked = new Map<string, any>();
+
+    // 1) Primary: semantic picks
+    for (const id of shuffledTop) {
+      const a = byColourboxId.get(id) ?? pool.find((x) => String(x?.id ?? '').trim() === id);
+      if (!a) continue;
+      if (isPurchased(a)) continue;
+      const key = String(a?.id ?? getStockColourboxId(a) ?? id);
+      if (key && !picked.has(key)) picked.set(key, a);
+      if (picked.size >= 12) break;
+    }
+
+    // 2) Fallback: fill with a deterministic shuffle of Stock assets (exclude purchased)
+    if (picked.size < 12) {
+      const fallbackPool = shuffleWithSeed(pool, seedBase ^ 0x9e3779b9);
+      for (const a of fallbackPool) {
+        if (isPurchased(a)) continue;
+        const key = String(a?.id ?? getStockColourboxId(a) ?? '');
+        if (!key) continue;
+        if (!picked.has(key)) picked.set(key, a);
+        if (picked.size >= 12) break;
+      }
+    }
+
+    return Array.from(picked.values());
+  }, [dailySeed, heroSeed, purchasedStockIds, stockSemanticModel]);
 
   // Non-hero thumbnails should stay generic (do not force Stock previews)
   const thumbSrcs = useMemo(() => {
@@ -767,6 +973,67 @@ export default function HomePage() {
         </section>
 
         <div className="mx-4 sm:mx-6 lg:mx-10 h-px bg-border/60" />
+
+        {/* Based on purchases */}
+        {purchasesCount > 0 ? (
+          <section className="mx-4 sm:mx-6 lg:mx-10">
+            <div className="rounded-2xl bg-muted/10 p-5 sm:p-6 ring-1 ring-border/50">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-base font-semibold">Based on what you have bought</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Based on what you have bought, we found these Stock photos.
+                  </p>
+                </div>
+                <button
+                  onClick={() => router.push('/stock')}
+                  className="inline-flex items-center gap-2 rounded-full bg-background/60 px-5 py-2.5 text-sm font-medium transition hover:bg-background/80"
+                >
+                  Browse Stock <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="relative mt-4 overflow-hidden sm:mt-5">
+                <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-12 bg-gradient-to-r from-background to-transparent" />
+                <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-12 bg-gradient-to-l from-background to-transparent" />
+
+                {recommendedBasedOnPurchases.length ? (
+                  <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+                    {recommendedBasedOnPurchases.map((a) => {
+                      const id = String(a?.id ?? '').trim();
+                      const src = String(a?.preview ?? '') || `/demo/stock/${id}.jpg`;
+                      return (
+                        <button
+                          key={`rec-${id}`}
+                          type="button"
+                          onClick={() => openStockAsset(id)}
+                          className="group w-72 shrink-0 text-left"
+                        >
+                          <div className="relative h-40 overflow-hidden rounded-2xl bg-muted ring-1 ring-border/40 transition group-hover:ring-border/60">
+                            <NextImage
+                              src={src}
+                              alt={String(a?.title ?? 'Stock photo')}
+                              fill
+                              sizes="288px"
+                              className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                              unoptimized={src.startsWith('/demo/')}
+                            />
+                          </div>
+                          <div className="mt-2 line-clamp-2 text-sm font-medium">{String(a?.title ?? id)}</div>
+                          <div className="mt-0.5 text-xs text-muted-foreground">Open in Stock</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-border bg-background/60 p-4 text-sm text-muted-foreground">
+                    We’re still learning your style — here are a few solid picks to start with.
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         {/* Today’s focus */}
         <section className="mx-4 sm:mx-6 lg:mx-10">
