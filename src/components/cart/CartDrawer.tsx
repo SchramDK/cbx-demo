@@ -8,7 +8,8 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { useCart, useCartUI } from "@/lib/cart/cart";
 
 function formatMoneyEUR(v: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "EUR" }).format(v || 0);
+  // Danish-style formatting: 0,00 €
+  return new Intl.NumberFormat("da-DK", { style: "currency", currency: "EUR" }).format(v || 0);
 }
 
 export function CartDrawer() {
@@ -99,34 +100,40 @@ export function CartDrawer() {
         </div>
 
         <div className="sticky bottom-0 mt-auto border-t bg-background/90 px-4 py-4 backdrop-blur">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Total</span>
-            <div className="flex items-center gap-2">
-              {items.length > 0 ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={clear}
-                  className="text-muted-foreground"
-                >
-                  Clear
-                </Button>
-              ) : null}
-              <span className="text-base font-semibold tabular-nums">{formatMoneyEUR(total)}</span>
+          {items.length === 0 ? (
+            <div className="grid gap-2">
+              <Button asChild onClick={close}>
+                <Link href="/stock">Browse stock</Link>
+              </Button>
+              <div className="text-xs text-muted-foreground">
+                Add images from Stock to continue.
+              </div>
             </div>
-          </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal</span>
+                <div className="flex items-center gap-2">
+                  <Button variant="ghost" size="sm" onClick={clear} className="text-muted-foreground">
+                    Clear
+                  </Button>
+                  <span className="text-base font-semibold tabular-nums">{formatMoneyEUR(total)}</span>
+                </div>
+              </div>
 
-          <div className="mt-3 grid gap-2">
-            <Button asChild disabled={items.length === 0}>
-              <Link href="/stock/cart" onClick={close}>View cart</Link>
-            </Button>
-            <Button asChild variant="secondary" disabled={items.length === 0}>
-              <Link href="/stock/checkout" onClick={close}>Checkout</Link>
-            </Button>
-          </div>
-          <div className="mt-2 text-xs text-muted-foreground">
-            Review your cart and complete checkout.
-          </div>
+              <div className="mt-3 grid gap-2">
+                <Button asChild>
+                  <Link href="/stock/cart" onClick={close}>View cart</Link>
+                </Button>
+                <Button asChild variant="secondary">
+                  <Link href="/stock/checkout" onClick={close}>Checkout</Link>
+                </Button>
+              </div>
+              <div className="mt-2 text-xs text-muted-foreground">
+                Review your cart and complete checkout.
+              </div>
+            </>
+          )}
         </div>
       </SheetContent>
     </Sheet>

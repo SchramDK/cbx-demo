@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Trash2 } from "lucide-react";
@@ -337,5 +337,6 @@ export default function CartPage() {
 }
 
 function formatMoneyEUR(v: number) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "EUR" }).format(v || 0);
+  // Danish-style formatting: 0,00 €
+  return new Intl.NumberFormat("da-DK", { style: "currency", currency: "EUR" }).format(v || 0);
 }

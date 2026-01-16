@@ -238,9 +238,16 @@ function CartDrawerMount() {
               View cart
             </Button>
 
-            <Button variant="secondary" disabled className="justify-between">
-              <span>Checkout</span>
-              <span className="text-xs text-muted-foreground">Coming soon</span>
+            <Button
+              variant="secondary"
+              disabled={items.length === 0}
+              onClick={() => {
+                if (items.length === 0) return;
+                close();
+                router.push('/stock/checkout');
+              }}
+            >
+              Checkout
             </Button>
           </div>
         </div>
@@ -250,5 +257,5 @@ function CartDrawerMount() {
 }
 
 function formatMoneyEUR(v: number) {
-  return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'EUR' }).format(v || 0);
+  return new Intl.NumberFormat('da-DK', { style: 'currency', currency: 'EUR' }).format(v || 0);
 }

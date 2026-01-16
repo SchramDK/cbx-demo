@@ -73,7 +73,7 @@ export default function CheckoutPage() {
           <p className="text-xs font-medium text-muted-foreground">Stock • Checkout</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">Confirm your order</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Review details and confirm. This is a demo — no payment is processed.
+            Review details and confirm. This is a demo — payment is simulated.
           </p>
         </div>
 
@@ -153,7 +153,7 @@ export default function CheckoutPage() {
             <div className="mt-4 rounded-xl border bg-muted/20 p-4">
               <p className="text-sm font-medium">Payment method</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                Disabled in this prototype. In production, this would be card / invoice / subscription handling.
+                Payment is simulated in this demo. In production, this would be card / invoice / subscription handling.
               </p>
               <div className="mt-3 grid gap-2 sm:grid-cols-3">
                 <div className="rounded-lg border bg-background px-3 py-2 text-xs text-muted-foreground">
@@ -232,7 +232,7 @@ export default function CheckoutPage() {
           </Button>
 
           <p className="mt-3 text-xs text-muted-foreground">
-            Demo only — no payment is processed.
+            Demo only — payment is simulated.
           </p>
         </aside>
       </div>
