@@ -9,9 +9,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import ImageCard from '@/components/stock/ImageCard';
-import { ArrowLeft, ShoppingCart } from 'lucide-react';
+import { ArrowLeft, ShoppingCart, Download, Loader2 } from 'lucide-react';
 import { useCart, useCartUI } from '@/lib/cart/cart';
 import { useProtoAuth } from '@/lib/proto-auth';
+import { readJSON } from '@/lib/storage/localStorage';
 
 
 type Asset = {
@@ -27,6 +28,200 @@ type Asset = {
 type TabKey = 'info' | 'keywords' | 'similar' | 'shoot' | 'related';
 
 const getAssetImage = (asset?: Asset) => asset?.preview ?? '';
+
+const DRIVE_IMPORTED_ASSETS_KEY = 'CBX_DRIVE_IMPORTED_ASSETS_V1';
+const DRIVE_PURCHASES_IMPORTED_EVENT = 'CBX_PURCHASES_IMPORTED';
+
+function extractPurchasedList(parsed: any): any[] {
+  if (Array.isArray(parsed)) return parsed;
+  if (!parsed || typeof parsed !== 'object') return [];
+
+  // Common container keys
+  const direct =
+    parsed.items ??
+    parsed.assets ??
+    parsed.purchases ??
+    parsed.images ??
+    parsed.files ??
+    parsed.importedAssets ??
+    parsed.data;
+  if (Array.isArray(direct)) return direct;
+
+  // Fallback: first array value in the object
+  for (const v of Object.values(parsed)) {
+    if (Array.isArray(v)) return v as any[];
+  }
+
+  return [];
+}
+
+function extractIdFromString(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  const s = raw.trim();
+  if (!s) return '';
+  const cbx = s.match(/COLOURBOX\d+/i)?.[0];
+  if (cbx) return cbx;
+  const num = s.match(/\b\d{6,}\b/)?.[0];
+  return num ?? '';
+}
+
+function addIdVariants(set: Set<string>, raw: unknown) {
+  const v = (raw ?? '').toString().trim();
+  if (!v) return;
+  set.add(v);
+
+  const upper = v.toUpperCase();
+  set.add(upper);
+
+  const numeric = v.replace(/^COLOURBOX/i, '').trim();
+  if (numeric) {
+    set.add(numeric);
+    set.add(numeric.toUpperCase());
+    set.add(`COLOURBOX${numeric}`);
+    set.add(`COLOURBOX${numeric}`.toUpperCase());
+  }
+}
+
+function isPurchasesFolder(folderId: unknown): boolean {
+  const f = (folderId ?? '').toString().trim().toLowerCase();
+  if (!f) return true; // missing -> treat as purchases in demo
+  return f === 'purchases' || f === 'purchase' || f.includes('purch');
+}
+
+function collectIdsFromUnknown(ids: Set<string>, value: any, depth = 0) {
+  if (depth > 5) return;
+  if (value == null) return;
+
+  if (typeof value === 'string') {
+    addIdVariants(ids, extractIdFromString(value));
+    return;
+  }
+
+  if (typeof value === 'number') {
+    addIdVariants(ids, String(value));
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const v of value) collectIdsFromUnknown(ids, v, depth + 1);
+    return;
+  }
+
+  if (typeof value === 'object') {
+    // Known id-like fields
+    addIdVariants(ids, value.id);
+    addIdVariants(ids, value.assetId);
+    addIdVariants(ids, value.colourboxId);
+    addIdVariants(ids, value.cbxId);
+    addIdVariants(ids, value.imageId);
+
+    // Common src-like fields
+    addIdVariants(ids, extractIdFromString(value.src));
+    addIdVariants(ids, extractIdFromString(value.preview));
+    addIdVariants(ids, extractIdFromString(value.url));
+    addIdVariants(ids, extractIdFromString(value.image));
+
+    for (const v of Object.values(value)) collectIdsFromUnknown(ids, v, depth + 1);
+  }
+}
+
+function readPurchasedIdsFromAllStorage(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const ids = new Set<string>();
+
+    const scan = (storage: Storage) => {
+      for (let i = 0; i < storage.length; i++) {
+        const key = storage.key(i);
+        if (!key) continue;
+
+        // Heuristic: prefer likely keys, but don't completely miss the real one.
+        const k = key.toLowerCase();
+        const likely = k.includes('purchase') || k.includes('purch') || k.includes('import') || k.includes('drive') || k.includes('cbx');
+        if (!likely && storage.length > 60) continue; // keep it safe in large storages
+
+        const raw = storage.getItem(key);
+        if (!raw) continue;
+
+        // Plain string may contain a COLOURBOX id
+        addIdVariants(ids, extractIdFromString(raw));
+
+        // Structured JSON storage
+        try {
+          const parsed = (() => {
+            try {
+              return JSON.parse(raw);
+            } catch {
+              return null;
+            }
+          })();
+          if (parsed) {
+            const list = extractPurchasedList(parsed);
+            if (Array.isArray(list) && list.length) {
+              for (const it of list) collectIdsFromUnknown(ids, it);
+            } else {
+              collectIdsFromUnknown(ids, parsed);
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    scan(window.localStorage);
+    scan(window.sessionStorage);
+
+    return ids;
+  } catch {
+    return new Set();
+  }
+}
+
+function readPurchasedIds(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const parsed = readJSON<any>(DRIVE_IMPORTED_ASSETS_KEY, []);
+    const list = extractPurchasedList(parsed);
+    if (!Array.isArray(list) || list.length === 0) {
+      return readPurchasedIdsFromAllStorage();
+    }
+
+    const ids = new Set<string>();
+    for (const it of list) {
+      if (!isPurchasesFolder(it?.folderId)) continue;
+
+      // Collect multiple possible id fields (top-level)
+      addIdVariants(ids, it?.id);
+      addIdVariants(ids, it?.assetId);
+      addIdVariants(ids, it?.colourboxId);
+      addIdVariants(ids, it?.cbxId);
+      addIdVariants(ids, it?.imageId);
+
+      // Nested asset shapes
+      addIdVariants(ids, it?.asset?.id);
+      addIdVariants(ids, it?.asset?.assetId);
+      addIdVariants(ids, it?.asset?.colourboxId);
+      addIdVariants(ids, it?.asset?.cbxId);
+      addIdVariants(ids, it?.asset?.imageId);
+
+      // If ids are missing/wrong, derive from src-like fields
+      addIdVariants(ids, extractIdFromString(it?.src));
+      addIdVariants(ids, extractIdFromString(it?.preview));
+      addIdVariants(ids, extractIdFromString(it?.url));
+      addIdVariants(ids, extractIdFromString(it?.image));
+      addIdVariants(ids, extractIdFromString(it?.asset?.src));
+      addIdVariants(ids, extractIdFromString(it?.asset?.preview));
+      addIdVariants(ids, extractIdFromString(it?.asset?.url));
+      addIdVariants(ids, extractIdFromString(it?.asset?.image));
+    }
+    const extra = readPurchasedIdsFromAllStorage();
+    for (const x of extra) ids.add(x);
+    return ids;
+  } catch {
+    return new Set();
+  }
+}
 
 const normalizeToken = (s?: string) => (s ?? '').trim().toLowerCase();
 
@@ -318,6 +513,42 @@ export default function StockAssetPage() {
   const assetId = asset?.id ?? id;
   const returnTo = `/stock/assets/${assetId}`;
 
+  const [purchasedIds, setPurchasedIds] = useState<Set<string>>(() => new Set());
+
+  const isPurchased = useMemo(() => {
+    const aId = (assetId ?? '').toString().trim();
+    if (!aId) return false;
+
+    const upper = aId.toUpperCase();
+    const numeric = aId.replace(/^COLOURBOX/i, '').trim();
+
+    return (
+      purchasedIds.has(aId) ||
+      purchasedIds.has(upper) ||
+      (numeric ? purchasedIds.has(numeric) || purchasedIds.has(numeric.toUpperCase()) : false) ||
+      (numeric ? purchasedIds.has(`COLOURBOX${numeric}`) || purchasedIds.has(`COLOURBOX${numeric}`.toUpperCase()) : false)
+    );
+  }, [assetId, purchasedIds]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!loggedIn) return;
+
+    const refresh = () => setPurchasedIds(readPurchasedIds());
+    refresh();
+
+    const onImported = () => refresh();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === DRIVE_IMPORTED_ASSETS_KEY) refresh();
+    };
+
+    window.addEventListener(DRIVE_PURCHASES_IMPORTED_EVENT, onImported as EventListener);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener(DRIVE_PURCHASES_IMPORTED_EVENT, onImported as EventListener);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [loggedIn]);
+
   // Demo pricing (mirrors Colourbox example)
   const priceSingle = 7.99;
   const payGo10Price = 69.0;
@@ -326,6 +557,9 @@ export default function StockAssetPage() {
 
   const [purchaseOption, setPurchaseOption] = useState<'single' | 'paygo10'>('single');
   const [added, setAdded] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [isSmUp, setIsSmUp] = useState(false);
@@ -378,8 +612,8 @@ export default function StockAssetPage() {
     () => [
       { key: 'info' as const, label: 'Info', ref: infoRef },
       { key: 'keywords' as const, label: 'Keywords', ref: keywordsRef },
+      { key: 'shoot' as const, label: 'From the same shoot', ref: shootRef },
       { key: 'similar' as const, label: 'Similar', ref: similarRef },
-      { key: 'shoot' as const, label: 'Shoot', ref: shootRef },
       { key: 'related' as const, label: 'Related', ref: relatedRef },
     ],
     []
@@ -581,7 +815,50 @@ export default function StockAssetPage() {
     [added, isInCart, price]
   );
 
+  const showInFiles = useCallback(() => {
+    const v = (assetId ?? '').toString().trim();
+    const highlight = v ? `&highlight=${encodeURIComponent(v)}` : '';
+    router.push(`/drive?folder=purchases${highlight}`);
+  }, [assetId, router]);
+
+  const downloadImage = useCallback(async () => {
+    if (typeof window === 'undefined') return;
+    if (isDownloading) return;
+
+    setDownloadError(null);
+    setDownloaded(false);
+    setIsDownloading(true);
+
+    try {
+      const res = await fetch(imageSrc, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`Download failed (${res.status})`);
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${assetId}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      window.URL.revokeObjectURL(url);
+
+      setDownloaded(true);
+      window.setTimeout(() => setDownloaded(false), 2000);
+    } catch (e: any) {
+      setDownloadError(e?.message ? String(e.message) : 'Download failed');
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [assetId, imageSrc, isDownloading]);
+
   const handleAddToCart = useCallback(() => {
+    if (loggedIn && isPurchased) {
+      showInFiles();
+      return;
+    }
     if (addedTimeoutRef.current !== null) {
       window.clearTimeout(addedTimeoutRef.current);
       addedTimeoutRef.current = null;
@@ -607,7 +884,7 @@ export default function StockAssetPage() {
       setAdded(false);
       addedTimeoutRef.current = null;
     }, 2000);
-  }, [addItem, assetId, title, selectedLicense, price, imageSrc, openCart, isInCart]);
+  }, [addItem, assetId, title, selectedLicense, price, imageSrc, openCart, isInCart, loggedIn, isPurchased, showInFiles]);
 
   const addQuick = useCallback(
     (a: Asset) => {
@@ -715,15 +992,43 @@ export default function StockAssetPage() {
 
                 <div className="hidden h-6 w-px bg-border sm:block" aria-hidden />
 
-                <Button
-                  size="default"
-                  variant={isInCart || added ? 'secondary' : 'default'}
-                  className="gap-2"
-                  onClick={handleAddToCart}
-                >
-                  <ShoppingCart className="h-4 w-4" />
-                  {cartCtaLabel('Added')}
-                </Button>
+                {loggedIn && isPurchased ? (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="default"
+                      variant="secondary"
+                      className="gap-2"
+                      onClick={downloadImage}
+                      disabled={isDownloading}
+                    >
+                      {isDownloading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Downloading…
+                        </>
+                      ) : (
+                        <>
+                          <Download className="h-4 w-4" />
+                          Download
+                        </>
+                      )}
+                    </Button>
+                    <Button size="default" className="gap-2" onClick={showInFiles} disabled={isDownloading}>
+                      Open in Files
+                      <span aria-hidden>→</span>
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    size="default"
+                    variant={isInCart || added ? 'secondary' : 'default'}
+                    className="gap-2"
+                    onClick={handleAddToCart}
+                  >
+                    <ShoppingCart className="h-4 w-4" />
+                    {cartCtaLabel('Added')}
+                  </Button>
+                )}
               </div>
             </div>
           </div>
@@ -791,145 +1096,191 @@ export default function StockAssetPage() {
                 <span className="font-medium text-foreground/80">#{assetId}</span>
               </div>
               <div className="flex items-center justify-between rounded-lg bg-muted/30 px-3 py-2 ring-1 ring-black/5 dark:ring-white/10">
-                <span>Starting at</span>
-                <span className="font-medium text-foreground/80">€{priceSingle.toFixed(2)}</span>
+                <span>{loggedIn && isPurchased ? 'Status' : 'Starting at'}</span>
+                <span className="font-medium text-foreground/80">
+                  {loggedIn && isPurchased ? 'Purchased' : `€${priceSingle.toFixed(2)}`}
+                </span>
               </div>
             </div>
           </div>
 
-          <div
+          <section
             ref={keywordsRef}
             id="keywords"
-            className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] flex flex-wrap items-center gap-2 px-1"
+            className="scroll-mt-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] rounded-2xl bg-background/95 p-4 ring-1 ring-black/5 dark:ring-white/10"
           >
-            {asset?.category ? (
-              <Link href={`/stock/search?cat=${encodeURIComponent(asset.category.toLowerCase())}`}>
-                <Badge
-                  variant="secondary"
-                  className="cursor-pointer transition hover:bg-muted/60 hover:text-foreground"
-                >
-                  {asset.category}
-                </Badge>
-              </Link>
-            ) : null}
-            {displayTags
-              .filter((t) => t && t.toLowerCase() !== (asset?.category ?? '').toLowerCase())
-              .slice(0, 10)
-              .map((t) => (
-                <Link
-                  key={t}
-                  href={`/stock/search?q=${encodeURIComponent(t)}`}
-                  className="inline-flex"
-                >
-                  <Badge
-                    variant="secondary"
-                    className="cursor-pointer transition hover:bg-muted/60 hover:text-foreground"
-                  >
-                    {t}
-                  </Badge>
-                </Link>
-              ))}
-            <button
-              type="button"
-              onClick={() => router.push('/stock/search')}
-              className="ml-auto inline-flex items-center gap-1 rounded-full bg-muted/30 px-3 py-1 text-[11px] font-medium text-muted-foreground ring-1 ring-black/5 transition hover:bg-muted/50 hover:text-foreground dark:ring-white/10"
-            >
-              Explore
-              <span aria-hidden>→</span>
-            </button>
-          </div>
-        </div>
-
-        <Card className="h-fit p-4 lg:sticky lg:top-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] ring-1 ring-black/5 dark:ring-white/10">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <div className="text-sm font-semibold">Buy license</div>
-              <div className="mt-0.5 text-xs text-muted-foreground">Choose an option below</div>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              From <span className="font-medium text-foreground/80">€{priceSingle.toFixed(2)}</span>
-            </div>
-          </div>
-
-          <div className="mt-5 space-y-2">
-            <button
-              type="button"
-              onClick={() => setPurchaseOption('single')}
-              className={`w-full rounded-lg p-3 text-left transition ring-1 ${
-                purchaseOption === 'single'
-                  ? 'bg-primary/10 ring-primary/40'
-                  : 'bg-background ring-black/5 hover:bg-muted/40 dark:ring-white/10'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-medium">€{priceSingle.toFixed(2)} for this image</span>
-                <span className="font-semibold">€{priceSingle.toFixed(2)}</span>
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold">Keywords</h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Explore similar images by clicking a keyword.
+                </p>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">One download · JPG · royalty-free</p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setPurchaseOption('paygo10')}
-              className={`w-full rounded-lg p-3 text-left transition ring-1 ${
-                purchaseOption === 'paygo10'
-                  ? 'bg-primary/10 ring-primary/40'
-                  : 'bg-background ring-black/5 hover:bg-muted/40 dark:ring-white/10'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">Pay &amp; Go 10</span>
-                  <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[11px] font-medium text-foreground/80">
-                    Save {payGo10SavePct}%
-                  </span>
-                </div>
-                <div className="text-right">
-                  <div className="font-semibold">€{payGo10Price.toFixed(2)}</div>
-                  <div className="text-[11px] text-muted-foreground line-through">
-                    €{payGo10Was.toFixed(2)}
-                  </div>
-                </div>
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                10 downloads incl. this one · 1 year to use · free re-downloads
-              </p>
-            </button>
-          </div>
-
-          <Button
-            className="mt-4 w-full gap-2"
-            variant={isInCart || added ? 'secondary' : 'default'}
-            onClick={handleAddToCart}
-          >
-            <ShoppingCart className="h-4 w-4" />
-            {cartCtaLabel('Added to cart')}
-          </Button>
-
-          {!loggedIn ? (
-            <div className="mt-2 rounded-lg border border-border bg-muted/30 p-2 text-xs text-muted-foreground">
-              <span className="font-medium text-foreground/80">Log in</span> to download or checkout.
               <button
                 type="button"
-                onClick={goLogin}
-                className="ml-2 inline-flex items-center gap-1 text-xs font-medium text-foreground hover:underline"
+                onClick={() => router.push('/stock/search')}
+                className="shrink-0 inline-flex items-center gap-1 rounded-full bg-muted/30 px-3 py-1.5 text-xs font-semibold text-muted-foreground ring-1 ring-black/5 transition hover:bg-muted/50 hover:text-foreground dark:ring-white/10"
               >
-                Continue
+                Explore
                 <span aria-hidden>→</span>
               </button>
             </div>
-          ) : null}
 
-          <Link
-            href="/stock/cart"
-            className="mt-2 inline-flex w-full items-center justify-center rounded-lg bg-muted/20 px-4 py-2 text-sm font-medium text-foreground ring-1 ring-black/5 transition hover:bg-muted/30 dark:ring-white/10"
-          >
-            View cart
-          </Link>
+            <div className="flex flex-wrap items-center gap-2">
+              {asset?.category ? (
+                <Link href={`/stock/search?cat=${encodeURIComponent(asset.category.toLowerCase())}`}>
+                  <Badge
+                    variant="secondary"
+                    className="cursor-pointer px-3 py-1 text-xs font-semibold transition hover:bg-muted/60 hover:text-foreground"
+                  >
+                    {asset.category}
+                  </Badge>
+                </Link>
+              ) : null}
 
-          <p className="mt-3 text-xs text-muted-foreground">
-            Demo only · Items are stored locally in your browser.
-          </p>
+              {displayTags
+                .filter((t) => t && t.toLowerCase() !== (asset?.category ?? '').toLowerCase())
+                .slice(0, 14)
+                .map((t) => (
+                  <Link
+                    key={t}
+                    href={`/stock/search?q=${encodeURIComponent(t)}`}
+                    className="inline-flex"
+                  >
+                    <Badge
+                      variant="secondary"
+                      className="cursor-pointer px-3 py-1 text-xs font-semibold transition hover:bg-muted/60 hover:text-foreground"
+                    >
+                      {t}
+                    </Badge>
+                  </Link>
+                ))}
+            </div>
+          </section>
+        </div>
+
+        <Card className="h-fit p-4 lg:sticky lg:top-[calc(var(--cbx-topbar)+var(--cbx-sticky)+44px)] ring-1 ring-black/5 dark:ring-white/10">
+          {loggedIn && isPurchased ? (
+            <>
+              <div className="mb-3">
+                <div className="text-sm font-semibold">You’ve already purchased this image</div>
+                <div className="mt-0.5 text-xs text-muted-foreground">
+                  The image is available in <span className="font-medium text-foreground/80">Files → Purchases</span>.
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Button className="w-full gap-2" onClick={downloadImage} disabled={isDownloading}>
+                  {isDownloading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Downloading…
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4" />
+                      Download JPG
+                    </>
+                  )}
+                </Button>
+
+                <Button
+                  variant="secondary"
+                  className="w-full gap-2"
+                  onClick={showInFiles}
+                  disabled={isDownloading}
+                >
+                  Open in Files
+                  <span aria-hidden>→</span>
+                </Button>
+
+                {downloaded ? (
+                  <div className="text-xs text-foreground/80">Downloaded.</div>
+                ) : downloadError ? (
+                  <div className="text-xs text-destructive">{downloadError}</div>
+                ) : null}
+              </div>
+
+              <p className="mt-3 text-xs text-muted-foreground">Demo · Purchases are stored locally in your browser.</p>
+            </>
+          ) : (
+            <>
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-semibold">Buy license</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">Choose an option below</div>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  From <span className="font-medium text-foreground/80">€{priceSingle.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div className="mt-5 space-y-2">
+                <button
+                  type="button"
+                  onClick={() => setPurchaseOption('single')}
+                  className={`w-full rounded-lg p-3 text-left transition ring-1 ${
+                    purchaseOption === 'single'
+                      ? 'bg-primary/10 ring-primary/40'
+                      : 'bg-background ring-black/5 hover:bg-muted/40 dark:ring-white/10'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">€{priceSingle.toFixed(2)} for this image</span>
+                    <span className="font-semibold">€{priceSingle.toFixed(2)}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">One download · JPG · royalty-free</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPurchaseOption('paygo10')}
+                  className={`w-full rounded-lg p-3 text-left transition ring-1 ${
+                    purchaseOption === 'paygo10'
+                      ? 'bg-primary/10 ring-primary/40'
+                      : 'bg-background ring-black/5 hover:bg-muted/40 dark:ring-white/10'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">Pay &amp; Go 10</span>
+                      <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[11px] font-medium text-foreground/80">
+                        Save {payGo10SavePct}%
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-semibold">€{payGo10Price.toFixed(2)}</div>
+                      <div className="text-[11px] text-muted-foreground line-through">
+                        €{payGo10Was.toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    10 downloads incl. this one · 1 year to use · free re-downloads
+                  </p>
+                </button>
+              </div>
+
+              <Button
+                className="mt-4 w-full gap-2"
+                variant={isInCart || added ? 'secondary' : 'default'}
+                onClick={handleAddToCart}
+              >
+                <ShoppingCart className="h-4 w-4" />
+                {cartCtaLabel('Added to cart')}
+              </Button>
+
+
+              <Link
+                href="/stock/cart"
+                className="mt-2 inline-flex w-full items-center justify-center rounded-lg bg-muted/20 px-4 py-2 text-sm font-medium text-foreground ring-1 ring-black/5 transition hover:bg-muted/30 dark:ring-white/10"
+              >
+                View cart
+              </Link>
+
+              <p className="mt-3 text-xs text-muted-foreground">Demo only · Items are stored locally in your browser.</p>
+            </>
+          )}
         </Card>
       </div>
 

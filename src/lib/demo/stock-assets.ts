@@ -60,6 +60,22 @@ const validateStockAssets = (assets: StockAsset[]) => {
       console.warn(`[stock-assets] Suspicious preview path for ${a.id}: ${a.preview}`);
     }
   }
+
+  // Validate featured ids
+  const featured = Array.from(STOCK_FEATURED_IDS ?? []);
+  const featuredSeen = new Set<string>();
+  for (const fid of featured) {
+    if (featuredSeen.has(fid)) {
+      // eslint-disable-next-line no-console
+      console.warn(`[stock-assets] Duplicate featured id detected: ${fid}`);
+    }
+    featuredSeen.add(fid);
+
+    if (!ids.has(fid)) {
+      // eslint-disable-next-line no-console
+      console.warn(`[stock-assets] Featured id not found in STOCK_ASSETS: ${fid}`);
+    }
+  }
 };
 
 export const STOCK_ASSETS: StockAsset[] = [

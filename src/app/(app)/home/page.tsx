@@ -21,6 +21,7 @@ import {
 
 import NextImage from 'next/image';
 import { ASSETS } from '@/lib/demo/assets';
+import { STOCK_ASSETS } from '@/lib/demo/stock-assets';
 
 const newsItems = [
   {
@@ -67,11 +68,65 @@ const suggestions = [
   },
 ];
 
+
 const quickActions = [
   { label: 'Upload files', href: '/drive', hint: 'Start in Files', icon: UploadCloud },
   { label: 'Find images', href: '/stock', hint: 'Search Stock', icon: Search },
   { label: 'Open purchases', href: '/drive?folder=purchases', hint: 'In Files', icon: Receipt },
 ];
+
+const DRIVE_IMPORTED_ASSETS_KEY = 'CBX_DRIVE_IMPORTED_ASSETS_V1';
+const PURCHASES_LAST_SEEN_KEY = 'CBX_PURCHASES_LAST_SEEN_V1';
+const DRIVE_PURCHASES_IMPORTED_EVENT = 'CBX_PURCHASES_IMPORTED';
+
+function readPurchasesCount(): number {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const raw = window.localStorage.getItem(DRIVE_IMPORTED_ASSETS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as any[]) : [];
+    if (!Array.isArray(parsed) || parsed.length === 0) return 0;
+
+    let count = 0;
+    for (const a of parsed) {
+      const fid = typeof a?.folderId === 'string' && a.folderId.trim().length ? a.folderId : 'purchases';
+      if (fid === 'purchases') count += 1;
+    }
+    return count;
+  } catch {
+    return 0;
+  }
+}
+
+function readPurchasesLastSeen(): number {
+  if (typeof window === 'undefined') return 0;
+  try {
+    const raw = window.localStorage.getItem(PURCHASES_LAST_SEEN_KEY) ?? '0';
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+// Lightweight seeded PRNG and shuffle (mulberry32)
+function mulberry32(seed: number) {
+  return function () {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function shuffleWithSeed<T>(arr: T[], seed: number): T[] {
+  const rng = mulberry32(seed);
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
 export default function HomePage() {
   const router = useRouter();
@@ -84,7 +139,38 @@ export default function HomePage() {
   const [recentViews, setRecentViews] = useState<string[]>([]);
   const [cartCount, setCartCount] = useState<number>(0);
 
+  const [purchasesCount, setPurchasesCount] = useState<number>(0);
+  const [purchasesLastSeen, setPurchasesLastSeen] = useState<number>(0);
+
   const [dailySeed, setDailySeed] = useState<string>('');
+  const [heroSeed] = useState<number>(() => {
+    if (typeof window === 'undefined') return 1;
+    try {
+      const baseKey = 'CBX_HOME_HERO_SEED_V1';
+      const counterKey = 'CBX_HOME_HERO_SEED_COUNTER_V1';
+
+      // Stable base seed per tab session
+      const existingBase = window.sessionStorage.getItem(baseKey);
+      const base = (() => {
+        if (existingBase) {
+          const n = Number(existingBase);
+          if (Number.isFinite(n) && n > 0) return n;
+        }
+        const next = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
+        window.sessionStorage.setItem(baseKey, String(next));
+        return next;
+      })();
+
+      // Increment per mount/visit to Home
+      const prevC = Number(window.sessionStorage.getItem(counterKey) ?? '0');
+      const c = Number.isFinite(prevC) ? prevC + 1 : 1;
+      window.sessionStorage.setItem(counterKey, String(c));
+
+      return (base ^ (c * 2654435761)) >>> 0;
+    } catch {
+      return (Date.now() >>> 0) || 1;
+    }
+  });
   const [showAllNews, setShowAllNews] = useState(false);
 
   const todayLabel = useMemo(() => {
@@ -179,18 +265,63 @@ export default function HomePage() {
     } else {
       setDailySeed(prevDaily ?? dayKey);
     }
+
+    // Purchases unread (shared with Files/Purchases)
+    setPurchasesCount(readPurchasesCount());
+    setPurchasesLastSeen(readPurchasesLastSeen());
   }, [LS_KEYS, clampList, lsGet, lsSet]);
 
-  // Demo images from the existing demo asset list
-  const heroSrcs = useMemo(() => {
+  // Hero previews should come from Stock assets (same source as the Stock section)
+  const heroItems = useMemo(() => {
+    const pool = (STOCK_ASSETS as any[]) ?? [];
+    const shuffled = shuffleWithSeed(pool, heroSeed);
+
+    const seen = new Set<string>();
+    const items = shuffled
+      .map((a) => {
+        const id = String(a?.id ?? a?.assetId ?? a?.colourboxId ?? a?.cbxId ?? '').trim();
+        if (!id) return null;
+        if (seen.has(id)) return null;
+        seen.add(id);
+
+        const rawSrc = a?.preview ?? a?.src ?? a?.image ?? a?.url ?? '';
+        const src = rawSrc ? String(rawSrc) : `/demo/stock/${id}.jpg`;
+
+        return { id, src };
+      })
+      .filter(Boolean)
+      .slice(0, 12) as { id: string; src: string }[];
+
+    // Safety fallback (should rarely happen)
+    if (items.length) return items;
+    const fallbackIds = ['COLOURBOX69824938', 'COLOURBOX34454367'];
+    return fallbackIds.map((id) => ({ id, src: `/demo/stock/${id}.jpg` }));
+  }, [heroSeed]);
+
+  const heroSrcs = useMemo(() => heroItems.map((x) => x.src), [heroItems]);
+
+  // Non-hero thumbnails should stay generic (do not force Stock previews)
+  const thumbSrcs = useMemo(() => {
     return ASSETS.slice(0, 12)
       .map((a) => (a as any).preview ?? (a as any).src ?? (a as any).url)
       .filter(Boolean) as string[];
   }, []);
-  const driveMarquee = useMemo(() => heroSrcs.slice(0, 10), [heroSrcs]);
+
+  const driveMarquee = useMemo(() => thumbSrcs.slice(0, 10), [thumbSrcs]);
+  const openStockAsset = useCallback(
+    (id: string) => {
+      const v = (id ?? '').trim();
+      if (!v) {
+        router.push('/stock');
+        return;
+      }
+      router.push(`/stock/assets/${encodeURIComponent(v)}`);
+    },
+    [router]
+  );
 
   // Thumbnail helpers
-  const thumbPool = useMemo(() => heroSrcs.slice(0, 10), [heroSrcs]);
+  const thumbPool = useMemo(() => thumbSrcs.slice(0, 10), [thumbSrcs]);
 
   const getThumb = useCallback(
     (seed: string, offset = 0) => {
@@ -226,12 +357,19 @@ export default function HomePage() {
 
   const isReturning = visitCount >= 2;
 
+  const newPurchases = Math.max(0, purchasesCount - purchasesLastSeen);
+  const hasNewPurchases = newPurchases > 0;
+  const newPurchasesLabel = newPurchases > 9 ? '9+' : String(newPurchases);
+
   const greetingLine = useMemo(() => {
     if (!isReturning) return 'Let’s set up your flow — Files for uploads, Stock for visuals.';
+    if (hasNewPurchases) {
+      return `You’ve got ${newPurchasesLabel} new purchase${newPurchases === 1 ? '' : 's'} to review in Files.`;
+    }
     if (cartCount > 0) return `You’ve got ${cartCount} item${cartCount === 1 ? '' : 's'} waiting in your cart.`;
     if (recentSearches.length > 0) return `Pick up where you left off — your recent searches are ready.`;
     return 'Welcome back — here’s your quick way into today’s work.';
-  }, [cartCount, isReturning, recentSearches.length]);
+  }, [cartCount, hasNewPurchases, isReturning, newPurchases, newPurchasesLabel, recentSearches.length]);
 
   const dailyNudge = useMemo(() => {
     if (!dailySeed) return null;
@@ -245,6 +383,17 @@ export default function HomePage() {
   }, [dailySeed]);
 
   const focus = useMemo(() => {
+    if (hasNewPurchases) {
+      return {
+        icon: Receipt,
+        title: "Today’s focus: Review your new purchases",
+        description: `${newPurchasesLabel} new purchase${newPurchases === 1 ? '' : 's'} waiting — they’re already in Files.`,
+        reason: 'Because new purchases arrived',
+        steps: ['Open Purchases', 'Download or move to folder'],
+        primary: { label: 'Open Purchases', href: '/drive?folder=purchases' },
+        secondary: { label: 'Open Files', href: '/drive' },
+      };
+    }
     if (cartCount > 0) {
       return {
         icon: ShoppingCart,
@@ -279,7 +428,7 @@ export default function HomePage() {
       primary: { label: 'Open Files', href: '/drive' },
       secondary: { label: 'Open Stock', href: '/stock' },
     };
-  }, [cartCount, isReturning, recentSearches]);
+  }, [cartCount, hasNewPurchases, isReturning, newPurchases, newPurchasesLabel, recentSearches]);
 
   const pushRecentSearch = useCallback(
     (q: string) => {
@@ -341,6 +490,29 @@ export default function HomePage() {
     simulateDemoActivity();
   }, [simulateDemoActivity]);
 
+  useEffect(() => {
+    const refresh = () => {
+      setPurchasesCount(readPurchasesCount());
+      setPurchasesLastSeen(readPurchasesLastSeen());
+    };
+
+    const onImported = () => refresh();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === DRIVE_IMPORTED_ASSETS_KEY || e.key === PURCHASES_LAST_SEEN_KEY) {
+        refresh();
+      }
+    };
+
+    window.addEventListener(DRIVE_PURCHASES_IMPORTED_EVENT, onImported as EventListener);
+    window.addEventListener('storage', onStorage);
+
+    return () => {
+      window.removeEventListener(DRIVE_PURCHASES_IMPORTED_EVENT, onImported as EventListener);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+
   return (
     <AuthGate requireAuth redirectTo="/login">
       <div className="w-full space-y-6 overflow-x-clip">
@@ -392,7 +564,19 @@ export default function HomePage() {
                     onClick={() => router.push('/drive?folder=purchases')}
                     className="group inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-background/60 px-5 text-sm font-medium ring-1 ring-border/30 transition hover:bg-background/80 sm:w-auto"
                   >
-                    <Receipt className="h-4 w-4" /> Open Purchases
+                    <span className="relative inline-flex items-center">
+                      <Receipt className="h-4 w-4" />
+                      {hasNewPurchases ? (
+                        <span
+                          className="absolute -right-2 -top-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold leading-none text-white shadow"
+                          aria-label={`${newPurchasesLabel} new purchases`}
+                          title={`${newPurchasesLabel} new purchases`}
+                        >
+                          {newPurchasesLabel}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span>Open Purchases</span>
                     <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                   </button>
 
@@ -423,18 +607,24 @@ export default function HomePage() {
                     <div className="overflow-x-auto px-4">
                       <div className="flex snap-x snap-mandatory gap-2 pr-4">
                         {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
-                          <div key={i} className="relative h-20 w-32 shrink-0 snap-start overflow-hidden rounded-xl bg-muted">
-                            {heroSrcs[i] ? (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => openStockAsset(heroItems[i]?.id ?? '')}
+                            className="relative h-20 w-32 shrink-0 snap-start overflow-hidden rounded-xl bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
+                          >
+                            {heroItems[i]?.src ? (
                               <NextImage
-                                src={heroSrcs[i]}
-                                alt="Preview"
+                                src={heroItems[i].src}
+                                alt="Stock preview"
                                 fill
                                 sizes="176px"
                                 className="object-cover"
                                 priority={i === 0}
+                                unoptimized={heroItems[i].src.startsWith('/demo/')}
                               />
                             ) : null}
-                          </div>
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -448,25 +638,28 @@ export default function HomePage() {
 
                     <div className="relative grid grid-cols-3 gap-2">
                       {[0, 1, 2, 3, 4, 5].map((i) => (
-                        <div
+                        <button
                           key={i}
+                          type="button"
+                          onClick={() => openStockAsset(heroItems[i]?.id ?? '')}
                           className={
                             i === 0
-                              ? 'relative col-span-2 row-span-2 h-52 overflow-hidden rounded-xl bg-muted'
-                              : 'relative h-24 overflow-hidden rounded-xl bg-muted'
+                              ? 'relative col-span-2 row-span-2 h-52 overflow-hidden rounded-xl bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20'
+                              : 'relative h-24 overflow-hidden rounded-xl bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20'
                           }
                         >
-                          {heroSrcs[i] ? (
+                          {heroItems[i]?.src ? (
                             <NextImage
-                              src={heroSrcs[i]}
-                              alt="Preview"
+                              src={heroItems[i].src}
+                              alt="Stock preview"
                               fill
                               sizes="(min-width: 1024px) 34vw, (min-width: 768px) 45vw, 100vw"
                               className="object-cover"
                               priority={i === 0}
+                              unoptimized={heroItems[i].src.startsWith('/demo/')}
                             />
                           ) : null}
-                        </div>
+                        </button>
                       ))}
                     </div>
 
