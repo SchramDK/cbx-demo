@@ -8,6 +8,7 @@ import ImageCard from '@/components/stock/ImageCard';
 import { useCart, useCartUI } from '@/lib/cart/cart';
 
 import { STOCK_ASSETS as ASSETS, STOCK_CATEGORIES } from '@/lib/demo/stock-assets';
+import { semanticSearch } from '@/lib/search/semantic';
 
 // ---- Types ----
 type Asset = {
@@ -284,7 +285,8 @@ const suggestDidYouMean = (
   if (!changed) return null;
 
   const out = suggested.join(' ').trim();
-  return out && out !== normalize(query) ? out : null;
+  const baseJoined = tokenize(query).join(' ');
+  return out && out !== baseJoined ? out : null;
 };
 
 function StockSearchInner() {
@@ -292,6 +294,34 @@ function StockSearchInner() {
   const rawQ = (searchParams.get('q') ?? '').trim();
   const q = normalize(rawQ);
   const hasQuery = q.length > 0;
+  const [semanticScores, setSemanticScores] = useState<Map<string, number>>(() => new Map());
+  useEffect(() => {
+    let cancelled = false;
+
+    // Only run semantic search when user has an actual query
+    if (!rawQ.trim()) {
+      setSemanticScores(new Map());
+      return;
+    }
+
+    (async () => {
+      try {
+        const res = await semanticSearch(rawQ, { topK: 200, minScore: 0.15 });
+        if (cancelled) return;
+
+        const map = new Map<string, number>();
+        for (const r of res) map.set(r.id, r.score);
+        setSemanticScores(map);
+      } catch {
+        // If index is missing (not generated yet), keep keyword search working
+        if (!cancelled) setSemanticScores(new Map());
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rawQ]);
 
   const cart = useCart() as any;
   const cartUI = useCartUI() as any;
@@ -416,7 +446,7 @@ function StockSearchInner() {
       };
     });
 
-    const catFilter = cat && cat !== 'all' ? cat : '';
+    const catFilter = cat && cat !== 'all' ? normalize(cat) : '';
 
     const scoreAsset = (entry: {
       asset: Asset;
@@ -480,12 +510,17 @@ function StockSearchInner() {
       // slight boost for featured-looking categories (keeps results feeling curated)
       if (asset.category === 'nature') s += 0.1;
 
+      // Hybrid: add semantic similarity score (AI)
+      // semanticScores are cosine similarities (~0..1). Scale to match keyword score range.
+      const sem = semanticScores.get(asset.id) ?? 0;
+      s += sem * 12;
+
       return s;
     };
 
     const filtered = indexed.filter((entry) => {
       const asset = entry.asset;
-      if (catFilter && entry.categoryNorm.toLowerCase() !== catFilter) return false;
+      if (catFilter && entry.categoryNorm !== catFilter) return false;
       if (!terms.length) return true;
 
       const tokens = entry.allTokens;
@@ -515,13 +550,25 @@ function StockSearchInner() {
       return false;
     });
 
+    // AI fallback: if keyword filtering yields 0 results but semantic scores exist,
+    // show the top semantic matches (still respecting category filter).
+    if (terms.length && filtered.length === 0 && semanticScores.size > 0) {
+      return indexed
+        .filter((e) => (catFilter ? e.categoryNorm === catFilter : true))
+        .map((e) => ({ a: e.asset, s: semanticScores.get(e.asset.id) ?? 0 }))
+        .filter((x) => x.s > 0)
+        .sort((x, y) => y.s - x.s)
+        .slice(0, 200)
+        .map((x) => x.a);
+    }
+
     if (!terms.length) return filtered.map((e) => e.asset);
 
     return filtered
       .map((e) => ({ a: e.asset, s: scoreAsset(e) }))
       .sort((x, y) => (y.s === x.s ? x.a.title.localeCompare(y.a.title) : y.s - x.s))
       .map((x) => x.a);
-  }, [q, rawQ, cat]);
+  }, [q, rawQ, cat, semanticScores]);
 
   const didYouMean = useMemo(() => {
     if (!rawQ) return null;

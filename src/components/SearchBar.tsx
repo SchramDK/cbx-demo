@@ -245,15 +245,59 @@ export function SearchBar({
   }, [onScopeChange, showRecents, loadRecents, effectiveRecentsKey]);
 
 
+  const clearContext = React.useCallback(() => {
+    // Preferred: parent-managed clear
+    if (onClearContext) {
+      onClearContext();
+      return;
+    }
+
+    // Fallback: clear folder context by removing folder-related params in Drive URLs
+    if (scope !== "drive") return;
+    if (typeof window === "undefined") return;
+
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+
+    // Common folder context param names (keep this list broad but safe)
+    const keysToDelete = [
+      "folder",
+      "folderId",
+      "folder_id",
+      "path",
+      "dir",
+      "in",
+      "scope",
+    ];
+
+    for (const k of keysToDelete) params.delete(k);
+
+    const qs = params.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname);
+  }, [onClearContext, scope, searchParams, router, pathname]);
+
   const setScope = React.useCallback(
     (next: string) => {
       if (!onScopeChange) return;
+
+      // If we are leaving Drive, clear any folder context so it doesn't stick in Stock.
+      if (scope === "drive" && next !== "drive") {
+        clearContext();
+      }
+
       onScopeChange(next);
       // Keep focus so the user can keep typing
       window.setTimeout(() => inputRef.current?.focus(), 0);
     },
-    [onScopeChange]
+    [onScopeChange, scope, clearContext]
   );
+
+  const showContext = React.useMemo(() => {
+    const label = (contextLabel ?? "").trim();
+    if (!label) return false;
+    // If scope selector is enabled, context is only relevant for Drive.
+    if (onScopeChange) return scope === "drive";
+    return true;
+  }, [contextLabel, onScopeChange, scope]);
 
   const scopeLabel = React.useMemo(() => {
     const found = scopes.find((s) => s.value === scope);
@@ -261,15 +305,31 @@ export function SearchBar({
   }, [scopes, scope]);
 
   const effectivePlaceholder = React.useMemo(() => {
-    // Only adjust when using the default placeholder and the selector is enabled
-    if (!onScopeChange) return placeholder;
+    // Respect custom placeholders
     if (placeholder !== "Search images, keywords, tags…") return placeholder;
-    return scope === "drive" ? "Search files, folders, people…" : "Search images, keywords, tags…";
-  }, [onScopeChange, placeholder, scope]);
+
+    // When scope selector is enabled, adjust per-scope
+    if (onScopeChange) {
+      if (scope === "drive") {
+        if (showContext && contextLabel) return `Search in ${contextLabel}…`;
+        return "Search files, folders, people…";
+      }
+      return "Search images, keywords, tags…";
+    }
+
+    // Without selector, keep existing placeholder
+    return placeholder;
+  }, [placeholder, onScopeChange, scope, showContext, contextLabel]);
 
   const effectiveAriaLabel = React.useMemo(() => {
-    return onScopeChange ? `Search in ${scopeLabel}` : "Search assets";
-  }, [onScopeChange, scopeLabel]);
+    if (onScopeChange) {
+      if (scope === "drive" && showContext && contextLabel) {
+        return `Search in ${contextLabel}`;
+      }
+      return `Search in ${scopeLabel}`;
+    }
+    return "Search assets";
+  }, [onScopeChange, scopeLabel, scope, showContext, contextLabel]);
 
   const scopePadLeft = React.useMemo(() => {
     if (!onScopeChange) return undefined;
@@ -283,14 +343,14 @@ export function SearchBar({
 
   const contextPadLeft = React.useMemo(() => {
     const label = (contextLabel ?? "").trim();
-    if (!label) return 0;
+    if (!showContext || !label) return 0;
 
     // Rough estimate: chip padding + "In: " + text width + close button
     const base = 62; // padding + close + "In: "
     const perChar = 6; // conservative
     const est = base + label.length * perChar;
     return Math.min(Math.max(est, 120), 240);
-  }, [contextLabel]);
+  }, [contextLabel, showContext]);
 
   // Avoid mismatch: render a stable default, then show shortcut hint only after mount
   const [primaryShortcut, setPrimaryShortcut] = React.useState("Ctrl K");
@@ -592,6 +652,14 @@ export function SearchBar({
                   }, 90);
                 }}
                 onKeyDown={(e) => {
+                  if (e.key === "Backspace") {
+                    // If user is in Drive and the query is empty, backspace clears the folder context
+                    if (scope === "drive" && !value && contextLabel) {
+                      e.preventDefault();
+                      clearContext();
+                      return;
+                    }
+                  }
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     const q = value.trim();
                     const canNavigate =
@@ -707,7 +775,7 @@ export function SearchBar({
                 })}
               </div>
 
-              {contextLabel ? (
+              {showContext && contextLabel ? (
                 <div
                   className="inline-flex h-7 max-w-[240px] items-center gap-1 rounded-full border border-border bg-background/80 px-2 text-[11px] text-muted-foreground shadow-sm"
                   title={contextLabel}
@@ -715,18 +783,24 @@ export function SearchBar({
                   <span className="truncate" title={contextLabel}>
                     In: <span className="text-foreground">{contextLabel}</span>
                   </span>
-                  {onClearContext ? (
-                    <button
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={onClearContext}
-                      className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
-                      aria-label={`Clear folder filter (${contextLabel})`}
-                      title={`Clear folder filter (${contextLabel})`}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      clearContext();
+                      window.setTimeout(() => inputRef.current?.focus(), 0);
+                    }}
+                    className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+                    aria-label={`Clear folder filter (${contextLabel})`}
+                    title={`Clear folder filter (${contextLabel})`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               ) : null}
 
@@ -741,7 +815,7 @@ export function SearchBar({
               <div className="pointer-events-none text-muted-foreground">
                 <Search className="h-4 w-4" />
               </div>
-              {contextLabel ? (
+              {showContext && contextLabel ? (
                 <div
                   className="inline-flex h-7 max-w-[240px] items-center gap-1 rounded-full border border-border bg-background/80 px-2 text-[11px] text-muted-foreground shadow-sm"
                   title={contextLabel}
@@ -749,18 +823,24 @@ export function SearchBar({
                   <span className="truncate" title={contextLabel}>
                     In: <span className="text-foreground">{contextLabel}</span>
                   </span>
-                  {onClearContext ? (
-                    <button
-                      type="button"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={onClearContext}
-                      className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
-                      aria-label={`Clear folder filter (${contextLabel})`}
-                      title={`Clear folder filter (${contextLabel})`}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  ) : null}
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      clearContext();
+                      window.setTimeout(() => inputRef.current?.focus(), 0);
+                    }}
+                    className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+                    aria-label={`Clear folder filter (${contextLabel})`}
+                    title={`Clear folder filter (${contextLabel})`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               ) : null}
             </div>
