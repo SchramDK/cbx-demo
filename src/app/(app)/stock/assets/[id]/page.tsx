@@ -29,6 +29,19 @@ type TabKey = 'info' | 'keywords' | 'similar' | 'shoot' | 'related';
 
 const getAssetImage = (asset?: Asset) => asset?.preview ?? '';
 
+const buildSemanticQuery = (asset?: Asset) => {
+  const title = (asset?.title ?? '').trim();
+  const desc = (asset?.description ?? '').trim();
+
+  const tags = (asset?.tags ?? []).filter(isNonEmptyString).slice(0, 10).join(' ');
+  const keywords = (asset?.keywords ?? []).filter(isNonEmptyString).slice(0, 10).join(' ');
+
+  // Semantic query should focus on vibe/subject, not lock to category.
+  // Weight title higher by repeating it.
+  const parts = [title, title, desc, tags, keywords].filter(Boolean);
+  return parts.join(' · ').slice(0, 420);
+};
+
 const DRIVE_IMPORTED_ASSETS_KEY = 'CBX_DRIVE_IMPORTED_ASSETS_V1';
 const DRIVE_PURCHASES_IMPORTED_EVENT = 'CBX_PURCHASES_IMPORTED';
 
@@ -268,6 +281,68 @@ const signature = (a?: Asset) => {
   return `${cat}::${t}`;
 };
 
+// --- Lightweight local semantic matcher (no external AI deps) ---
+const buildDocText = (a?: Asset) => {
+  if (!a) return '';
+  const parts = [
+    a.title,
+    a.description ?? '',
+    a.category,
+    ...(a.tags ?? []),
+    ...(a.keywords ?? []),
+  ]
+    .filter(isNonEmptyString)
+    .map((s) => s.toLowerCase().trim());
+
+  return parts.join(' · ').replace(/\s+/g, ' ').trim();
+};
+
+const charNgrams = (s: string, n = 3) => {
+  const clean = s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s\-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const padded = ` ${clean} `;
+  const grams: string[] = [];
+  if (padded.length < n) return grams;
+  for (let i = 0; i <= padded.length - n; i++) grams.push(padded.slice(i, i + n));
+  return grams;
+};
+
+const cosine = (a: Map<string, number>, b: Map<string, number>) => {
+  if (!a.size || !b.size) return 0;
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+
+  for (const v of a.values()) na += v * v;
+  for (const v of b.values()) nb += v * v;
+
+  const small = a.size <= b.size ? a : b;
+  const big = a.size <= b.size ? b : a;
+  for (const [k, v] of small) {
+    const w = big.get(k);
+    if (w) dot += v * w;
+  }
+
+  const denom = Math.sqrt(na) * Math.sqrt(nb);
+  return denom ? dot / denom : 0;
+};
+
+const toTfidf = (grams: string[], idf: Map<string, number>) => {
+  const tf = new Map<string, number>();
+  for (const g of grams) tf.set(g, (tf.get(g) ?? 0) + 1);
+
+  const vec = new Map<string, number>();
+  for (const [g, c] of tf) {
+    const w = (1 + Math.log(c)) * (idf.get(g) ?? 0);
+    if (w > 0) vec.set(g, w);
+  }
+  return vec;
+};
+
 
 const overlapHint = (
   base: Set<string>,
@@ -306,6 +381,57 @@ export default function StockAssetPage() {
 
 
   const baseMeaningfulSet = useMemo(() => new Set(pickMeaningful(asset, 24)), [asset]);
+
+  const semanticQuery = useMemo(() => buildSemanticQuery(asset), [asset]);
+
+  const semanticModel = useMemo(() => {
+    const docs = assets.map((a) => ({ id: a.id, text: buildDocText(a) }));
+
+    // document frequency (df) for 3-grams
+    const df = new Map<string, number>();
+    const docGrams = new Map<string, string[]>();
+
+    for (const d of docs) {
+      const gramsArr = charNgrams(d.text, 3);
+      docGrams.set(d.id, gramsArr);
+
+      const gramsSet = new Set(gramsArr);
+      for (const g of gramsSet) df.set(g, (df.get(g) ?? 0) + 1);
+    }
+
+    const N = Math.max(1, docs.length);
+    const idf = new Map<string, number>();
+    for (const [g, c] of df) {
+      // smooth idf
+      idf.set(g, Math.log(1 + N / (1 + c)));
+    }
+
+    const docVecs = new Map<string, Map<string, number>>();
+    for (const d of docs) {
+      const gramsArr = docGrams.get(d.id) ?? [];
+      docVecs.set(d.id, toTfidf(gramsArr, idf));
+    }
+
+    return { idf, docVecs };
+  }, [assets]);
+
+  const similarSemanticScores = useMemo(() => {
+    const q = semanticQuery.trim();
+    if (!q) return new Map<string, number>();
+
+    const qVec = toTfidf(charNgrams(q, 3), semanticModel.idf);
+
+    const scores = new Map<string, number>();
+    const currentId = asset?.id ?? id;
+
+    for (const [docId, dVec] of semanticModel.docVecs) {
+      if (docId === currentId) continue;
+      const s = cosine(qVec, dVec);
+      if (s > 0) scores.set(docId, s);
+    }
+
+    return scores;
+  }, [asset, id, semanticQuery, semanticModel]);
 
   const relatedPicks = useMemo(() => {
     if (!assets.length) return [] as Asset[];
@@ -409,7 +535,11 @@ export default function StockAssetPage() {
 
   const similarPicks = useMemo(() => {
     if (!assets.length) return [] as Asset[];
+
     const currentId = asset?.id ?? id;
+
+    // Semantic-first pool
+    const hasSemantic = similarSemanticScores.size > 0;
 
     const base = tokenSet(asset);
     const baseTags = baseMeaningfulSet;
@@ -418,25 +548,32 @@ export default function StockAssetPage() {
       .filter((a) => a.id !== currentId)
       .map((a) => {
         const t = tokenSet(a);
-        const sim = jaccard(base, t);
+        const jac = jaccard(base, t);
 
-        // Stronger overlap count on “meaningful” tokens (tags/keywords), category less important.
         const aTags = pickMeaningful(a, 16);
         let tagHits = 0;
         for (const tok of aTags) if (baseTags.has(tok)) tagHits += 1;
 
         const sameCat = asset?.category && a.category && a.category === asset.category;
-
-        // Penalize category-only matches. (Stricter: no meaningful overlap)
         const categoryOnly = sameCat && tagHits === 0;
-
-        // Slight preference for assets with previews
         const hasPreview = Boolean(getAssetImage(a));
 
+        const sem = hasSemantic ? (similarSemanticScores.get(a.id) ?? 0) : 0;
+
         let score = 0;
-        score += sim * 10; // semantic similarity
-        score += Math.min(tagHits, 6) * 2.2; // strong tag/keyword overlap
-        if (sameCat) score += 2.5;
+
+        // When semantic is available, prefer it strongly. Otherwise fall back to heuristic.
+        if (hasSemantic) {
+          score += sem * 10;
+          score += jac * 2;
+          score += Math.min(tagHits, 6) * 0.8;
+          if (sameCat) score += 1.0;
+        } else {
+          score += jac * 10;
+          score += Math.min(tagHits, 6) * 2.2;
+          if (sameCat) score += 2.5;
+        }
+
         if (hasPreview) score += 0.5;
         if (categoryOnly) score -= 3.5;
 
@@ -445,47 +582,93 @@ export default function StockAssetPage() {
           score,
           sig: signature(a),
           cat: (a.category ?? '').trim(),
+          sem,
         };
       })
       .sort((x, y) => y.score - x.score);
 
     // First pass: take best, but avoid near-duplicates by signature
-    const first: typeof scored = [];
+    const pool: typeof scored = [];
     const seenSig = new Set<string>();
     for (const item of scored) {
-      if (first.length >= 18) break; // gather a pool
+      if (pool.length >= 22) break;
       if (seenSig.has(item.sig)) continue;
+      // If semantic is available, drop very low semantic matches early
+      if (hasSemantic && item.sem < 0.22) continue;
       seenSig.add(item.sig);
-      first.push(item);
+      pool.push(item);
     }
 
-    // Second pass: diversify by category after top 4
-    const result: Asset[] = [];
-    const seenCats = new Set<string>();
-    for (const item of first) {
-      if (result.length >= 12) break;
-      const cat = item.cat;
+    // MMR-style pick: keep relevance but penalize near-duplicates.
+    // Higher lambda => more relevance, lower => more diversity.
+    const LAMBDA = 0.78;
 
-      if (result.length >= 4 && cat && seenCats.has(cat)) {
-        // after the first few, encourage diversity
-        continue;
+    // Cache token sets for fast similarity checks
+    const tokenCache = new Map<string, Set<string>>();
+    const getTokens = (a: Asset) => {
+      const cached = tokenCache.get(a.id);
+      if (cached) return cached;
+      const ts = tokenSet(a);
+      tokenCache.set(a.id, ts);
+      return ts;
+    };
+
+    const picked: Asset[] = [];
+    const pickedCats = new Set<string>();
+
+    // Seed with the best item
+    if (pool.length) {
+      const first = pool[0];
+      picked.push(first.a);
+      if (first.cat) pickedCats.add(first.cat);
+    }
+
+    while (picked.length < 12) {
+      let bestIdx = -1;
+      let bestScore = -Infinity;
+
+      for (let i = 0; i < pool.length; i++) {
+        const cand = pool[i];
+        const a = cand.a;
+        if (picked.some((p) => p.id === a.id)) continue;
+
+        // After a few picks, encourage category diversity
+        if (picked.length >= 4 && cand.cat && pickedCats.has(cand.cat)) continue;
+
+        // Diversity penalty: max similarity to any already picked
+        const aTok = getTokens(a);
+        let maxSim = 0;
+        for (const p of picked) {
+          const sim = jaccard(aTok, getTokens(p));
+          if (sim > maxSim) maxSim = sim;
+        }
+
+        // MMR score
+        const mmr = LAMBDA * cand.score - (1 - LAMBDA) * (maxSim * 10);
+
+        if (mmr > bestScore) {
+          bestScore = mmr;
+          bestIdx = i;
+        }
       }
 
-      if (cat) seenCats.add(cat);
-      result.push(item.a);
+      if (bestIdx === -1) break;
+      const chosen = pool[bestIdx];
+      picked.push(chosen.a);
+      if (chosen.cat) pickedCats.add(chosen.cat);
     }
 
-    // Fill remainder if diversity filtered too much
-    if (result.length < 12) {
-      for (const item of first) {
-        if (result.length >= 12) break;
-        if (result.some((r) => r.id === item.a.id)) continue;
-        result.push(item.a);
+    // If we got stuck due to category diversity, relax and fill remaining by relevance.
+    if (picked.length < 12) {
+      for (const cand of pool) {
+        if (picked.length >= 12) break;
+        if (picked.some((p) => p.id === cand.a.id)) continue;
+        picked.push(cand.a);
       }
     }
 
-    return result;
-  }, [assets, asset, id, baseMeaningfulSet]);
+    return picked;
+  }, [assets, asset, id, baseMeaningfulSet, similarSemanticScores]);
 
   const fallbackImage = useMemo(() => {
     const firstValid = assets.find((a) => Boolean(getAssetImage(a)));
@@ -1341,22 +1524,39 @@ export default function StockAssetPage() {
         </div>
 
         <div className="-mx-4 flex gap-4 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-          {similarPicks.slice(0, 12).map((a) => (
-            <div key={`similar-${a.id}`} className="w-56 shrink-0">
-              <ImageCard
-                asset={{
-                  id: a.id,
-                  title: a.title,
-                  preview: getAssetImage(a) || fallbackImage,
-                  category: a.category,
-                }}
-                href={`/stock/assets/${a.id}`}
-                aspect="photo"
-                inCart={cartIds.has(a.id)}
-                onAddToCartAction={() => addQuick(a)}
-              />
-            </div>
-          ))}
+          {similarPicks.slice(0, 12).map((a) => {
+            const hint = overlapHint(baseMeaningfulSet, a, { limit: 3, fallback: 'Similar vibe' });
+            const sem = similarSemanticScores.get(a.id) ?? 0;
+            const strength = sem >= 0.42 ? 'Very similar' : sem >= 0.30 ? 'Similar' : 'Related';
+            return (
+              <div key={`similar-${a.id}`} className="w-56 shrink-0">
+                <div className="relative">
+                  <ImageCard
+                    asset={{
+                      id: a.id,
+                      title: a.title,
+                      preview: getAssetImage(a) || fallbackImage,
+                      category: a.category,
+                    }}
+                    href={`/stock/assets/${a.id}`}
+                    aspect="photo"
+                    inCart={cartIds.has(a.id)}
+                    onAddToCartAction={() => addQuick(a)}
+                  />
+
+                  {sem > 0 ? (
+                    <div className="pointer-events-none absolute left-2 top-2 rounded-full bg-background/80 px-2 py-0.5 text-[10px] font-semibold text-foreground/80 ring-1 ring-black/5 backdrop-blur dark:ring-white/10">
+                      {strength}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="mt-1 line-clamp-1 text-[11px] text-muted-foreground">
+                  Match: <span className="text-foreground/70">{hint}</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </section>
 
