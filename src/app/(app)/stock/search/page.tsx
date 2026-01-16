@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 
@@ -95,6 +95,7 @@ const RAW_SYNONYMS: Record<string, string[]> = {
 };
 
 const POPULAR_SEARCHES = ['aurora', 'københavn', 'cyklist', 'vindmølle', 'svane', 'kongeørn'];
+const MAX_SEMANTIC_CACHE = 40;
 
 const normalize = (input: string) => {
   return (input ?? '')
@@ -196,14 +197,19 @@ const fuzzyAllows = (term: string) => {
   return 2;
 };
 
-const tokenMatch = (term: string, tokens: string[]) => {
+const tokenMatch = (term: string, tokens: string[], opts?: { allowFuzzy?: boolean }) => {
   // exact / substring token match
   for (const t of tokens) {
     if (t === term) return true;
-    if (t.includes(term) || term.includes(t)) return true;
+
+    // Allow prefix/contains in token direction only (prevents tiny query terms matching everything)
+    if (term.length >= 4 && t.includes(term)) return true;
+    if (term.length >= 4 && t.startsWith(term)) return true;
   }
 
-  // fuzzy fallback
+  // fuzzy fallback (optional)
+  if (opts?.allowFuzzy === false) return false;
+
   const maxEdits = fuzzyAllows(term);
   if (maxEdits === 0) return false;
 
@@ -295,33 +301,105 @@ function StockSearchInner() {
   const q = normalize(rawQ);
   const hasQuery = q.length > 0;
   const [semanticScores, setSemanticScores] = useState<Map<string, number>>(() => new Map());
-  useEffect(() => {
-    let cancelled = false;
+  const semanticSeq = useRef(0);
+  const semanticCache = useRef<Map<string, Map<string, number>>>(new Map());
+  const semanticPrewarmDone = useRef(false);
+  const setSemanticCache = useCallback(
+    (cacheKey: string, map: Map<string, number>) => {
+      // LRU set: delete first so Map insertion order stays correct
+      semanticCache.current.delete(cacheKey);
+      semanticCache.current.set(cacheKey, map);
 
-    // Only run semantic search when user has an actual query
-    if (!rawQ.trim()) {
+      // Evict oldest entries
+      while (semanticCache.current.size > MAX_SEMANTIC_CACHE) {
+        const oldestKey = semanticCache.current.keys().next().value as string | undefined;
+        if (!oldestKey) break;
+        semanticCache.current.delete(oldestKey);
+      }
+    },
+    []
+  );
+  useEffect(() => {
+    const qText = rawQ.trim();
+
+    // Invalidate any in-flight request
+    semanticSeq.current += 1;
+    const seq = semanticSeq.current;
+
+    // Only run semantic search when user has an actual query (>= 2 chars)
+    if (qText.length < 2) {
       setSemanticScores(new Map());
       return;
     }
 
-    (async () => {
-      try {
-        const res = await semanticSearch(rawQ, { topK: 200, minScore: 0.15 });
-        if (cancelled) return;
+    const cacheKey = normalize(qText);
+    const cached = semanticCache.current.get(cacheKey);
+    if (cached) {
+      // LRU touch: re-insert to refresh recency
+      semanticCache.current.delete(cacheKey);
+      semanticCache.current.set(cacheKey, cached);
 
-        const map = new Map<string, number>();
-        for (const r of res) map.set(r.id, r.score);
-        setSemanticScores(map);
-      } catch {
-        // If index is missing (not generated yet), keep keyword search working
-        if (!cancelled) setSemanticScores(new Map());
-      }
-    })();
+      setSemanticScores(cached);
+      return;
+    }
+
+    const t = window.setTimeout(() => {
+      (async () => {
+        try {
+          const res = await semanticSearch(qText, { topK: 160, minScore: 0.25 });
+
+          // Ignore stale responses
+          if (semanticSeq.current !== seq) return;
+
+          const map = new Map<string, number>();
+          for (const r of res) map.set(r.id, r.score);
+
+          setSemanticCache(cacheKey, map);
+          setSemanticScores(map);
+        } catch {
+          // If index is missing (not generated yet), keep keyword search working
+          if (semanticSeq.current !== seq) return;
+          setSemanticScores(new Map());
+        }
+      })();
+    }, 220);
 
     return () => {
-      cancelled = true;
+      window.clearTimeout(t);
     };
   }, [rawQ]);
+
+  useEffect(() => {
+    // Prewarm only once, and only when user is not actively searching
+    if (semanticPrewarmDone.current) return;
+    if (rawQ.trim()) return;
+
+    semanticPrewarmDone.current = true;
+
+    // Keep it lightweight
+    const seeds = POPULAR_SEARCHES.slice(0, 3);
+
+    (async () => {
+      try {
+        const settled = await Promise.allSettled(
+          seeds.map(async (seed) => {
+            const key = normalize(seed);
+            if (!key) return;
+            if (semanticCache.current.has(key)) return;
+
+            const res = await semanticSearch(seed, { topK: 120, minScore: 0.25 });
+            const map = new Map<string, number>();
+            for (const r of res) map.set(r.id, r.score);
+            setSemanticCache(key, map);
+          })
+        );
+
+        void settled;
+      } catch {
+        // Fail silently (index may not exist yet)
+      }
+    })();
+  }, [rawQ, setSemanticCache]);
 
   const cart = useCart() as any;
   const cartUI = useCartUI() as any;
@@ -406,14 +484,10 @@ function StockSearchInner() {
     [rawQ, cat]
   );
 
-  const results = useMemo(() => {
+  const indexedAssets = useMemo(() => {
     const assets = ASSETS as Asset[];
 
-    const baseTerms = tokenize(q);
-    const terms = expandTerms(baseTerms);
-
-    // Build per-asset precomputed index
-    const indexed = assets.map((asset) => {
+    return assets.map((asset) => {
       const titleNorm = normalize(asset.title ?? '');
       const descNorm = normalize(asset.description ?? '');
       const categoryNorm = normalize(asset.category ?? '');
@@ -445,8 +519,54 @@ function StockSearchInner() {
         allTokens,
       };
     });
+  }, []);
+  const search = useMemo(() => {
+    // Track whether we used semantic-only fallback (keyword filter produced 0)
+    // or a semantic boost (keyword results were low, so we expanded with AI).
+    let aiFallbackUsed = false;
+    let aiBoostUsed = false;
+
+    const baseTerms = tokenize(q);
+    const useSynonyms = baseTerms.length === 1;
+    const terms = useSynonyms ? expandTerms(baseTerms) : baseTerms;
+
+    // Pre-expand synonyms once per base term (avoid recomputing per-asset)
+    const expandedPerBase = baseTerms
+      .map((t) => normalize(t))
+      .filter(Boolean)
+      .map((t) => ({
+        term: t,
+        expanded: useSynonyms ? expandTerms([t]) : [t],
+      }));
 
     const catFilter = cat && cat !== 'all' ? normalize(cat) : '';
+
+    const directBaseTerms = baseTerms.map((t) => normalize(t)).filter(Boolean);
+
+    const hasDirectBaseHit = (tokens: string[]) => {
+      if (!directBaseTerms.length) return true;
+
+      for (const term of directBaseTerms) {
+        if (!term) continue;
+
+        // Very short terms are too noisy – require exact match only
+        if (term.length < 4) {
+          if (tokens.includes(term)) return true;
+          continue;
+        }
+
+        // Safe variants: exact, prefix, or contains (token direction only)
+        for (const tok of tokens) {
+          if (tok === term) return true;
+          if (tok.startsWith(term)) return true;
+          if (tok.includes(term)) return true;
+        }
+      }
+
+      return false;
+    };
+
+    const SEMANTIC_MIN = 0.38;
 
     const scoreAsset = (entry: {
       asset: Asset;
@@ -475,12 +595,6 @@ function StockSearchInner() {
       // Phrase match is a strong signal
       if (q && title.includes(q)) s += 10;
       if (q && desc.includes(q)) s += 4;
-
-      // Pre-expand synonyms once per base term
-      const expandedPerBase = baseTerms.map((t) => ({
-        term: normalize(t),
-        expanded: expandTerms([normalize(t)]),
-      }));
 
       for (const { term, expanded } of expandedPerBase) {
         if (!term) continue;
@@ -513,12 +627,12 @@ function StockSearchInner() {
       // Hybrid: add semantic similarity score (AI)
       // semanticScores are cosine similarities (~0..1). Scale to match keyword score range.
       const sem = semanticScores.get(asset.id) ?? 0;
-      s += sem * 12;
+      s += sem * 6;
 
       return s;
     };
 
-    const filtered = indexed.filter((entry) => {
+    const filtered = indexedAssets.filter((entry) => {
       const asset = entry.asset;
       if (catFilter && entry.categoryNorm !== catFilter) return false;
       if (!terms.length) return true;
@@ -532,15 +646,19 @@ function StockSearchInner() {
       const minHits =
         requiredCount <= 2
           ? requiredCount
-          : Math.max(2, Math.ceil(requiredCount * 0.66));
+          : requiredCount === 3
+            ? 3
+            : Math.max(3, Math.ceil(requiredCount * 0.8));
 
       let hits = 0;
       for (const t of required) {
         const tNorm = normalize(t);
         if (!tNorm) continue;
 
-        const syn = expandTerms([tNorm]);
-        const ok = syn.some((candidate) => tokenMatch(candidate, tokens));
+        const syn = useSynonyms ? expandTerms([tNorm]) : [tNorm];
+        const ok = syn.some((candidate) =>
+          tokenMatch(candidate, tokens, { allowFuzzy: !useSynonyms })
+        );
         if (ok) hits++;
 
         // early exit
@@ -553,30 +671,80 @@ function StockSearchInner() {
     // AI fallback: if keyword filtering yields 0 results but semantic scores exist,
     // show the top semantic matches (still respecting category filter).
     if (terms.length && filtered.length === 0 && semanticScores.size > 0) {
-      return indexed
+      aiFallbackUsed = true;
+      const fallbackResults = indexedAssets
         .filter((e) => (catFilter ? e.categoryNorm === catFilter : true))
+        .filter((e) => hasDirectBaseHit(e.allTokens))
         .map((e) => ({ a: e.asset, s: semanticScores.get(e.asset.id) ?? 0 }))
-        .filter((x) => x.s > 0)
+        .filter((x) => x.s >= SEMANTIC_MIN)
         .sort((x, y) => y.s - x.s)
         .slice(0, 200)
         .map((x) => x.a);
+
+      return { results: fallbackResults, aiFallbackUsed, aiBoostUsed: false, keywordCount: 0 };
     }
 
-    if (!terms.length) return filtered.map((e) => e.asset);
+    if (!terms.length) {
+      return { results: filtered.map((e) => e.asset), aiFallbackUsed: false, aiBoostUsed: false, keywordCount: filtered.length };
+    }
 
-    return filtered
+    // AI soft-merge: if keyword results are low but not zero, expand with semantic matches.
+    // This keeps search feeling "smart" even when exact tokens are sparse.
+    let toRank = filtered;
+
+    const LOW_RESULTS_THRESHOLD = 24;
+    const TARGET_RESULTS = 60;
+
+    if (terms.length && filtered.length > 0 && filtered.length < LOW_RESULTS_THRESHOLD && semanticScores.size > 0) {
+      const existingIds = new Set(filtered.map((e) => e.asset.id));
+
+      // Pick top semantic candidates not already in keyword results
+      const extras: typeof filtered = [];
+
+      // Sort indexed assets by semantic score desc (cheap, map lookup)
+      const semanticSorted = indexedAssets
+        .filter((e) => (catFilter ? e.categoryNorm === catFilter : true))
+        .filter((e) => hasDirectBaseHit(e.allTokens))
+        .map((e) => ({ e, s: semanticScores.get(e.asset.id) ?? 0 }))
+        .filter((x) => x.s >= SEMANTIC_MIN)
+        .sort((a, b) => b.s - a.s);
+
+      for (const { e } of semanticSorted) {
+        if (extras.length + filtered.length >= TARGET_RESULTS) break;
+        if (existingIds.has(e.asset.id)) continue;
+        existingIds.add(e.asset.id);
+        extras.push(e);
+      }
+
+      if (extras.length > 0) {
+        aiBoostUsed = true;
+        toRank = [...filtered, ...extras];
+      }
+    }
+
+    const ranked = toRank
       .map((e) => ({ a: e.asset, s: scoreAsset(e) }))
       .sort((x, y) => (y.s === x.s ? x.a.title.localeCompare(y.a.title) : y.s - x.s))
       .map((x) => x.a);
-  }, [q, rawQ, cat, semanticScores]);
+
+    return { results: ranked, aiFallbackUsed, aiBoostUsed, keywordCount: filtered.length };
+  }, [q, rawQ, cat, semanticScores, indexedAssets]);
+
+  const results = search.results;
+  const aiFallbackUsed = search.aiFallbackUsed;
+  const aiBoostUsed = search.aiBoostUsed;
+  const keywordCount = search.keywordCount;
 
   const didYouMean = useMemo(() => {
     if (!rawQ) return null;
-    if (results.length > 0) return null;
+
+    // If keyword results exist, don't distract with spelling suggestions.
+    // If AI fallback is being used (keywordCount === 0), still suggest possible fixes.
+    if (keywordCount > 0) return null;
 
     const assets = ASSETS as Asset[];
     return suggestDidYouMean(rawQ, assets, vocabPre);
-  }, [rawQ, results.length, vocabPre]);
+  }, [rawQ, vocabPre, keywordCount]);
 
   return (
     <div className="w-full px-4 py-6 sm:px-6">
@@ -645,7 +813,13 @@ function StockSearchInner() {
           {results.length} asset{results.length === 1 ? '' : 's'}
           {cat ? ` · ${STOCK_CATEGORIES.find((c) => c.key === cat)?.label ?? cat}` : ''}
         </span>
-        <span className="hidden sm:inline">Sorted by relevance</span>
+        <span className="hidden sm:inline">
+          {aiFallbackUsed
+            ? 'Showing results based on meaning · Sorted by relevance'
+            : aiBoostUsed
+              ? 'Expanded results using AI · Sorted by relevance'
+              : 'Sorted by relevance'}
+        </span>
       </div>
 
       {/* Results */}
