@@ -383,14 +383,14 @@ useEffect(() => {
             {demoUser?.name ? `Welcome to Colourbox, ${demoUser.name}` : "Welcome to Colourbox"}
           </h1>
           <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground">
-            Your purchases are saved automatically in Files, so your team can always find them again.
+            Your purchases are available in Files, so your team can always find them again.
           </p>
         </header>
         {showAccountCreatedBanner ? (
-          <div className="mb-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 dark:border-emerald-400/20 dark:bg-emerald-400/10">
-            <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Account created</p>
-            <p className="mt-1 text-sm text-emerald-700/90 dark:text-emerald-200">
-              You’re now signed in as <span className="font-semibold">{demoUser?.name}</span> • {demoUser?.org}. Your purchases will be available in Files.
+          <div className="mb-4 rounded-xl border border-border bg-muted/30 p-4">
+            <p className="text-xs font-medium text-muted-foreground">Account created</p>
+            <p className="mt-1 text-sm text-foreground">
+              You’re now signed in as <span className="font-semibold">{demoUser?.name}</span> • {demoUser?.org}. Your purchases are available in Files.
             </p>
           </div>
         ) : null}
@@ -400,10 +400,10 @@ useEffect(() => {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <p className="text-xs font-medium text-muted-foreground">Welcome to Colourbox + Files</p>
-                <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Your account is ready 🎉</h2>
+                <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Your account is ready</h2>
                 <p className="mt-2 max-w-xl text-sm text-muted-foreground">
                   You’re signed in and ready to work. Upload your own files to Files, or browse Stock to download your first images —
-                  everything stays organised and saved.
+                  everything stays organised and easy to find.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -425,7 +425,7 @@ useEffect(() => {
               <div className="rounded-2xl border border-border bg-card p-4">
                 <p className="text-xs font-medium text-muted-foreground">Step 2</p>
                 <p className="mt-1 text-sm font-semibold text-foreground">Find Stock images</p>
-                <p className="mt-1 text-xs text-muted-foreground">Search and download assets — they’re saved to Files automatically.</p>
+                <p className="mt-1 text-xs text-muted-foreground">Search and download assets — they’ll appear in Files automatically.</p>
               </div>
               <div className="rounded-2xl border border-border bg-card p-4">
                 <p className="text-xs font-medium text-muted-foreground">Step 3</p>
@@ -447,7 +447,7 @@ useEffect(() => {
                     <p className="text-xs font-medium text-emerald-700/90 dark:text-emerald-200">Purchase complete</p>
                     <p className="mt-1 text-sm font-semibold text-emerald-800 dark:text-emerald-100">Your files are ready to download ✅</p>
                     <p className="mt-1 text-xs text-emerald-800/80 dark:text-emerald-100/80">
-                      Your purchases are now saved in Files, so you can re-download anytime and stay organised.
+                      Your purchases are now available in Files, so you can re-download anytime and stay organised.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -464,7 +464,7 @@ useEffect(() => {
                   <div>
                     <h2 className="text-sm font-semibold text-foreground">Your purchases</h2>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      Download now, or find everything later in Purchases in Files.
+                      Download now, or find everything later in Files → Purchases.
                     </p>
                   </div>
 
@@ -535,12 +535,7 @@ useEffect(() => {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="text-xs font-medium text-muted-foreground">What you can do next</p>
-                    <p className="mt-1 text-sm font-semibold text-foreground">Your downloads are already connected to Files</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button asChild size="sm">
-                      <Link href="/drive?folder=purchases">Open Files</Link>
-                    </Button>
+                    <p className="mt-1 text-sm font-semibold text-foreground">Your purchases are available in Files</p>
                   </div>
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -566,7 +561,7 @@ useEffect(() => {
             <div className="mt-2 rounded-2xl border border-border bg-muted/20 p-6">
               <p className="text-sm font-semibold text-foreground">No purchases yet</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                If you just completed checkout, give it a moment — or open Files to manage your files and find any purchases.
+                If you just completed checkout, give it a moment — then open Files → Purchases to find your items.
               </p>
 
               <div className="mt-4 flex flex-col gap-2 sm:flex-row">
@@ -578,7 +573,7 @@ useEffect(() => {
                 </Button>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                <span className="rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">✅ Saved in Files</span>
+                <span className="rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">✅ Available in Files</span>
                 <span className="rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">⚡ Fast downloads</span>
                 <span className="rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">🔒 Rights info included</span>
               </div>
@@ -588,15 +583,7 @@ useEffect(() => {
           <div className="mt-6 border-t border-border pt-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-sm text-muted-foreground">
-                Everything is saved in <span className="font-medium text-foreground">Files</span>.
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Button asChild>
-                  <Link href="/drive">Open Files</Link>
-                </Button>
-                <Button asChild variant="secondary">
-                  <Link href="/stock">Browse Stock</Link>
-                </Button>
+                Everything is available in <span className="font-medium text-foreground">Files</span>.
               </div>
             </div>
           </div>
@@ -615,10 +602,10 @@ useEffect(() => {
   return (
     <main className="mx-auto w-full max-w-6xl bg-background px-4 pb-10 pt-[calc(var(--cbx-topbar,64px)+40px)] text-foreground sm:pt-[calc(var(--cbx-topbar-sm,56px)+40px)]">
       {showAccountCreatedBanner ? (
-        <div className="mb-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4 dark:border-emerald-400/20 dark:bg-emerald-400/10">
-          <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Account created</p>
-          <p className="mt-1 text-sm text-emerald-700/90 dark:text-emerald-200">
-            You’re now signed in as <span className="font-semibold">{demoUser?.name}</span> • {demoUser?.org}. Your purchases will be available in Files.
+        <div className="mb-4 rounded-xl border border-border bg-muted/30 p-4">
+          <p className="text-xs font-medium text-muted-foreground">Account created</p>
+          <p className="mt-1 text-sm text-foreground">
+            You’re now signed in as <span className="font-semibold">{demoUser?.name}</span> • {demoUser?.org}. Your purchases are available in Files.
           </p>
         </div>
       ) : null}
@@ -626,7 +613,7 @@ useEffect(() => {
       <header className="mb-8">
         <p className="text-xs font-medium text-muted-foreground">Download</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">Download file</h1>
-        <p className="mt-2 max-w-xl text-sm text-muted-foreground">Download this file now — and find all your purchases in Files.</p>
+        <p className="mt-2 max-w-xl text-sm text-muted-foreground">Download this file now — and find all your purchases in Files → Purchases.</p>
 
         {demoUser ? (
           <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
@@ -682,19 +669,22 @@ useEffect(() => {
         <div className="mt-6 border-t border-border pt-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-sm text-muted-foreground">
-              Everything is saved in <span className="font-medium text-foreground">Files</span>.
+              Everything is available in <span className="font-medium text-foreground">Files</span>.
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Button asChild>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Button asChild variant="secondary">
                 <Link href="/drive?folder=purchases">Open Files</Link>
               </Button>
-              <Button asChild variant="secondary">
-                <Link href="/stock">Browse Stock</Link>
-              </Button>
+              <Link
+                href="/stock"
+                className="text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
+              >
+                Browse Stock
+              </Link>
             </div>
           </div>
           <div className="mt-5">
-            <Button asChild variant="secondary" className="w-full">
+            <Button asChild className="w-full">
               <a href={downloadHref} download>
                 Download file
               </a>

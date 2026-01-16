@@ -108,6 +108,15 @@ function readPurchasesLastSeen(): number {
   }
 }
 
+function hasTeamDemoFilled(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.sessionStorage.getItem('cbx_team_demo_filled_v1') === '1';
+  } catch {
+    return false;
+  }
+}
+
 // Lightweight semantic similarity (char 3-grams TF-IDF)
 function charNgrams(text: string, n = 3): string[] {
   const s = (text ?? '')
@@ -202,6 +211,7 @@ export default function HomePage() {
 
   const [purchasesCount, setPurchasesCount] = useState<number>(0);
   const [purchasesLastSeen, setPurchasesLastSeen] = useState<number>(0);
+  const [hasTeam, setHasTeam] = useState<boolean>(false);
 
   const [dailySeed, setDailySeed] = useState<string>('');
   const [heroSeed] = useState<number>(() => {
@@ -330,6 +340,8 @@ export default function HomePage() {
     // Purchases unread (shared with Files/Purchases)
     setPurchasesCount(readPurchasesCount());
     setPurchasesLastSeen(readPurchasesLastSeen());
+
+    setHasTeam(hasTeamDemoFilled());
   }, [LS_KEYS, clampList, lsGet, lsSet]);
 
   // Hero previews should come from Stock assets (same source as the Stock section)
@@ -1030,6 +1042,46 @@ export default function HomePage() {
                     We’re still learning your style — here are a few solid picks to start with.
                   </div>
                 )}
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        {!hasTeam ? (
+          <section className="mx-4 sm:mx-6 lg:mx-10">
+            <div className="relative overflow-hidden rounded-2xl bg-muted/10 p-5 sm:p-6 ring-1 ring-border/50">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="max-w-xl">
+                  <p className="text-xs font-semibold text-muted-foreground">Get more value</p>
+                  <h2 className="mt-1 text-base font-semibold tracking-tight">
+                    Invite your first teammate
+                  </h2>
+                  <p className="mt-1.5 text-sm text-muted-foreground">
+                    Collaborate on files, purchases and rights. Invite one person to get started — you can manage access anytime.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => router.push('/team?demo=1')}
+                    className="inline-flex h-10 items-center gap-2 rounded-full bg-foreground px-5 text-sm font-semibold text-background transition hover:bg-foreground/90"
+                  >
+                    Invite teammate
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => router.push('/team')}
+                    className="inline-flex h-10 items-center gap-2 rounded-full bg-background/60 px-5 text-sm font-medium ring-1 ring-border/40 transition hover:bg-background/80"
+                  >
+                    Team overview
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <span className="rounded-full bg-background/60 px-3 py-1 text-xs ring-1 ring-border/30">Roles & access</span>
+                <span className="rounded-full bg-background/60 px-3 py-1 text-xs ring-1 ring-border/30">Shared files</span>
+                <span className="rounded-full bg-background/60 px-3 py-1 text-xs ring-1 ring-border/30">Rights stay attached</span>
               </div>
             </div>
           </section>

@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   CheckCircle2,
   Clock,
@@ -13,6 +14,7 @@ import {
   UsersRound,
   X,
 } from 'lucide-react';
+import { TeamEmptyState } from './landing';
 
 type Member = {
   id: string;
@@ -29,7 +31,11 @@ type Group = {
   memberIds: string[];
 };
 
-const MOCK_MEMBERS: Member[] = [
+const EMPTY_MEMBERS: Member[] = [
+  { id: 'you', name: 'You', email: 'owner@company.com', role: 'Owner', status: 'Active' },
+];
+
+const DEMO_MEMBERS: Member[] = [
   { id: 'you', name: 'You', email: 'owner@company.com', role: 'Owner', status: 'Active' },
   { id: '1', name: 'Emma Larsen', email: 'emma@company.com', role: 'Admin', status: 'Active' },
   { id: '2', name: 'Jonas Mikkelsen', email: 'jonas@company.com', role: 'Member', status: 'Invited' },
@@ -40,7 +46,7 @@ const DEFAULT_GROUPS: Group[] = [
     id: 'g1',
     name: 'Marketing',
     description: 'Campaign planning and content production',
-    memberIds: ['you', '1'],
+    memberIds: ['you'],
   },
   {
     id: 'g2',
@@ -122,11 +128,67 @@ export default function TeamPage() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
 
+  const router = useRouter();
+
+  const [demoFilled, setDemoFilled] = useState(false);
+  const [showInviteSent, setShowInviteSent] = useState(false);
+
+  const searchParams = useSearchParams();
+  const demoMode = searchParams.get('demo') === '1';
+
+  useEffect(() => {
+    try {
+      const filledKey = 'cbx_team_demo_filled_v1';
+      const inviteKey = 'cbx_team_invite_sent_v1';
+
+      const alreadyFilled = sessionStorage.getItem(filledKey) === '1';
+
+      if (demoMode) {
+        sessionStorage.setItem(filledKey, '1');
+        sessionStorage.setItem(inviteKey, '1');
+        setDemoFilled(true);
+        setShowInviteSent(true);
+        router.replace('/team');
+        return;
+      }
+
+      if (alreadyFilled) {
+        setDemoFilled(true);
+        return;
+      }
+
+      setDemoFilled(false);
+    } catch {
+      // If sessionStorage is unavailable, fall back to the URL flag only.
+      setDemoFilled(false);
+    }
+  }, [demoMode, router]);
+
+  useEffect(() => {
+    if (!demoFilled) return;
+    try {
+      const inviteKey = 'cbx_team_invite_sent_v1';
+      const shouldShow = sessionStorage.getItem(inviteKey) === '1';
+      if (!shouldShow) return;
+      // show once, then clear
+      setShowInviteSent(true);
+      sessionStorage.removeItem(inviteKey);
+    } catch {
+      // ignore
+    }
+  }, [demoFilled]);
+
   const [groups, setGroups] = useState<Group[]>(DEFAULT_GROUPS);
   const [groupName, setGroupName] = useState('');
   const [groupDescription, setGroupDescription] = useState('');
 
-  const members = useMemo(() => MOCK_MEMBERS, []);
+  const isFilled = demoMode || demoFilled;
+  const members = useMemo(() => (isFilled ? DEMO_MEMBERS : EMPTY_MEMBERS), [isFilled]);
+
+  const hasOtherMembers = useMemo(
+    () => members.some((m) => m.id !== 'you'),
+    [members]
+  );
 
   const memberById = useMemo(() => {
     const map = new Map<string, Member>();
@@ -180,8 +242,32 @@ export default function TeamPage() {
     );
   };
 
+  if (!hasOtherMembers && !isFilled) {
+    return <TeamEmptyState />;
+  }
+
   return (
     <main className="mx-4 sm:mx-6 lg:mx-10">
+      {showInviteSent ? (
+        <div className="mb-4 rounded-xl border border-border bg-muted/30 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground">Invite sent</p>
+              <p className="mt-1 text-sm text-foreground">
+                Invitation sent. In this demo, a couple of members were added so you can explore the Team page.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowInviteSent(false)}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted/20 hover:text-foreground"
+              aria-label="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      ) : null}
       {/* Header */}
       <header className="mb-6 flex items-center justify-between">
         <div>
@@ -351,11 +437,14 @@ export default function TeamPage() {
               <div className="rounded-2xl bg-background/70 p-3 ring-1 ring-border/40">
                 <div className="text-xs font-semibold">Seats</div>
                 <div className="mt-1 flex items-center justify-between text-sm">
-                  <span>3 used</span>
+                  <span>{members.length} used</span>
                   <span className="text-muted-foreground">/ 10</span>
                 </div>
                 <div className="mt-2 h-2 w-full rounded-full bg-muted">
-                  <div className="h-2 w-[30%] rounded-full bg-foreground/30" />
+                  <div
+                    className="h-2 rounded-full bg-foreground/30"
+                    style={{ width: `${Math.min(100, (members.length / 10) * 100)}%` }}
+                  />
                 </div>
               </div>
 
