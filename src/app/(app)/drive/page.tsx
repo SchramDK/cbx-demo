@@ -190,6 +190,158 @@ function useDriveFolderData(args: DriveFolderDataArgs & { isTrashView: boolean; 
   return { coverAssetId, folderCounts, assetsByFolder, folderAssets, subfolders, subfolderItems, trashCount, showTrashEmptyState };
 }
 
+type DriveUrlSync = {
+  query: string;
+  setQuery: (next: string) => void;
+  urlQ: string;
+  urlFolder: string;
+  scheduleQueryUrlUpdate: (nextValue: string) => void;
+  clearPendingQueryUrlUpdate: () => void;
+  clearSearchUrlAndFolder: () => void;
+  getCurrentSearchParams: () => URLSearchParams;
+};
+
+function useDriveUrlSync(args: {
+  mounted: boolean;
+  router: ReturnType<typeof useRouter>;
+  searchParams: ReturnType<typeof useSearchParams>;
+  selectedFolder: string;
+  setSelectedFolder: (id: string) => void;
+  initialQuery: string;
+}): DriveUrlSync {
+  const { mounted, router, searchParams, setSelectedFolder, initialQuery } = args;
+
+  const urlQ = (
+    searchParams.get("q") ??
+    searchParams.get("query") ??
+    searchParams.get("search") ??
+    ""
+  ).trim();
+  const urlFolder = (searchParams.get("folder") ?? "").trim();
+
+  const routerRef = useRef(router);
+  useEffect(() => {
+    routerRef.current = router;
+  }, [router]);
+
+  const searchParamsRef = useRef(searchParams);
+  useEffect(() => {
+    searchParamsRef.current = searchParams;
+  }, [searchParams]);
+
+  const suppressNextUrlQuerySyncRef = useRef<string | null>(null);
+
+  const getCurrentSearchParams = useCallback(() => {
+    return new URLSearchParams(Array.from(searchParamsRef.current.entries()));
+  }, []);
+
+  const [query, _setQuery] = useState(initialQuery);
+  const setQuery = useCallback((next: string) => _setQuery(next), []);
+
+  const queryUrlUpdateTimeoutRef = useRef<number | null>(null);
+  const clearPendingQueryUrlUpdate = useCallback(() => {
+    if (queryUrlUpdateTimeoutRef.current !== null) {
+      window.clearTimeout(queryUrlUpdateTimeoutRef.current);
+      queryUrlUpdateTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleQueryUrlUpdate = useCallback(
+    (nextValue: string) => {
+      const trimmed = (nextValue ?? "").trim();
+      clearPendingQueryUrlUpdate();
+
+      queryUrlUpdateTimeoutRef.current = window.setTimeout(() => {
+        try {
+          const params = getCurrentSearchParams();
+          suppressNextUrlQuerySyncRef.current = trimmed;
+
+          if (trimmed) {
+            params.set("q", trimmed);
+            // Search is global: clear folder context
+            params.delete("folder");
+          } else {
+            params.delete("q");
+          }
+          params.delete("query");
+          params.delete("search");
+          routerRef.current.replace(`/drive${params.toString() ? `?${params.toString()}` : ""}`);
+        } catch {
+          // ignore
+        }
+      }, 250);
+    },
+    [clearPendingQueryUrlUpdate, getCurrentSearchParams]
+  );
+
+  useEffect(() => clearPendingQueryUrlUpdate, [clearPendingQueryUrlUpdate]);
+
+  // Apply external URL query changes into state
+  useEffect(() => {
+    if (!mounted) return;
+    const next = urlQ.trim();
+
+    if (suppressNextUrlQuerySyncRef.current !== null) {
+      const suppressed = suppressNextUrlQuerySyncRef.current;
+      if (suppressed.trim() === next) {
+        suppressNextUrlQuerySyncRef.current = null;
+        return;
+      }
+      suppressNextUrlQuerySyncRef.current = null;
+    }
+
+    _setQuery((prev) => {
+      if (prev.trim() === next) return prev;
+
+      if (next.length > 0) {
+        setSelectedFolder("all");
+
+        // Normalize URL: search implies no folder
+        try {
+          const params = getCurrentSearchParams();
+          if (params.get("folder")) {
+            params.delete("folder");
+            routerRef.current.replace(`/drive${params.toString() ? `?${params.toString()}` : ""}`);
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      return next;
+    });
+  }, [mounted, urlQ, getCurrentSearchParams, setSelectedFolder]);
+
+  const clearSearchUrlAndFolder = useCallback(() => {
+    _setQuery("");
+    setSelectedFolder("all");
+    clearPendingQueryUrlUpdate();
+
+    try {
+      const params = getCurrentSearchParams();
+      suppressNextUrlQuerySyncRef.current = "";
+      params.delete("q");
+      params.delete("query");
+      params.delete("search");
+      params.delete("folder");
+      routerRef.current.replace(`/drive${params.toString() ? `?${params.toString()}` : ""}`);
+    } catch {
+      // ignore
+    }
+  }, [clearPendingQueryUrlUpdate, getCurrentSearchParams, setSelectedFolder]);
+
+  return {
+    query,
+    setQuery,
+    urlQ,
+    urlFolder,
+    scheduleQueryUrlUpdate,
+    clearPendingQueryUrlUpdate,
+    clearSearchUrlAndFolder,
+    getCurrentSearchParams,
+  };
+}
+
 const LS_KEYS = {
   filters: "CBX_ASSET_FILTERS_V1",
   oldColors: "CBX_COLOR_FILTER_V1",
@@ -243,130 +395,47 @@ function DrivePageInner() {
   const { isReady, isLoggedIn } = useProtoAuth();
   const searchParams = useSearchParams();
 
-  const routerRef = useRef(router);
-  useEffect(() => {
-    routerRef.current = router;
-  }, [router]);
-
-  const searchParamsRef = useRef(searchParams);
-  useEffect(() => {
-    searchParamsRef.current = searchParams;
-  }, [searchParams]);
-  // Prevent URL -> state sync from overwriting local typing.
-  // Whenever this page itself updates the URL `q`, we store the value here.
-  // Then the URL-sync effect will ignore that next `urlQ` update.
-  const suppressNextUrlQuerySyncRef = useRef<string | null>(null);
-  const getCurrentSearchParams = useCallback(() => {
-    return new URLSearchParams(Array.from(searchParamsRef.current.entries()));
-  }, []);
-  const queryUrlUpdateTimeoutRef = useRef<number | null>(null);
-  const clearPendingQueryUrlUpdate = useCallback(() => {
-    if (queryUrlUpdateTimeoutRef.current !== null) {
-      window.clearTimeout(queryUrlUpdateTimeoutRef.current);
-      queryUrlUpdateTimeoutRef.current = null;
-    }
-  }, []);
-  const scheduleQueryUrlUpdate = useCallback(
-    (nextValue: string) => {
-      const trimmed = nextValue.trim();
-      clearPendingQueryUrlUpdate();
-
-      queryUrlUpdateTimeoutRef.current = window.setTimeout(() => {
-        try {
-          const params = getCurrentSearchParams();
-          // Mark as local URL write so URL-sync effect won't fight the user's typing.
-          suppressNextUrlQuerySyncRef.current = trimmed;
-
-          if (trimmed) {
-            params.set("q", trimmed);
-            // Search is global: clear explicit folder context
-            params.delete("folder");
-          } else {
-            params.delete("q");
-          }
-          params.delete("query");
-          params.delete("search");
-          routerRef.current.replace(
-            `/drive${params.toString() ? `?${params.toString()}` : ""}`
-          );
-        } catch {
-          // ignore
-        }
-      }, 200);
-    },
-    [clearPendingQueryUrlUpdate, getCurrentSearchParams]
-  );
-  useEffect(() => clearPendingQueryUrlUpdate, [clearPendingQueryUrlUpdate]);
-
   useEffect(() => {
     if (!isReady) return;
-    if (!isLoggedIn) {
-      router.replace("/drive/landing");
-    }
+    if (isLoggedIn) return;
+    router.replace("/drive/landing");
   }, [isReady, isLoggedIn, router]);
-  const urlQ = (
+
+  const initialUrlQ = (
     searchParams.get("q") ??
     searchParams.get("query") ??
     searchParams.get("search") ??
     ""
   ).trim();
-  const urlFolder = (searchParams.get("folder") ?? "").trim();
-
-  const [query, setQuery] = useState(urlQ);
-
-  // Sync query when URL changes (e.g. from Topbar search)
-  useEffect(() => {
-    if (!mounted) return;
-    const next = urlQ.trim();
-
-    // If this page just wrote the same value to the URL, don't re-apply it back into state.
-    if (suppressNextUrlQuerySyncRef.current !== null) {
-      const suppressed = suppressNextUrlQuerySyncRef.current;
-      if (suppressed.trim() === next) {
-        suppressNextUrlQuerySyncRef.current = null;
-        return;
-      }
-      // If URL differs, clear suppression and allow sync (external change)
-      suppressNextUrlQuerySyncRef.current = null;
-    }
-
-    setQuery((prev) => {
-      if (prev.trim() === next) return prev;
-
-      // If search comes from the URL (Topbar), search should apply across Drive
-      if (next.length > 0) {
-        setSelectedFolder("all");
-
-        // Normalize URL: search implies no folder
-        try {
-          const params = new URLSearchParams(
-            Array.from(searchParamsRef.current.entries())
-          );
-          if (params.get("folder")) {
-            params.delete("folder");
-            routerRef.current.replace(
-              `/drive${params.toString() ? `?${params.toString()}` : ""}`
-            );
-          }
-        } catch {
-          // ignore
-        }
-      }
-
-      return next;
-    });
-  }, [mounted, urlQ]);
+  const initialUrlFolder = (searchParams.get("folder") ?? "").trim();
 
   const [selectedFolder, setSelectedFolder] = useState<string>(() =>
-    urlFolder ? urlFolder : "all"
+    initialUrlFolder ? initialUrlFolder : "all"
   );
+
+  const {
+    query,
+    setQuery,
+    urlQ,
+    urlFolder,
+    scheduleQueryUrlUpdate,
+    clearPendingQueryUrlUpdate,
+    clearSearchUrlAndFolder,
+    getCurrentSearchParams,
+  } = useDriveUrlSync({
+    mounted,
+    router,
+    searchParams,
+    selectedFolder,
+    setSelectedFolder,
+    initialQuery: initialUrlQ,
+  });
 
   const navigateToFolder = useCallback(
     (folderId: string) => {
       setSelectedFolder(folderId);
       // Folder navigation should exit search context
       setQuery("");
-      suppressNextUrlQuerySyncRef.current = "";
       clearPendingQueryUrlUpdate();
 
       try {
@@ -380,12 +449,12 @@ function DrivePageInner() {
         if (folderId && folderId !== "all") params.set("folder", folderId);
         else params.delete("folder");
 
-        routerRef.current.replace(`/drive${params.toString() ? `?${params.toString()}` : ""}`);
+        router.replace(`/drive${params.toString() ? `?${params.toString()}` : ""}`);
       } catch {
         // ignore
       }
     },
-    [clearPendingQueryUrlUpdate, getCurrentSearchParams]
+    [clearPendingQueryUrlUpdate, getCurrentSearchParams, setQuery, setSelectedFolder, router]
   );
 
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -496,6 +565,8 @@ function DrivePageInner() {
     );
   }, [filters]);
 
+
+
   // Load filters after mount (client only)
   useEffect(() => {
     if (!mounted) return;
@@ -565,12 +636,27 @@ function DrivePageInner() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
 
-  const openFilters = useCallback(() => setFiltersOpen(true), []);
+  const openFilters = useCallback(() => setFiltersOpen(true), [setFiltersOpen]);
 
   const clearAllFilters = useCallback(() => {
     setFilters(clearFilters());
     setFiltersOpen(false);
-  }, []);
+  }, [setFilters, setFiltersOpen]);
+
+  // --- Search-state bar logic ---
+  const hasActiveQuery = query.trim().length > 0;
+  const hasActiveFilters = activeFilterCount > 0;
+  const showSearchStateBar = hasActiveQuery || hasActiveFilters;
+
+  const clearOnlyQuery = useCallback(() => {
+    clearSearchUrlAndFolder();
+  }, [clearSearchUrlAndFolder]);
+
+  const clearAllSearchAndFilters = useCallback(() => {
+    clearSearchUrlAndFolder();
+    setFilters(clearFilters());
+    setFiltersOpen(false);
+  }, [clearSearchUrlAndFolder, setFilters, setFiltersOpen]);
 
   const [folderTree, setFolderTree] = useState<FolderNode[]>(() => {
     // On the server we can't access localStorage; initial render uses demoFolders.
@@ -671,10 +757,11 @@ function DrivePageInner() {
     const f = urlFolder.trim();
     if (!f) return;
     if (!folderIndex.has(f)) return;
-  
+
     setSelectedFolder(f);
     setQuery("");
-  }, [mounted, urlFolder, folderIndex]);
+    clearPendingQueryUrlUpdate();
+  }, [mounted, urlFolder, folderIndex, clearPendingQueryUrlUpdate, setQuery, setSelectedFolder]);
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
 
@@ -989,24 +1076,7 @@ function DrivePageInner() {
                         size="icon"
                         className="h-9 w-9"
                         aria-label="Clear search"
-                        onClick={() => {
-                          setQuery("");
-                          setSelectedFolder("all");
-                          clearPendingQueryUrlUpdate();
-                          try {
-                            const params = getCurrentSearchParams();
-                            suppressNextUrlQuerySyncRef.current = "";
-                            params.delete("q");
-                            params.delete("query");
-                            params.delete("search");
-                            params.delete("folder");
-                            routerRef.current.replace(
-                              `/drive${params.toString() ? `?${params.toString()}` : ""}`
-                            );
-                          } catch {
-                            // ignore
-                          }
-                        }}
+                        onClick={clearSearchUrlAndFolder}
                       >
                         <X className="h-4 w-4" />
                       </Button>
@@ -1098,6 +1168,55 @@ function DrivePageInner() {
             </div>
           </header>
 
+          {showSearchStateBar ? (
+            <div className="border-b bg-background/60 supports-[backdrop-filter]:bg-background/50">
+              <div className="px-4 lg:px-6 py-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {hasActiveQuery ? (
+                    <div className="flex min-w-0 items-center gap-2 rounded-full border bg-background px-3 py-1 text-xs">
+                      <Search className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="max-w-[240px] truncate">{query.trim()}</span>
+                      <button
+                        type="button"
+                        className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full hover:bg-muted"
+                        aria-label="Clear search"
+                        onClick={clearOnlyQuery}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {hasActiveFilters ? (
+                    <button
+                      type="button"
+                      onClick={openFilters}
+                      className="inline-flex items-center gap-2 rounded-full border bg-background px-3 py-1 text-xs hover:bg-muted"
+                      aria-label="Open filters"
+                    >
+                      <span>Filters</span>
+                      <Badge variant="secondary" className="h-5 px-2">
+                        {activeFilterCount}
+                      </Badge>
+                    </button>
+                  ) : null}
+
+                  <div className="flex-1" />
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8"
+                    onClick={clearAllSearchAndFilters}
+                  >
+                    Clear all
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           <div
             key={selectedFolder}
             className={
@@ -1117,7 +1236,7 @@ function DrivePageInner() {
                         : "All files"}
                 </h1>
                 {selectedFolder !== "all" ? (
-                  <div className="mt-1 relative max-w-[80%]" title={fullBreadcrumbLabel} aria-label={fullBreadcrumbLabel}>
+                  <div className="mt-1 relative max-w-full sm:max-w-[80%] pr-10" title={fullBreadcrumbLabel} aria-label={fullBreadcrumbLabel}>
                     <div className="overflow-hidden">
                       <Breadcrumb>
                         <BreadcrumbList className="flex-nowrap whitespace-nowrap overflow-hidden text-xs text-muted-foreground">
@@ -1181,7 +1300,13 @@ function DrivePageInner() {
                                                 key={hn.id}
                                                 onSelect={() => navigateToFolder(hn.id)}
                                               >
-                                                {hn.name}
+                                                {(() => {
+                                                  const path = folderPathIndex.get(hn.id) ?? [];
+                                                  const label = ["All files", ...path.map((p) => p.name ?? "")]
+                                                    .filter(Boolean)
+                                                    .join(" / ");
+                                                  return label || hn.name;
+                                                })()}
                                               </DropdownMenuItem>
                                             ))
                                           ) : (
