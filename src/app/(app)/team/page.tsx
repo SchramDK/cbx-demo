@@ -194,12 +194,14 @@ export default function TeamPage() {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [memberQuery, setMemberQuery] = useState('');
   const [menuOpenFor, setMenuOpenFor] = useState<string | null>(null);
+  const [confirmRemoveFor, setConfirmRemoveFor] = useState<string | null>(null);
   useEffect(() => {
     if (!menuOpenFor) return;
     const onDown = (e: MouseEvent) => {
       const el = e.target as HTMLElement | null;
       if (!el) return;
       if (el.closest('[data-member-menu]')) return;
+      setConfirmRemoveFor(null);
       setMenuOpenFor(null);
     };
     document.addEventListener('mousedown', onDown);
@@ -209,13 +211,24 @@ export default function TeamPage() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (menuOpenFor) setMenuOpenFor(null);
+      if (menuOpenFor) {
+        setMenuOpenFor(null);
+        setConfirmRemoveFor(null);
+      }
       if (inviteOpen) setInviteOpen(false);
       if (createGroupOpen) setCreateGroupOpen(false);
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [menuOpenFor, inviteOpen, createGroupOpen]);
+  useEffect(() => {
+    if (!menuOpenFor) {
+      if (confirmRemoveFor) setConfirmRemoveFor(null);
+      return;
+    }
+    // If user opens a different menu, reset confirm state
+    if (confirmRemoveFor && confirmRemoveFor !== menuOpenFor) setConfirmRemoveFor(null);
+  }, [menuOpenFor, confirmRemoveFor]);
   useEffect(() => {
     const anyModalOpen = inviteOpen || createGroupOpen;
     if (!anyModalOpen) return;
@@ -654,6 +667,7 @@ export default function TeamPage() {
                                   key={r}
                                   type="button"
                                   onClick={() => {
+                                    setConfirmRemoveFor(null);
                                     setRoleForMember(m.id, r);
                                     setMenuOpenFor(null);
                                   }}
@@ -676,6 +690,7 @@ export default function TeamPage() {
                             className="flex w-full items-center justify-between px-3 py-2 text-left text-sm transition hover:bg-muted/20"
                             onClick={() => {
                               resendInvite(m.email);
+                              setConfirmRemoveFor(null);
                               setMenuOpenFor(null);
                             }}
                           >
@@ -685,17 +700,46 @@ export default function TeamPage() {
                         ) : null}
 
                         {m.role !== 'Owner' ? (
-                          <button
-                            type="button"
-                            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-red-600 transition hover:bg-muted/20 dark:text-red-400"
-                            onClick={() => {
-                              removeMember(m.id);
-                              setMenuOpenFor(null);
-                            }}
-                          >
-                            <span>Remove from team</span>
-                            <X className="h-4 w-4" />
-                          </button>
+                          confirmRemoveFor === m.id ? (
+                            <div className="px-3 py-2">
+                              <div className="rounded-xl bg-red-500/10 p-3 text-xs text-red-700 dark:text-red-300">
+                                <div className="font-medium">Remove {m.name}?</div>
+                                <div className="mt-1 text-[11px] text-red-700/80 dark:text-red-300/80">
+                                  They will lose access immediately and be removed from all groups.
+                                </div>
+                              </div>
+
+                              <div className="mt-2 flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  className="rounded-full px-3 py-1.5 text-xs text-muted-foreground ring-1 ring-border/60 transition hover:bg-muted/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
+                                  onClick={() => setConfirmRemoveFor(null)}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded-full bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-600/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30 dark:bg-red-500 dark:hover:bg-red-500/90"
+                                  onClick={() => {
+                                    removeMember(m.id);
+                                    setConfirmRemoveFor(null);
+                                    setMenuOpenFor(null);
+                                  }}
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-red-600 transition hover:bg-muted/20 dark:text-red-400"
+                              onClick={() => setConfirmRemoveFor(m.id)}
+                            >
+                              <span>Remove from team</span>
+                              <X className="h-4 w-4" />
+                            </button>
+                          )
                         ) : null}
                       </div>
                     ) : null}

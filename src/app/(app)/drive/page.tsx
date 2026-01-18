@@ -871,6 +871,26 @@ function DrivePageInner() {
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
 
+  // UX: changing folder should reset transient UI state
+  useEffect(() => {
+    if (!mounted) return;
+
+    // Clear selection when navigating between folders/smart views
+    setSelectedIds(new Set());
+
+    // Close any open panels (avoid confusing carry-over)
+    setMoveOpen(false);
+    setFiltersOpen(false);
+    setFoldersOpen(false);
+
+    // Optional: scroll back to top on folder change
+    try {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      // ignore
+    }
+  }, [mounted, selectedFolder]);
+
   // UX: Esc closes the top-most panel; otherwise clears selection
   useEffect(() => {
     if (!mounted) return;
@@ -1043,6 +1063,16 @@ function DrivePageInner() {
     : isRealFolderView
       ? crumbNodes[crumbNodes.length - 1]?.name ?? "Folder"
       : "";
+
+  const searchPlaceholder = isRealFolderView
+    ? `Search in ${folderName}…`
+    : isFavoritesView
+      ? "Search favorites…"
+      : isPurchasesView
+        ? "Search purchases…"
+        : isTrashView
+          ? "Search trash…"
+          : "Search all files…";
 
   // Tell Topbar which folder we're in (for the search context chip)
   useEffect(() => {
@@ -1245,14 +1275,22 @@ function DrivePageInner() {
                 </Button>
 
                 <div className="min-w-0 flex-1">
-                  {query.trim().length > 0 ? (
-                    <div className="flex items-center gap-2">
-                      <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border bg-background px-2">
-                        <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0 flex-1 truncate text-sm">
-                          {query.trim()}
-                        </div>
-                      </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border bg-background px-2">
+                      <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <input
+                        value={query}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          setQuery(next);
+                          scheduleQueryUrlUpdate(next);
+                        }}
+                        placeholder={searchPlaceholder}
+                        className="h-8 w-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                        aria-label="Search"
+                      />
+                    </div>
+                    {query.trim().length > 0 ? (
                       <Button
                         type="button"
                         variant="ghost"
@@ -1263,8 +1301,8 @@ function DrivePageInner() {
                       >
                         <X className="h-4 w-4" />
                       </Button>
-                    </div>
-                  ) : null}
+                    ) : null}
+                  </div>
                 </div>
 
               </div>
