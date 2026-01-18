@@ -89,6 +89,7 @@ export function SearchBar({
   const isDrivePage = React.useMemo(() => pathname?.startsWith("/drive"), [pathname]);
 
   const isStockSearchPage = pathname?.startsWith("/stock/search");
+  const hasScopeSelector = Boolean(onScopeChange);
   const urlQ = (searchParams?.get("q") ?? "").trim();
   const urlCat = (searchParams?.get("cat") ?? "").trim();
   const [isFocused, setIsFocused] = React.useState(false);
@@ -114,12 +115,13 @@ export function SearchBar({
   const valueRef = React.useRef(value);
   const showRecentsRef = React.useRef(showRecents);
   const loadRecentsRef = React.useRef<() => string[]>(() => []);
+  const getSuggestionsRef = React.useRef<SearchBarProps["getSuggestions"]>(getSuggestions);
   const [popoverWidth, setPopoverWidth] = React.useState<number | undefined>(undefined);
 
   const effectiveRecentsKey = React.useMemo(() => {
     // Only scope the key when the selector is enabled (keeps existing behavior for all current callers)
-    return onScopeChange ? `${recentsStorageKey}_${scope}` : recentsStorageKey;
-  }, [onScopeChange, recentsStorageKey, scope]);
+    return hasScopeSelector ? `${recentsStorageKey}_${scope}` : recentsStorageKey;
+  }, [hasScopeSelector, recentsStorageKey, scope]);
 
   React.useEffect(() => {
     const el = triggerRef.current;
@@ -186,6 +188,10 @@ export function SearchBar({
     loadRecentsRef.current = loadRecents;
   }, [loadRecents]);
 
+  React.useEffect(() => {
+    getSuggestionsRef.current = getSuggestions;
+  }, [getSuggestions]);
+
   const persistRecents = React.useCallback(
     (next: string[]) => {
       if (!showRecents) return;
@@ -222,7 +228,7 @@ export function SearchBar({
     setRecents([]);
   }, [effectiveRecentsKey]);
   React.useEffect(() => {
-    if (!onScopeChange) return;
+    if (!hasScopeSelector) return;
     if (!showRecents) {
       setRecents([]);
       setHighlight("");
@@ -230,12 +236,12 @@ export function SearchBar({
     }
     setRecents(loadRecents());
     setHighlight("");
-  }, [scope, onScopeChange, showRecents, loadRecents]);
+  }, [scope, hasScopeSelector, showRecents, loadRecents]);
 
   // Load recents after mount / when the storage key changes (avoids localStorage access during state init)
   // Only used when the scope selector is NOT enabled; otherwise the scope-effect above owns recents.
   React.useEffect(() => {
-    if (onScopeChange) return;
+    if (hasScopeSelector) return;
 
     if (!showRecents) {
       setRecents([]);
@@ -243,7 +249,7 @@ export function SearchBar({
     }
 
     setRecents(loadRecents());
-  }, [onScopeChange, showRecents, loadRecents, effectiveRecentsKey]);
+  }, [hasScopeSelector, showRecents, loadRecents, effectiveRecentsKey]);
 
 
   const clearContext = React.useCallback(() => {
@@ -255,7 +261,7 @@ export function SearchBar({
 
     // If scope selector is enabled, context is only relevant for Drive scope.
     // If selector is NOT enabled, allow clearing on Drive pages when a context label is shown.
-    if (onScopeChange) {
+    if (hasScopeSelector) {
       if (scope !== "drive") return;
     } else {
       if (!isDrivePage) return;
@@ -279,31 +285,31 @@ export function SearchBar({
 
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);
-  }, [onClearContext, onScopeChange, scope, isDrivePage, searchParams, router, pathname]);
+  }, [onClearContext, hasScopeSelector, scope, isDrivePage, searchParams, router, pathname]);
 
   const setScope = React.useCallback(
     (next: string) => {
-      if (!onScopeChange) return;
+      if (!hasScopeSelector) return;
 
       // If we are leaving Drive, clear any folder context so it doesn't stick in Stock.
       if (scope === "drive" && next !== "drive") {
         clearContext();
       }
 
-      onScopeChange(next);
+      onScopeChange?.(next);
       // Keep focus so the user can keep typing
       window.setTimeout(() => inputRef.current?.focus(), 0);
     },
-    [onScopeChange, scope, clearContext]
+    [onScopeChange, scope, clearContext, hasScopeSelector]
   );
 
   const showContext = React.useMemo(() => {
     const label = (contextLabel ?? "").trim();
     if (!label) return false;
     // If scope selector is enabled, context is only relevant for Drive.
-    if (onScopeChange) return scope === "drive";
+    if (hasScopeSelector) return scope === "drive";
     return true;
-  }, [contextLabel, onScopeChange, scope]);
+  }, [contextLabel, hasScopeSelector, scope]);
 
   const scopeLabel = React.useMemo(() => {
     const found = scopes.find((s) => s.value === scope);
@@ -315,7 +321,7 @@ export function SearchBar({
     if (placeholder !== "Search images, keywords, tags…") return placeholder;
 
     // When scope selector is enabled, adjust per-scope
-    if (onScopeChange) {
+    if (hasScopeSelector) {
       if (scope === "drive") {
         if (showContext && contextLabel) return `Search in ${contextLabel}…`;
         return "Search files, folders, people…";
@@ -325,27 +331,27 @@ export function SearchBar({
 
     // Without selector, keep existing placeholder
     return placeholder;
-  }, [placeholder, onScopeChange, scope, showContext, contextLabel]);
+  }, [placeholder, hasScopeSelector, scope, showContext, contextLabel]);
 
   const effectiveAriaLabel = React.useMemo(() => {
-    if (onScopeChange) {
+    if (hasScopeSelector) {
       if (scope === "drive" && showContext && contextLabel) {
         return `Search in ${contextLabel}`;
       }
       return `Search in ${scopeLabel}`;
     }
     return "Search assets";
-  }, [onScopeChange, scopeLabel, scope, showContext, contextLabel]);
+  }, [hasScopeSelector, scopeLabel, scope, showContext, contextLabel]);
 
   const scopePadLeft = React.useMemo(() => {
-    if (!onScopeChange) return undefined;
+    if (!hasScopeSelector) return undefined;
     // Rough estimate: pill width + current label width (keeps compact while avoiding overlap)
     const base = 74; // pill + icon gap
     const perChar = 6; // conservative
     const label = scopeLabel ?? "";
     const est = base + label.length * perChar;
     return Math.min(Math.max(est, 120), 160);
-  }, [onScopeChange, scopeLabel]);
+  }, [hasScopeSelector, scopeLabel]);
 
   const contextPadLeft = React.useMemo(() => {
     const label = (contextLabel ?? "").trim();
@@ -378,7 +384,8 @@ export function SearchBar({
   }, [value, debounceMs, onChangeDebounced]);
 
   React.useEffect(() => {
-    if (!getSuggestions) {
+    const suggestFn = getSuggestionsRef.current;
+    if (!suggestFn) {
       setSuggestions([]);
       setSuggestionsLoading(false);
       return;
@@ -419,7 +426,7 @@ export function SearchBar({
 
     const t = window.setTimeout(async () => {
       try {
-        const res = await getSuggestions(q, scope);
+        const res = await suggestFn(q, scope);
         if (cancelled) return;
         const cleaned = (Array.isArray(res) ? res : [])
           .map((s) => String(s))
@@ -437,7 +444,7 @@ export function SearchBar({
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [value, getSuggestions, minChars, maxSug, scope]);
+  }, [value, minChars, maxSug, scope]);
 
   React.useEffect(() => {
     if (!suggestionsOpen) return;
@@ -660,7 +667,7 @@ export function SearchBar({
                 onKeyDown={(e) => {
                   if (e.key === "Backspace") {
                     // If user is in Drive and the query is empty, backspace clears the folder context
-                    const inDrive = onScopeChange ? scope === "drive" : isDrivePage;
+                    const inDrive = hasScopeSelector ? scope === "drive" : isDrivePage;
                     if (inDrive && !value && contextLabel) {
                       e.preventDefault();
                       clearContext();
@@ -724,7 +731,7 @@ export function SearchBar({
                 placeholder={effectivePlaceholder}
                 aria-label={effectiveAriaLabel}
                 style={
-                  onScopeChange
+                  hasScopeSelector
                     ? ({
                         paddingLeft: `${(scopePadLeft ?? 130) + (showIcon ? 22 : 0) + (contextPadLeft ? contextPadLeft + 8 : 0)}px`,
                       } as React.CSSProperties)
@@ -734,7 +741,7 @@ export function SearchBar({
                 }
                 className={cn(
                   "h-10 bg-background text-foreground placeholder:text-muted-foreground focus-visible:ring-ring focus-visible:ring-offset-background",
-                  onScopeChange ? "" : showIcon ? "pl-9" : "pl-3",
+                  hasScopeSelector ? "" : showIcon ? "pl-9" : "pl-3",
                   value ? "pr-9" : "pr-16",
                   "[&::-webkit-search-cancel-button]:appearance-none [&::-webkit-search-decoration]:appearance-none [&::-webkit-search-results-button]:appearance-none [&::-webkit-search-results-decoration]:appearance-none"
                 )}
@@ -742,7 +749,7 @@ export function SearchBar({
             </div>
           </PopoverAnchor>
 
-          {onScopeChange ? (
+          {hasScopeSelector ? (
             <div className="absolute left-2 top-1/2 -translate-y-1/2 flex items-center gap-2 pr-1">
               <div
                 className="inline-flex h-7 items-center rounded-full bg-muted/50 p-0.5 ring-1 ring-border/40"
@@ -915,7 +922,7 @@ export function SearchBar({
                     <CommandGroup
                       heading={
                         <div className="flex items-center justify-between">
-                          <span>Recent {onScopeChange ? (scope === 'drive' ? 'Files' : 'Stock') : ''} searches</span>
+                          <span>Recent {hasScopeSelector ? (scope === 'drive' ? 'Files' : 'Stock') : ''} searches</span>
                           <button
                             type="button"
                             onMouseDown={(e) => e.preventDefault()}
@@ -950,7 +957,11 @@ export function SearchBar({
                     </CommandGroup>
                   ) : null}
 
-                  {!suggestionsLoading && q.length >= minChars && suggestions.length === 0 ? null : null}
+                  {!suggestionsLoading && q.length >= minChars && suggestions.length === 0 ? (
+                    <CommandGroup>
+                      <CommandEmpty>No suggestions yet.</CommandEmpty>
+                    </CommandGroup>
+                  ) : null}
 
                   {q.length >= minChars ? (
                     <CommandGroup heading="Suggestions">
@@ -967,7 +978,7 @@ export function SearchBar({
                           <Search className="h-4 w-4 opacity-70" />
                           <div className="flex flex-col">
                             <span>Search for “{q}”</span>
-                            {onScopeChange ? (
+                            {hasScopeSelector ? (
                               <span className="text-[11px] text-muted-foreground">in {scopeLabel}</span>
                             ) : null}
                           </div>

@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useProtoAuth } from "@/lib/proto-auth";
-import { Menu, LayoutGrid, List, Upload, Share2, Trash2, Search, X, ShoppingBag } from "lucide-react";
+import { Menu, LayoutGrid, List, Upload, Share2, Trash2, Search, X, ShoppingBag, Folder } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
@@ -656,17 +656,45 @@ function DrivePageInner() {
   // --- Search-state bar logic ---
   const hasActiveQuery = query.trim().length > 0;
   const hasActiveFilters = activeFilterCount > 0;
-  const showSearchStateBar = hasActiveQuery || hasActiveFilters;
+  const hasFolderScope = selectedFolder !== "all";
+  const showSearchStateBar = hasActiveQuery || hasActiveFilters || hasFolderScope;
 
   const clearOnlyQuery = useCallback(() => {
     clearSearchUrlAndFolder();
   }, [clearSearchUrlAndFolder]);
 
+  const clearFolderScopeKeepQuery = useCallback(() => {
+    // Clear folder scope but keep current query/filter context
+    setSelectedFolder("all");
+
+    try {
+      const params = getCurrentSearchParams();
+      params.delete("folder");
+      // Keep q/query/search as-is
+      router.replace(`/drive${params.toString() ? `?${params.toString()}` : ""}`);
+    } catch {
+      // ignore
+    }
+  }, [getCurrentSearchParams, router, setSelectedFolder]);
+
   const clearAllSearchAndFilters = useCallback(() => {
     clearSearchUrlAndFolder();
     setFilters(clearFilters());
     setFiltersOpen(false);
-  }, [clearSearchUrlAndFolder, setFilters, setFiltersOpen]);
+
+    // Also clear folder scope
+    setSelectedFolder("all");
+    try {
+      const params = getCurrentSearchParams();
+      params.delete("folder");
+      params.delete("q");
+      params.delete("query");
+      params.delete("search");
+      router.replace(`/drive${params.toString() ? `?${params.toString()}` : ""}`);
+    } catch {
+      // ignore
+    }
+  }, [clearSearchUrlAndFolder, setFilters, setFiltersOpen, getCurrentSearchParams, router, setSelectedFolder]);
 
   const [folderTree, setFolderTree] = useState<FolderNode[]>(() => {
     // On the server we can't access localStorage; initial render uses demoFolders.
@@ -1086,7 +1114,7 @@ function DrivePageInner() {
       try {
         window.dispatchEvent(
           new CustomEvent<DriveFolderContextDetail>("CBX_DRIVE_FOLDER_CONTEXT", {
-            detail: { id: "", name: "" },
+            detail: { id: "", name: "", pathLabel: "" },
           })
         );
       } catch {
@@ -1115,7 +1143,19 @@ function DrivePageInner() {
     try {
       window.dispatchEvent(
         new CustomEvent<DriveFolderContextDetail>("CBX_DRIVE_FOLDER_CONTEXT", {
-          detail: { id, name: resolvedName, pathLabel: fullBreadcrumbLabel },
+          detail: {
+            id,
+            name: resolvedName,
+            pathLabel: isPurchasesView
+              ? "Purchases"
+              : isFavoritesView
+                ? "Favorites"
+                : isTrashView
+                  ? "Trash"
+                  : isRealFolderView
+                    ? folderName
+                    : "",
+          },
         })
       );
     } catch {
@@ -1131,7 +1171,7 @@ function DrivePageInner() {
           lastDriveFolderContextSentRef.current = "";
           window.dispatchEvent(
             new CustomEvent<DriveFolderContextDetail>("CBX_DRIVE_FOLDER_CONTEXT", {
-              detail: { id: "", name: "" },
+              detail: { id: "", name: "", pathLabel: "" },
             })
           );
         }
@@ -1273,38 +1313,6 @@ function DrivePageInner() {
                 >
                   <Menu className="h-4 w-4" />
                 </Button>
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-md border bg-background px-2">
-                      <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-                      <input
-                        value={query}
-                        onChange={(e) => {
-                          const next = e.target.value;
-                          setQuery(next);
-                          scheduleQueryUrlUpdate(next);
-                        }}
-                        placeholder={searchPlaceholder}
-                        className="h-8 w-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                        aria-label="Search"
-                      />
-                    </div>
-                    {query.trim().length > 0 ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-9 w-9"
-                        aria-label="Clear search"
-                        onClick={clearSearchUrlAndFolder}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-
               </div>
 
               {/* Row 2: Controls */}
@@ -1389,54 +1397,6 @@ function DrivePageInner() {
             </div>
           </header>
 
-          {showSearchStateBar ? (
-            <div className="border-b bg-background/60 supports-[backdrop-filter]:bg-background/50">
-              <div className="px-4 lg:px-6 py-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  {hasActiveQuery ? (
-                    <div className="flex min-w-0 items-center gap-2 rounded-full border bg-background px-3 py-1 text-xs">
-                      <Search className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="max-w-[240px] truncate">{query.trim()}</span>
-                      <button
-                        type="button"
-                        className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full hover:bg-muted"
-                        aria-label="Clear search"
-                        onClick={clearOnlyQuery}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ) : null}
-
-                  {hasActiveFilters ? (
-                    <button
-                      type="button"
-                      onClick={openFilters}
-                      className="inline-flex items-center gap-2 rounded-full border bg-background px-3 py-1 text-xs hover:bg-muted"
-                      aria-label="Open filters"
-                    >
-                      <span>Filters</span>
-                      <Badge variant="secondary" className="h-5 px-2">
-                        {activeFilterCount}
-                      </Badge>
-                    </button>
-                  ) : null}
-
-                  <div className="flex-1" />
-
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8"
-                    onClick={clearAllSearchAndFilters}
-                  >
-                    Clear all
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ) : null}
 
           <div
             key={selectedFolder}
@@ -1459,10 +1419,9 @@ function DrivePageInner() {
                           : "All files"}
                 </h1>
                 {selectedFolder !== "all" ? (
-                  <div className="mt-1 relative max-w-full sm:max-w-[80%] pr-10" title={fullBreadcrumbLabel} aria-label={fullBreadcrumbLabel}>
-                    <div className="overflow-hidden">
-                      <Breadcrumb>
-                        <BreadcrumbList className="flex-nowrap whitespace-nowrap overflow-hidden text-xs text-muted-foreground">
+                  <div className="mt-1 relative max-w-full" title={fullBreadcrumbLabel} aria-label={fullBreadcrumbLabel}>
+                    <Breadcrumb>
+                      <BreadcrumbList className="flex flex-wrap gap-y-0.5 text-xs text-muted-foreground">
                           <BreadcrumbItem>
                             {selectedFolder === "all" ? (
                               <BreadcrumbPage>All files</BreadcrumbPage>
@@ -1563,12 +1522,8 @@ function DrivePageInner() {
                                 </span>
                               );
                             })}
-                        </BreadcrumbList>
-                      </Breadcrumb>
-                    </div>
-
-                    {/* Right-side fade (indicates overflow) */}
-                    <div className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-background to-transparent" />
+                      </BreadcrumbList>
+                    </Breadcrumb>
                   </div>
                 ) : null}
                 <div className="mt-2 flex flex-wrap items-center gap-2">

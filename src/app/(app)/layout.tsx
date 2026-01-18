@@ -372,10 +372,10 @@ function PromosHost({
         priority: p.priority ?? 0,
         once: Boolean(p.cap?.once),
         cooldownHours: p.cap?.cooldownHours,
-        imageSrc: (p as any).imageSrc,
-        imageAlt: (p as any).imageAlt,
-        highlights: (p as any).highlights,
-        secondaryLabel: (p as any).secondaryLabel,
+        imageSrc: p.imageSrc,
+        imageAlt: p.imageAlt,
+        highlights: p.highlights,
+        secondaryLabel: p.secondaryLabel,
       }))
       .sort((a, b) => b.priority - a.priority);
 

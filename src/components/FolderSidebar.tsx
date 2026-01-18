@@ -12,6 +12,7 @@ import {
   MoreHorizontal,
   Plus,
   Sparkles,
+  Search,
   Star,
   Trash2,
   X,
@@ -294,7 +295,7 @@ function CommandPalette({
 }) {
   const [open, setOpen] = React.useState(false);
 
-  // Cmd/Ctrl+Shift+K opens the palette
+  // Cmd/Ctrl+Shift+K opens the folder palette
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -310,6 +311,7 @@ function CommandPalette({
 
       if (isCmdShiftK && !typingTarget) {
         e.preventDefault();
+        e.stopPropagation();
         setOpen(true);
       }
     };
@@ -329,73 +331,89 @@ function CommandPalette({
   );
 
   return (
-    <CommandDialog open={open} onOpenChange={setOpen}>
-      <CommandInput placeholder="Search folders and actions…" />
-      <CommandList>
-        <CommandEmpty>No results.</CommandEmpty>
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mx-2 mb-3 flex h-9 w-[calc(100%-16px)] items-center gap-2 rounded-md border bg-background px-2 text-sm text-muted-foreground transition hover:bg-muted/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
+        aria-label="Open search"
+        title="Search folders and actions (Cmd/Ctrl+Shift+K)"
+      >
+        <Search className="h-4 w-4 shrink-0" />
+        <span className="min-w-0 flex-1 truncate">Search folders and actions…</span>
+        <span className="hidden shrink-0 rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground md:inline-flex">
+          ⌘⇧K
+        </span>
+      </button>
 
-        <CommandGroup heading="Navigate">
-          <CommandItem value="All files" onSelect={() => run("all")}>
-            All files
-          </CommandItem>
-          <CommandItem value="Purchases" onSelect={() => run("purchases")}>
-            Purchases
-          </CommandItem>
-          <CommandItem value="Favorites" onSelect={() => run("favorites")}>
-            Favorites
-          </CommandItem>
-          <CommandItem value="Trash" onSelect={() => run("trash")}>
-            Trash
-          </CommandItem>
-          <CommandItem
-            value="Create folder"
-            onSelect={() => {
-              setOpen(false);
-              onCreateFolder();
-            }}
-          >
-            Create folder
-          </CommandItem>
-        </CommandGroup>
+      <CommandDialog open={open} onOpenChange={setOpen}>
+        <CommandInput placeholder="Search folders and actions…" />
+        <CommandList>
+          <CommandEmpty>No results.</CommandEmpty>
 
-        {smartFolders.length > 0 ? (
-          <>
-            <CommandSeparator />
-            <CommandGroup heading="Smart folders">
-              {smartFolders.map((sf) => (
-                <CommandItem
-                  key={sf.id}
-                  value={sf.name}
-                  onSelect={() => run(sf.id)}
-                >
-                  {sf.name}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </>
-        ) : null}
-
-        <CommandSeparator />
-        <CommandGroup heading="Folders">
-          {folderItems.map((f) => (
-            <CommandItem
-              key={f.id}
-              value={`${f.label} ${f.keywords ?? ""}`}
-              onSelect={() => run(f.id)}
-            >
-              <div className="flex min-w-0 flex-col">
-                <span className="truncate">{f.label}</span>
-                {f.keywords ? (
-                  <span className="truncate text-xs text-muted-foreground">
-                    {f.keywords}
-                  </span>
-                ) : null}
-              </div>
+          <CommandGroup heading="Navigate">
+            <CommandItem value="All files" onSelect={() => run("all")}>
+              All files
             </CommandItem>
-          ))}
-        </CommandGroup>
-      </CommandList>
-    </CommandDialog>
+            <CommandItem value="Purchases" onSelect={() => run("purchases")}>
+              Purchases
+            </CommandItem>
+            <CommandItem value="Favorites" onSelect={() => run("favorites")}>
+              Favorites
+            </CommandItem>
+            <CommandItem value="Trash" onSelect={() => run("trash")}>
+              Trash
+            </CommandItem>
+            <CommandItem
+              value="Create folder"
+              onSelect={() => {
+                setOpen(false);
+                onCreateFolder();
+              }}
+            >
+              Create folder
+            </CommandItem>
+          </CommandGroup>
+
+          {smartFolders.length > 0 ? (
+            <>
+              <CommandSeparator />
+              <CommandGroup heading="Smart folders">
+                {smartFolders.map((sf) => (
+                  <CommandItem
+                    key={sf.id}
+                    value={sf.name}
+                    onSelect={() => run(sf.id)}
+                  >
+                    {sf.name}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            </>
+          ) : null}
+
+          <CommandSeparator />
+          <CommandGroup heading="Folders">
+            {folderItems.map((f) => (
+              <CommandItem
+                key={f.id}
+                value={`${f.label} ${f.keywords ?? ""}`}
+                onSelect={() => run(f.id)}
+              >
+                <div className="flex min-w-0 flex-col">
+                  <span className="truncate">{f.label}</span>
+                  {f.keywords ? (
+                    <span className="truncate text-xs text-muted-foreground">
+                      {f.keywords}
+                    </span>
+                  ) : null}
+                </div>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </CommandList>
+      </CommandDialog>
+    </>
   );
 }
 
@@ -660,10 +678,28 @@ export function FolderSidebar({
     setSectionsOpen((prev) => ({ ...prev, [key]: !prev[key] }));
   }, []);
 
-  const [folderQuery, setFolderQuery] = React.useState("");
-  const deferredFolderQuery = React.useDeferredValue(folderQuery);
 
   const [folderSort, setFolderSort] = React.useState<"name_asc" | "name_desc">("name_asc");
+
+  // Helper to prune reserved folders like Purchases from the folder tree
+  const pruneReservedFolders = React.useCallback((nodes: FolderNode[]): FolderNode[] => {
+    const walk = (list: FolderNode[]): FolderNode[] => {
+      return (list || [])
+        .filter((n) => {
+          const id = (n.id ?? '').trim().toLowerCase();
+          const name = (n.name ?? '').trim().toLowerCase();
+          return id !== 'purchases' && name !== 'purchases';
+        })
+        .map((n) => {
+          if (n.children?.length) {
+            return { ...n, children: walk(n.children) };
+          }
+          return n;
+        });
+    };
+
+    return walk(nodes);
+  }, []);
 
   const [openById, setOpenById] = React.useState<Record<string, boolean>>(() => ({}));
   const [openReady, setOpenReady] = React.useState(false);
@@ -682,41 +718,16 @@ export function FolderSidebar({
   }, [openById, openReady]);
 
   const isOpen = (id: string) => {
-    // While searching, force open so matches are visible
-    if (folderQuery.trim().length > 0) return true;
     return openById[id] ?? false;
   };
 
   const toggleOpen = (id: string) => {
-    // While searching, we force all folders open for visibility. Toggling would be confusing
-    // (and previously could produce incorrect state because isOpen() returns true).
-    if (folderQuery.trim().length > 0) return;
-
     setOpenById((prev) => {
       const current = prev[id] ?? false;
       return { ...prev, [id]: !current };
     });
   };
 
-  const filterFolders = (nodes: FolderNode[], q: string): FolderNode[] => {
-    const needle = q.trim().toLowerCase();
-    if (!needle) return nodes;
-
-    const walk = (list: FolderNode[]): FolderNode[] => {
-      const out: FolderNode[] = [];
-      for (const n of list) {
-        const nameHit = n.name.toLowerCase().includes(needle);
-        const childHits = n.children?.length ? walk(n.children) : [];
-
-        if (nameHit || childHits.length) {
-          out.push({ ...n, ...(childHits.length ? { children: childHits } : { children: n.children }) });
-        }
-      }
-      return out;
-    };
-
-    return walk(nodes);
-  };
 
   const sortFolders = React.useCallback((nodes: FolderNode[]): FolderNode[] => {
     const sorted = [...nodes].sort((a, b) => {
@@ -735,9 +746,8 @@ export function FolderSidebar({
   }, [folderSort]);
 
   const visibleFolders = React.useMemo(() => {
-    const filtered = filterFolders(folders, deferredFolderQuery);
-    return sortFolders(filtered);
-  }, [folders, deferredFolderQuery, sortFolders]);
+    return sortFolders(pruneReservedFolders(folders));
+  }, [folders, sortFolders, pruneReservedFolders]);
 
   const isRealFolder =
     selectedId &&
@@ -1394,37 +1404,13 @@ export function FolderSidebar({
                 </DialogContent>
               </Dialog>
             </div>
-            {sectionsOpen.folders && (
-              <div className="px-2">
-                <div className="relative">
-                  <Input
-                    value={folderQuery}
-                    onChange={(e) => setFolderQuery(e.target.value)}
-                    placeholder="Search folders…"
-                    className="h-8 pr-9"
-                  />
-
-                  {folderQuery.trim().length > 0 && (
-                    <button
-                      type="button"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                      onClick={() => setFolderQuery("")}
-                      aria-label="Clear folder search"
-                      title="Clear"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
           {sectionsOpen.folders && (
             <div
               id="cbx-sidebar-folders"
               className={cn(
                 "transition-opacity duration-150",
-                !openReady && folderQuery.trim().length === 0 && "pointer-events-none opacity-0"
+                !openReady && "pointer-events-none opacity-0"
               )}
             >
               {visibleFolders.length === 0 && (

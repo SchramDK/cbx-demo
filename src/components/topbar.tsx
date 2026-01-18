@@ -239,7 +239,9 @@ export function Topbar({
 
   const [driveFolderContextName, setDriveFolderContextName] = React.useState<string>("");
   const [driveFolderContextId, setDriveFolderContextId] = React.useState<string>("");
+  const [driveFolderContextPathLabel, setDriveFolderContextPathLabel] = React.useState<string>("");
   const urlFolderId = (sp.get("folder") ?? "").trim();
+  const urlHasFolderParam = sp.has("folder");
   const driveFolderId = (driveFolderContextId || ((pathname ?? "").startsWith("/drive") ? urlFolderId : "")).trim();
   const folderContextLabel = driveFolderId && driveFolderId !== "all" ? driveFolderId : "";
 
@@ -267,67 +269,6 @@ export function Topbar({
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => setMounted(true), []);
 
-  React.useEffect(() => {
-    if (!mounted) return;
-    // Hydrate last selected folder so the context chip works across the app (not only on /drive)
-    if ((driveFolderContextId ?? "").trim()) return;
-
-    try {
-      const raw = (window.localStorage.getItem("CBX_SELECTED_FOLDER_V1") ?? "").trim();
-      if (raw && raw !== "all") setDriveFolderContextId(raw);
-    } catch {
-      // ignore
-    }
-  }, [mounted, driveFolderContextId]);
-
-  const driveContextLabel = React.useMemo(() => {
-    const label = (driveFolderContextName || folderContextLabelPretty || folderContextLabel || driveFolderContextId).trim();
-    return label.length ? label : undefined;
-  }, [driveFolderContextName, folderContextLabelPretty, folderContextLabel, driveFolderContextId]);
-
-  const hasDriveFolderContext = React.useMemo(() => {
-    const id = (driveFolderId ?? "").trim();
-    const hasId = Boolean(id) && id !== "all";
-    const hasName = Boolean((driveFolderContextName ?? "").trim());
-    const hasLabel = Boolean((driveContextLabel ?? "").trim());
-    return hasLabel && (hasId || hasName);
-  }, [driveFolderId, driveFolderContextName, driveContextLabel]);
-
-  React.useEffect(() => {
-    if (!mounted) return;
-
-    const onCtx = (e: Event) => {
-      const ce = e as CustomEvent<{ id: string; name: string }>;
-      const nextId = (ce.detail?.id ?? "").trim();
-      const nextName = (ce.detail?.name ?? "").trim();
-      setDriveFolderContextId(nextId);
-      setDriveFolderContextName(nextName);
-    };
-
-    window.addEventListener("CBX_DRIVE_FOLDER_CONTEXT", onCtx as EventListener);
-    return () => window.removeEventListener("CBX_DRIVE_FOLDER_CONTEXT", onCtx as EventListener);
-  }, [mounted]);
-
-  React.useEffect(() => {
-    if (!mounted) return;
-    if (!(pathname ?? "").startsWith("/drive")) return;
-
-    const next = (urlFolderId ?? "").trim();
-
-    // If Drive URL explicitly sets folder, prefer it
-    if (next && next !== "all") {
-      if (driveFolderContextId !== next) setDriveFolderContextId(next);
-      return;
-    }
-
-    // If Drive URL clears folder, also clear the id
-    if (!next || next === "all") {
-      if (driveFolderContextId === urlFolderId) {
-        setDriveFolderContextId("");
-      }
-    }
-  }, [mounted, pathname, urlFolderId, driveFolderContextId]);
-
   const { me, setMe, refreshMe } = useDemoMe(mounted);
 
   const resolvedUser = (user ?? me) as {
@@ -339,7 +280,116 @@ export function Topbar({
   } | null;
 
   // Never let a stale boolean prop keep the UI "logged in" when user data is gone.
-  const loggedIn = Boolean(resolvedUser) && (typeof isLoggedIn === "boolean" ? isLoggedIn : true);
+  const loggedIn =
+    Boolean(resolvedUser) && (typeof isLoggedIn === "boolean" ? isLoggedIn : true);
+
+  React.useEffect(() => {
+    if (!mounted) return;
+    // Hydrate last selected folder so the context chip works across the app (not only on /drive)
+    if ((driveFolderContextId ?? "").trim()) return;
+
+    try {
+      const stored = (window.localStorage.getItem("CBX_SELECTED_FOLDER_V1") ?? "").trim();
+      const normalized = stored === "all" ? "" : stored;
+
+      if (normalized) {
+        setDriveFolderContextId(normalized);
+      } else {
+        // All files (or no stored folder) => clear any lingering labels so the chip disappears
+        setDriveFolderContextName("");
+        setDriveFolderContextPathLabel("");
+      }
+    } catch {
+      // ignore
+    }
+  }, [mounted, driveFolderContextId]);
+
+  const driveContextLabel = React.useMemo(() => {
+    const label = (
+      driveFolderContextPathLabel ||
+      driveFolderContextName ||
+      folderContextLabelPretty ||
+      folderContextLabel ||
+      driveFolderContextId
+    ).trim();
+    return label.length ? label : undefined;
+  }, [driveFolderContextPathLabel, driveFolderContextName, folderContextLabelPretty, folderContextLabel, driveFolderContextId]);
+
+  const hasDriveFolderContext = React.useMemo(() => {
+    const id = (driveFolderId ?? "").trim();
+    const hasId = Boolean(id) && id !== "all";
+    const hasName = Boolean((driveFolderContextName ?? "").trim());
+    const hasPathLabel = Boolean((driveFolderContextPathLabel ?? "").trim());
+    const hasLabel = Boolean((driveContextLabel ?? "").trim());
+    return hasLabel && (hasId || hasName || hasPathLabel);
+  }, [driveFolderId, driveFolderContextName, driveFolderContextPathLabel, driveContextLabel]);
+
+  React.useEffect(() => {
+    if (!mounted) return;
+
+    const onCtx = (e: Event) => {
+      const ce = e as CustomEvent<{ id?: string; name?: string; pathLabel?: string }>;
+      const nextId = (ce.detail?.id ?? "").trim();
+      const nextName = (ce.detail?.name ?? "").trim();
+      const nextPathLabel = (ce.detail?.pathLabel ?? "").trim();
+
+      setDriveFolderContextId(nextId);
+      setDriveFolderContextName(nextName);
+      setDriveFolderContextPathLabel(nextPathLabel);
+
+      // If Drive clears context (All files), persist that so the chip doesn't come back from hydration.
+      if (!nextId || nextId === "all") {
+        try {
+          window.localStorage.setItem("CBX_SELECTED_FOLDER_V1", "all");
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    window.addEventListener("CBX_DRIVE_FOLDER_CONTEXT", onCtx as EventListener);
+    return () => window.removeEventListener("CBX_DRIVE_FOLDER_CONTEXT", onCtx as EventListener);
+  }, [mounted]);
+
+  React.useEffect(() => {
+    if (!mounted) return;
+    if (!loggedIn) return;
+    if (!(pathname ?? "").startsWith("/drive")) return;
+
+    // Only sync/clear folder context when the URL explicitly includes a `folder` param.
+    // If it's absent, we allow localStorage + events to control the chip and avoid a ping-pong loop.
+    if (!urlHasFolderParam) {
+      // If the URL has no folder param and the stored folder is "all", make sure we clear any
+      // lingering in-memory context so the pill disappears.
+      try {
+        const stored = (window.localStorage.getItem("CBX_SELECTED_FOLDER_V1") ?? "").trim();
+        if (stored === "all") {
+          if (driveFolderContextId) setDriveFolderContextId("");
+          if (driveFolderContextName) setDriveFolderContextName("");
+          if (driveFolderContextPathLabel) setDriveFolderContextPathLabel("");
+        }
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    const next = (urlFolderId ?? "").trim();
+
+    // If Drive URL explicitly sets folder, prefer it
+    if (next && next !== "all") {
+      if (driveFolderContextId !== next) setDriveFolderContextId(next);
+      return;
+    }
+
+    // If Drive URL clears folder, clear all context state
+    if (!next || next === "all") {
+      if (driveFolderContextId) setDriveFolderContextId("");
+      if (driveFolderContextName) setDriveFolderContextName("");
+      if (driveFolderContextPathLabel) setDriveFolderContextPathLabel("");
+    }
+  }, [mounted, loggedIn, pathname, urlHasFolderParam, urlFolderId, driveFolderContextId, driveFolderContextName, driveFolderContextPathLabel]);
+
 
   const derivedActiveProduct: 'drive' | 'stock' =
     activeProduct ?? (pathname?.startsWith('/stock') ? 'stock' : 'drive');
@@ -475,7 +525,7 @@ export function Topbar({
     router,
     searchParamsString,
     searchParamsEntries,
-    sp,
+    // sp, // Removed sp from dependencies to reduce unnecessary reruns
   ]);
 
   React.useEffect(() => {
@@ -512,6 +562,7 @@ export function Topbar({
       // Clear chip immediately (in case Drive event arrives later)
       setDriveFolderContextName("");
       setDriveFolderContextId("");
+      setDriveFolderContextPathLabel("");
 
       const params = new URLSearchParams(searchParamsString);
       params.delete("folder");
@@ -539,7 +590,7 @@ export function Topbar({
       // Notify listeners that folder context is cleared
       try {
         window.dispatchEvent(
-          new CustomEvent("CBX_DRIVE_FOLDER_CONTEXT", { detail: { id: "", name: "" } })
+          new CustomEvent("CBX_DRIVE_FOLDER_CONTEXT", { detail: { id: "", name: "", pathLabel: "" } })
         );
       } catch {
         // ignore
@@ -650,6 +701,85 @@ export function Topbar({
   const canOpenProfile = true; // via callback or fallback route
   const canOpenSettings = true; // via callback or fallback route
 
+  // Memoized SearchBar helpers to stabilize props and prevent rerenders
+  const searchScopes = React.useMemo(() => {
+    return loggedIn
+      ? [
+          { value: 'stock' as const, label: 'Stock' },
+          { value: 'drive' as const, label: 'Files' },
+        ]
+      : undefined;
+  }, [loggedIn]);
+
+  const handleScopeChange = React.useCallback(
+    (next: string) => {
+      if (!loggedIn) return;
+      if (next !== 'drive' && next !== 'stock') return;
+      const v = next === 'stock' ? 'stock' : 'drive';
+      scopeTouchedRef.current = true;
+      setSearchScope(v);
+
+      // If user toggles scope, keep query and navigate to the right section
+      const q = (onSearchChange ? (searchValue ?? '') : internalQuery).trim();
+      if (v === 'stock') {
+        router.push(q ? `/stock/search?q=${encodeURIComponent(q)}` : '/stock');
+      } else {
+        router.push(q ? `/drive?q=${encodeURIComponent(q)}` : '/drive');
+      }
+    },
+    [loggedIn, onSearchChange, searchValue, internalQuery, router]
+  );
+
+  const handleGetSuggestions = React.useCallback(
+    async (q: string, scope?: string) => {
+      const normalizedScope: 'drive' | 'stock' = scope === 'drive' ? 'drive' : 'stock';
+      const results = getTopbarSuggestions({
+        query: q,
+        scope: normalizedScope,
+        loggedIn,
+      });
+      return results.map((s) => s.label);
+    },
+    [loggedIn]
+  );
+
+  const handleSelectSuggestion = React.useCallback(
+    (v: string) => {
+      // Update value and navigate immediately
+      if (onSearchChange) onSearchChange(v);
+      else setInternalQuery(v);
+
+      if (!loggedIn) {
+        router.push(`/stock/search?q=${encodeURIComponent(v)}`);
+        return;
+      }
+
+      if (searchScope === 'stock') {
+        router.push(`/stock/search?q=${encodeURIComponent(v)}`);
+        return;
+      }
+
+      // Drive
+      if ((pathname ?? '').startsWith('/drive')) {
+        try {
+          const params = new URLSearchParams(searchParamsEntries);
+          params.set('q', v);
+          params.delete('query');
+          params.delete('search');
+          suppressNextDriveLiveSyncRef.current = v;
+          router.replace(`/drive?${params.toString()}`);
+        } catch {
+          suppressNextDriveLiveSyncRef.current = v;
+          router.replace(`/drive?q=${encodeURIComponent(v)}`);
+        }
+        return;
+      }
+
+      router.push(`/drive?q=${encodeURIComponent(v)}`);
+    },
+    [onSearchChange, loggedIn, searchScope, router, pathname, searchParamsEntries]
+  );
+
   const center = centerSlot
     ? centerSlot
     : shouldShowSearch
@@ -661,70 +791,10 @@ export function Topbar({
           contextLabel={driveContextLabel}
           onClearContext={hasDriveFolderContext ? clearFolderContext : undefined}
           scope={loggedIn ? searchScope : undefined}
-          scopes={
-            loggedIn
-              ? [
-                  { value: 'stock', label: 'Stock' },
-                  { value: 'drive', label: 'Files' },
-                ]
-              : undefined
-          }
-          onScopeChange={
-            loggedIn
-              ? (next) => {
-                  const v = next === 'stock' ? 'stock' : 'drive';
-                  scopeTouchedRef.current = true;
-                  setSearchScope(v);
-
-                  // If user toggles scope, keep query and navigate to the right section
-                  const q = (onSearchChange ? (searchValue ?? "") : internalQuery).trim();
-                  if (v === 'stock') {
-                    router.push(q ? `/stock/search?q=${encodeURIComponent(q)}` : '/stock');
-                  } else {
-                    router.push(q ? `/drive?q=${encodeURIComponent(q)}` : '/drive');
-                  }
-                }
-              : undefined
-          }
-          getSuggestions={async (q, scope) =>
-            getTopbarSuggestions({
-              query: q,
-              scope: (scope === 'drive' ? 'drive' : 'stock'),
-              loggedIn,
-            }).map((s) => s.label)
-          }
-          onSelectSuggestion={(v) => {
-            // Update value and navigate immediately
-            if (onSearchChange) onSearchChange(v);
-            else setInternalQuery(v);
-
-            if (!loggedIn) {
-              router.push(`/stock/search?q=${encodeURIComponent(v)}`);
-              return;
-            }
-
-            if (searchScope === 'stock') {
-              router.push(`/stock/search?q=${encodeURIComponent(v)}`);
-            } else {
-              // If already in Drive, clear folder context
-              if ((pathname ?? "").startsWith("/drive")) {
-                try {
-                  const params = new URLSearchParams(searchParamsEntries);
-                  params.set("q", v);
-                  params.delete("query");
-                  params.delete("search");
-                  suppressNextDriveLiveSyncRef.current = v;
-                  router.replace(`/drive?${params.toString()}`);
-                } catch {
-                  suppressNextDriveLiveSyncRef.current = v;
-                  router.replace(`/drive?q=${encodeURIComponent(v)}`);
-                }
-                return;
-              }
-
-              router.push(`/drive?q=${encodeURIComponent(v)}`);
-            }
-          }}
+          scopes={searchScopes}
+          onScopeChange={loggedIn ? handleScopeChange : undefined}
+          getSuggestions={handleGetSuggestions}
+          onSelectSuggestion={handleSelectSuggestion}
           onSubmit={submitSearch}
         />
       )
