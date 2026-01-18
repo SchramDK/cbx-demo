@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useProtoAuth } from '@/lib/proto-auth';
 import { AuthGate } from '@/components/auth-gate';
 import {
@@ -38,8 +38,8 @@ const newsItems = [
   },
   {
     date: '2026-01-10',
-    title: 'Prototype login flow',
-    description: 'You can now log in/out in the prototype and keep your place with return-to routing.',
+    title: 'Sign-in improvements',
+    description: 'Sign in and out while keeping your place with smooth return-to routing.',
     badge: 'Auth',
   },
 ];
@@ -67,7 +67,6 @@ const suggestions = [
     icon: Receipt,
   },
 ];
-
 
 const quickActions = [
   { label: 'Upload files', href: '/drive', hint: 'Start in Files', icon: UploadCloud },
@@ -200,7 +199,9 @@ function shuffleWithSeed<T>(arr: T[], seed: number): T[] {
 
 export default function HomePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useProtoAuth();
+  const isDemo = searchParams?.get('demo') === '1';
 
   const [visitCount, setVisitCount] = useState<number>(0);
   const [lastSeen, setLastSeen] = useState<string | null>(null);
@@ -370,9 +371,6 @@ export default function HomePage() {
     const fallbackIds = ['COLOURBOX69824938', 'COLOURBOX34454367'];
     return fallbackIds.map((id) => ({ id, src: `/demo/stock/${id}.jpg` }));
   }, [heroSeed]);
-
-  const heroSrcs = useMemo(() => heroItems.map((x) => x.src), [heroItems]);
-
   // Build a lightweight semantic model for Stock assets (client-only usage)
   const stockSemanticModel = useMemo(() => {
     const pool = (STOCK_ASSETS as any[]) ?? [];
@@ -446,14 +444,18 @@ export default function HomePage() {
     const purchasedSet = new Set(purchasedStockIds);
 
     const byColourboxId = new Map<string, any>();
+    const byId = new Map<string, any>();
     for (const a of pool) {
+      const sid = String(a?.id ?? '').trim();
+      if (sid && !byId.has(sid)) byId.set(sid, a);
+
       const cbx = getStockColourboxId(a);
       if (cbx && !byColourboxId.has(cbx)) byColourboxId.set(cbx, a);
     }
 
     const purchasedDocs: string[] = [];
     for (const id of purchasedStockIds) {
-      const hit = byColourboxId.get(id) ?? pool.find((a) => String(a?.id ?? '').trim() === id);
+      const hit = byColourboxId.get(id) ?? byId.get(id);
       if (hit) purchasedDocs.push(buildStockDocText(hit));
     }
 
@@ -465,8 +467,11 @@ export default function HomePage() {
     const scores: { id: string; score: number }[] = [];
     for (const [docId, dVec] of stockSemanticModel.docVecs) {
       // Exclude anything the user already bought (match by COLOURBOX id)
-      const cbx = byColourboxId.get(docId) ? docId : getStockColourboxId(pool.find((a) => String(a?.id ?? '').trim() === docId));
+      const asset = byColourboxId.get(docId) ?? byId.get(docId);
+      const cbx = asset ? getStockColourboxId(asset) : '';
+
       if (purchasedSet.has(docId) || (cbx && purchasedSet.has(cbx))) continue;
+
       const s = cosine(qVec, dVec);
       if (s > 0) scores.push({ id: docId, score: s });
     }
@@ -495,7 +500,7 @@ export default function HomePage() {
 
     // 1) Primary: semantic picks
     for (const id of shuffledTop) {
-      const a = byColourboxId.get(id) ?? pool.find((x) => String(x?.id ?? '').trim() === id);
+      const a = byColourboxId.get(id) ?? byId.get(id);
       if (!a) continue;
       if (isPurchased(a)) continue;
       const key = String(a?.id ?? getStockColourboxId(a) ?? id);
@@ -648,6 +653,8 @@ export default function HomePage() {
     };
   }, [cartCount, hasNewPurchases, isReturning, newPurchases, newPurchasesLabel, recentSearches]);
 
+  const primaryIsPurchases = focus?.primary?.href === '/drive?folder=purchases';
+
   const pushRecentSearch = useCallback(
     (q: string) => {
       const cleaned = q.trim();
@@ -704,6 +711,58 @@ export default function HomePage() {
     recentViews.length,
   ]);
 
+  const seedDemoPurchases = useCallback(() => {
+    try {
+      const demo = [
+        { id: 'COLOURBOX69824938', folderId: 'purchases', type: 'stock' },
+        { id: 'COLOURBOX34454367', folderId: 'purchases', type: 'stock' },
+        { id: 'COLOURBOX66668909', folderId: 'purchases', type: 'stock' },
+      ];
+      window.localStorage.setItem(DRIVE_IMPORTED_ASSETS_KEY, JSON.stringify(demo));
+      // Force the “new purchases” badge to show.
+      window.localStorage.setItem(PURCHASES_LAST_SEEN_KEY, '0');
+      window.dispatchEvent(new Event(DRIVE_PURCHASES_IMPORTED_EVENT));
+      setPurchasesCount(readPurchasesCount());
+      setPurchasesLastSeen(readPurchasesLastSeen());
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const runDemoSetup = useCallback(() => {
+    simulateDemoActivity();
+    seedDemoPurchases();
+    // Also seed cart if empty.
+    try {
+      const cc = Number(lsGet(LS_KEYS.cart) ?? '0');
+      if (!Number.isFinite(cc) || cc <= 0) {
+        lsSet(LS_KEYS.cart, '2');
+        setCartCount(2);
+      }
+    } catch {
+      // ignore
+    }
+  }, [LS_KEYS.cart, lsGet, lsSet, seedDemoPurchases, simulateDemoActivity]);
+
+  useEffect(() => {
+    // Optional: `?demo=1` forces a stable demo state (once per tab session).
+    const demo = searchParams?.get('demo');
+    if (demo !== '1') return;
+
+    try {
+      const k = 'CBX_HOME_DEMOSETUP_DONE_V1';
+      if (window.sessionStorage.getItem(k) === '1') return;
+
+      // Only auto-seed if the workspace looks empty-ish.
+      const looksEmpty = purchasesCount <= 0 && cartCount <= 0 && recentSearches.length === 0 && recentViews.length === 0;
+      if (looksEmpty) runDemoSetup();
+
+      window.sessionStorage.setItem(k, '1');
+    } catch {
+      // ignore
+    }
+  }, [cartCount, purchasesCount, recentSearches.length, recentViews.length, runDemoSetup, searchParams]);
+
   useEffect(() => {
     simulateDemoActivity();
   }, [simulateDemoActivity]);
@@ -729,8 +788,6 @@ export default function HomePage() {
       window.removeEventListener('storage', onStorage);
     };
   }, []);
-
-
   return (
     <AuthGate requireAuth redirectTo="/login">
       <div className="w-full space-y-6 overflow-x-clip">
@@ -748,7 +805,7 @@ export default function HomePage() {
               <div className="max-w-xl">
                 <div className="inline-flex items-center gap-2 rounded-full bg-muted/30 px-3 py-0.5 text-xs text-muted-foreground backdrop-blur">
                   <Sparkles className="h-3.5 w-3.5" />
-                  <span>Your dashboard</span>
+                  <span>Home</span>
                 </div>
 
                 <h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-[2.75rem]">
@@ -757,11 +814,7 @@ export default function HomePage() {
 
                 <p className="mt-2 text-sm text-muted-foreground sm:text-base">{greetingLine}</p>
 
-                <p className="mt-2 text-xs text-muted-foreground">
-                  {todayLabel}
-                  {visitCount ? ` • Visit #${visitCount}` : ''}
-                  {lastSeenLabel ? ` • Last seen ${lastSeenLabel}` : ''}
-                </p>
+                <p className="mt-2 text-xs text-muted-foreground">{todayLabel}</p>
 
                 {dailyNudge ? (
                   <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-muted/20 px-3 py-0.5 text-xs text-muted-foreground backdrop-blur">
@@ -770,21 +823,14 @@ export default function HomePage() {
                   </div>
                 ) : null}
 
-                <div className="mt-5 flex flex-wrap items-center gap-3">
+                <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                   <button
-                    onClick={() => router.push('/drive')}
-                    className="group inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-sm font-medium text-background transition hover:bg-foreground/90 sm:w-auto"
-                  >
-                    Open Files <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                  </button>
-
-                  <button
-                    onClick={() => router.push('/drive?folder=purchases')}
-                    className="group inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-background/60 px-5 text-sm font-medium ring-1 ring-border/30 transition hover:bg-background/80 sm:w-auto"
+                    onClick={() => router.push(focus.primary.href)}
+                    className="group inline-flex h-11 w-full min-w-0 items-center justify-center gap-2 rounded-full bg-foreground px-5 text-sm font-medium text-background transition hover:bg-foreground/90 sm:w-auto"
                   >
                     <span className="relative inline-flex items-center">
-                      <Receipt className="h-4 w-4" />
-                      {hasNewPurchases ? (
+                      {primaryIsPurchases ? <Receipt className="h-4 w-4" /> : <focus.icon className="h-4 w-4" />}
+                      {hasNewPurchases && primaryIsPurchases ? (
                         <span
                           className="absolute -right-2 -top-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[11px] font-semibold leading-none text-white shadow"
                           aria-label={`${newPurchasesLabel} new purchases`}
@@ -794,17 +840,64 @@ export default function HomePage() {
                         </span>
                       ) : null}
                     </span>
-                    <span>Open Purchases</span>
+                    <span className="max-w-full truncate">{focus.primary.label}</span>
+                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                  </button>
+
+                  <button
+                    onClick={() => router.push(focus.secondary.href)}
+                    className="group inline-flex h-11 w-full min-w-0 items-center justify-center gap-2 rounded-full bg-background/60 px-5 text-sm font-medium ring-1 ring-border/30 transition hover:bg-background/80 sm:w-auto"
+                  >
+                    <span className="max-w-full truncate">{focus.secondary.label}</span>
                     <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                   </button>
 
                   <button
                     onClick={() => router.push('/stock')}
-                    className="group inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-muted/30 px-5 text-sm font-medium transition hover:bg-muted/40 sm:w-auto"
+                    className="group hidden h-11 w-full items-center justify-center gap-2 rounded-full bg-muted/30 px-5 text-sm font-medium transition hover:bg-muted/40 sm:inline-flex sm:w-auto"
                   >
-                    Open Stock <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                    Browse Stock <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                  </button>
+
+                  {isDemo ? (
+                    <button
+                      onClick={runDemoSetup}
+                      className="group inline-flex h-11 w-full min-w-0 items-center justify-center gap-2 rounded-full bg-background/60 px-5 text-sm font-medium ring-1 ring-border/40 transition hover:bg-background/80 sm:w-auto"
+                      title="Seed a demo scenario locally"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      Demo setup
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="mt-3 sm:hidden">
+                  <button
+                    type="button"
+                    onClick={() => router.push('/stock')}
+                    className="inline-flex items-center gap-2 rounded-full bg-background/50 px-4 py-2 text-sm font-medium ring-1 ring-border/30 transition hover:bg-background/70"
+                  >
+                    Browse Stock <ArrowRight className="h-4 w-4" />
                   </button>
                 </div>
+
+                {isDemo ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span className="rounded-full bg-background/50 px-3 py-1 ring-1 ring-border/20">
+                      Cart: <span className="font-semibold text-foreground">{cartCount}</span>
+                    </span>
+                    <span className="rounded-full bg-background/50 px-3 py-1 ring-1 ring-border/20">
+                      Purchases in Files:{' '}
+                      <span className="font-semibold text-foreground">{purchasesCount}</span>
+                    </span>
+                    <span className="rounded-full bg-background/50 px-3 py-1 ring-1 ring-border/20">
+                      Team: <span className="font-semibold text-foreground">{hasTeam ? 'set up' : 'not yet'}</span>
+                    </span>
+                    <span className="hidden sm:inline text-muted-foreground">•</span>
+                    <span className="hidden sm:inline">Recommended demo path: Purchases → Files → Team</span>
+                  </div>
+                ) : null}
+
               </div>
 
               {/* Image previews */}
@@ -900,14 +993,14 @@ export default function HomePage() {
         {/* Newest uploads marquee */}
         <section className="mx-4 sm:mx-6 lg:mx-10">
           <div className="rounded-2xl bg-muted/10 p-5 sm:p-6 ring-1 ring-border/50">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 className="text-base font-semibold">Newest uploads in Files</h2>
                 <p className="mt-1 text-sm text-muted-foreground">A quick scroll of your latest files</p>
               </div>
               <button
                 onClick={() => router.push('/drive')}
-                className="inline-flex items-center gap-2 rounded-full bg-background/60 px-5 py-2.5 text-sm font-medium transition hover:bg-background/80"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-background/60 px-5 py-2.5 text-sm font-medium transition hover:bg-background/80 sm:w-auto"
               >
                 Open Files <ArrowRight className="h-4 w-4" />
               </button>
@@ -926,17 +1019,16 @@ export default function HomePage() {
                     <button
                       key={`${idx}-${src}`}
                       onClick={() => router.push('/drive')}
-                      className="group relative flex shrink-0 items-center gap-3 rounded-2xl bg-background/60 p-3 pr-5 ring-1 ring-border/40 transition hover:bg-background/80 sm:gap-4 sm:p-3.5 sm:pr-6"
+                      className="group relative flex shrink-0 snap-start items-center gap-3 rounded-2xl bg-background/60 p-3 pr-5 ring-1 ring-border/40 transition hover:bg-background/80 sm:gap-4 sm:p-3.5 sm:pr-6"
                     >
                       <div className="relative h-14 w-20 overflow-hidden rounded-2xl bg-muted sm:h-16 sm:w-24">
                         <NextImage src={src} alt="" fill sizes="(min-width: 640px) 96px, 80px" className="object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
                       </div>
                       <div className="min-w-0 text-left">
                         <div className="flex items-center gap-2">
-                          <div className="truncate text-sm font-semibold sm:text-base">Upload {idx + 1}</div>
-                          <span className="hidden sm:inline-flex rounded-full bg-muted/30 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">New</span>
+                          <div className="truncate text-sm font-semibold sm:text-base">Recent upload</div>
                         </div>
-                        <div className="mt-1 truncate text-xs text-muted-foreground sm:mt-1.5 sm:text-sm">Files • just now</div>
+                        <div className="mt-1 truncate text-xs text-muted-foreground sm:mt-1.5 sm:text-sm">Files • recently added</div>
                       </div>
                     </button>
                   ))}
@@ -969,6 +1061,20 @@ export default function HomePage() {
                     transform: translateX(-50%);
                   }
                 }
+                @media (max-width: 639px) {
+                  .cbx-marquee {
+                    -webkit-mask-image: none;
+                    mask-image: none;
+                    overflow-x: auto;
+                    -webkit-overflow-scrolling: touch;
+                    scroll-snap-type: x mandatory;
+                    padding-bottom: 6px;
+                  }
+                  .cbx-marquee__track {
+                    animation: none;
+                    width: max-content;
+                  }
+                }
                 @media (min-width: 1024px) {
                   .cbx-marquee {
                     --cbx-marquee-duration: 48s;
@@ -984,13 +1090,121 @@ export default function HomePage() {
           </div>
         </section>
 
-        <div className="mx-4 sm:mx-6 lg:mx-10 h-px bg-border/60" />
+        {/* How it works */}
+        <section className="mx-4 sm:mx-6 lg:mx-10">
+          <div className="rounded-2xl bg-muted/5 p-5 sm:p-6 ring-1 ring-border/30">
+            <div>
+              <h2 className="text-base font-semibold">How it works</h2>
+              <p className="mt-1 text-sm text-muted-foreground">From Stock to Files — with access control built in.</p>
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <div className="flex gap-3">
+                <span className="mt-0.5 text-xs font-semibold text-muted-foreground">1</span>
+                <div>
+                  <div className="text-sm font-medium">Find & license</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">Search Stock and add images to your cart.</div>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <span className="mt-0.5 text-xs font-semibold text-muted-foreground">2</span>
+                <div>
+                  <div className="text-sm font-medium">Automatically in Files</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">Purchased images appear in Files instantly.</div>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <span className="mt-0.5 text-xs font-semibold text-muted-foreground">3</span>
+                <div>
+                  <div className="text-sm font-medium">Share safely</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">Control access with teams, roles and groups.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Today’s focus */}
+        <section className="mx-4 sm:mx-6 lg:mx-10">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => router.push(focus.primary.href)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                router.push(focus.primary.href);
+              }
+            }}
+            className="group relative w-full cursor-pointer overflow-hidden rounded-2xl bg-muted/10 p-4 text-left ring-1 ring-border/50 transition hover:bg-muted/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
+          >
+            <div className="pointer-events-none absolute -top-24 right-0 h-48 w-48 rounded-full bg-foreground/5 blur-3xl transition-opacity duration-200 group-hover:opacity-80" />
+            <div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+              <div className="absolute inset-0 bg-gradient-to-r from-foreground/5 via-transparent to-foreground/5" />
+            </div>
+
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="mt-0.5 grid h-9 w-9 place-items-center rounded-full bg-background/60 ring-1 ring-border/30">
+                  <focus.icon className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <div className="text-base font-semibold">{focus.title}</div>
+                    {focus.reason ? (
+                      <span className="rounded-full bg-background/50 px-2 py-0.5 text-[10px] text-muted-foreground ring-1 ring-border/20">
+                        {focus.reason}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-1 text-sm text-muted-foreground">{focus.description}</div>
+                  {focus.steps?.length ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {focus.steps.slice(0, 2).map((s: string) => (
+                        <span
+                          key={s}
+                          className="inline-flex items-center gap-1.5 rounded-full bg-background/50 px-2.5 py-0.5 text-[11px] text-muted-foreground ring-1 ring-border/20"
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    router.push(focus.secondary.href);
+                  }}
+                  className="hidden sm:inline-flex h-9 items-center rounded-full bg-background/60 px-3 text-xs font-medium transition hover:bg-background/80"
+                >
+                  {focus.secondary.label}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    router.push(focus.primary.href);
+                  }}
+                  className="inline-flex h-9 items-center rounded-full bg-foreground px-4 text-xs font-semibold text-background transition hover:bg-foreground/90"
+                >
+                  {focus.primary.label}
+                  <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
 
         {/* Based on purchases */}
         {purchasesCount > 0 ? (
           <section className="mx-4 sm:mx-6 lg:mx-10">
             <div className="rounded-2xl bg-muted/10 p-5 sm:p-6 ring-1 ring-border/50">
-              <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h2 className="text-base font-semibold">Based on what you have bought</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
@@ -999,7 +1213,7 @@ export default function HomePage() {
                 </div>
                 <button
                   onClick={() => router.push('/stock')}
-                  className="inline-flex items-center gap-2 rounded-full bg-background/60 px-5 py-2.5 text-sm font-medium transition hover:bg-background/80"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-background/60 px-5 py-2.5 text-sm font-medium transition hover:bg-background/80 sm:w-auto"
                 >
                   Browse Stock <ArrowRight className="h-4 w-4" />
                 </button>
@@ -1010,7 +1224,7 @@ export default function HomePage() {
                 <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-12 bg-gradient-to-l from-background to-transparent" />
 
                 {recommendedBasedOnPurchases.length ? (
-                  <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+                  <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
                     {recommendedBasedOnPurchases.map((a) => {
                       const id = String(a?.id ?? '').trim();
                       const src = String(a?.preview ?? '') || `/demo/stock/${id}.jpg`;
@@ -1019,7 +1233,7 @@ export default function HomePage() {
                           key={`rec-${id}`}
                           type="button"
                           onClick={() => openStockAsset(id)}
-                          className="group w-72 shrink-0 text-left"
+                          className="group w-64 shrink-0 snap-start text-left sm:w-72"
                         >
                           <div className="relative h-40 overflow-hidden rounded-2xl bg-muted ring-1 ring-border/40 transition group-hover:ring-border/60">
                             <NextImage
@@ -1087,93 +1301,18 @@ export default function HomePage() {
           </section>
         ) : null}
 
-        {/* Today’s focus */}
-        <section className="mx-4 sm:mx-6 lg:mx-10">
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => router.push(focus.primary.href)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                router.push(focus.primary.href);
-              }
-            }}
-            className="group relative w-full cursor-pointer overflow-hidden rounded-2xl bg-muted/10 p-4 text-left ring-1 ring-border/50 transition hover:bg-muted/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
-          >
-            <div className="pointer-events-none absolute -top-24 right-0 h-48 w-48 rounded-full bg-foreground/5 blur-3xl transition-opacity duration-200 group-hover:opacity-80" />
-            <div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-              <div className="absolute inset-0 bg-gradient-to-r from-foreground/5 via-transparent to-foreground/5" />
-            </div>
-
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-start gap-3 min-w-0">
-                <div className="mt-0.5 grid h-9 w-9 place-items-center rounded-full bg-background/60 ring-1 ring-border/30">
-                  <focus.icon className="h-4 w-4 text-muted-foreground" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <div className="text-xs font-semibold">{focus.title}</div>
-                    {focus.reason ? (
-                      <span className="rounded-full bg-background/50 px-2 py-0.5 text-[10px] text-muted-foreground ring-1 ring-border/20">
-                        {focus.reason}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">{focus.description}</div>
-                  {focus.steps?.length ? (
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      {focus.steps.slice(0, 2).map((s: string) => (
-                        <span
-                          key={s}
-                          className="inline-flex items-center gap-1.5 rounded-full bg-background/50 px-2.5 py-0.5 text-[11px] text-muted-foreground ring-1 ring-border/20"
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                          {s}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="flex shrink-0 items-center gap-2">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    router.push(focus.secondary.href);
-                  }}
-                  className="hidden sm:inline-flex h-9 items-center rounded-full bg-background/60 px-3 text-xs font-medium transition hover:bg-background/80"
-                >
-                  {focus.secondary.label}
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    router.push(focus.primary.href);
-                  }}
-                  className="inline-flex h-9 items-center rounded-full bg-foreground px-4 text-xs font-semibold text-background transition hover:bg-foreground/90"
-                >
-                  {focus.primary.label}
-                  <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
+        <div className="mx-4 sm:mx-6 lg:mx-10 h-px bg-border/60" />
 
         <div className="px-4 sm:px-6 lg:px-10 space-y-6">
           <div>
-            <h2 className="text-xs font-semibold text-foreground">Get started</h2>
-            <p className="mt-1 text-xs text-muted-foreground">Choose where you want to begin</p>
+            <h2 className="text-base font-semibold">Get started</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Choose where you want to begin</p>
           </div>
 
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             <button
               onClick={() => router.push('/drive')}
-              className="group relative overflow-hidden rounded-2xl bg-muted/20 p-4 ring-1 ring-border/60 text-left transition hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
+              className="group relative overflow-hidden rounded-2xl bg-muted/20 p-4 ring-1 ring-border/50 text-left transition hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
             >
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-background/70">
@@ -1185,7 +1324,7 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="mt-3 flex items-center justify-between rounded-xl bg-background/40 px-3 py-2 ring-1 ring-border/30">
+              <div className="mt-3 hidden items-center justify-between rounded-xl bg-background/40 px-3 py-2 ring-1 ring-border/30 sm:flex">
                 <div className="text-xs text-muted-foreground">Recent in Files</div>
                 <ThumbStack seed="get-started:share" count={4} />
               </div>
@@ -1201,7 +1340,7 @@ export default function HomePage() {
 
             <button
               onClick={() => router.push('/stock')}
-              className="group relative overflow-hidden rounded-2xl bg-muted/20 p-4 ring-1 ring-border/60 text-left transition hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
+              className="group relative overflow-hidden rounded-2xl bg-muted/20 p-4 ring-1 ring-border/50 text-left transition hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
             >
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-background/70">
@@ -1213,7 +1352,7 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="mt-3 flex items-center justify-between rounded-xl bg-background/40 px-3 py-2 ring-1 ring-border/30">
+              <div className="mt-3 hidden items-center justify-between rounded-xl bg-background/40 px-3 py-2 ring-1 ring-border/30 sm:flex">
                 <div className="text-xs text-muted-foreground">Recent in Stock</div>
                 <ThumbStack seed="get-started:stock" count={4} />
               </div>
@@ -1230,10 +1369,10 @@ export default function HomePage() {
 
           <div className="grid gap-6 lg:grid-cols-2">
             {/* Quick actions */}
-            <section className="w-full rounded-2xl bg-muted/10 p-4">
+            <section className="w-full rounded-2xl bg-muted/10 p-4 ring-1 ring-border/50">
               <div>
-                <h2 className="text-xs font-semibold">Quick actions</h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">Jump to common tasks</p>
+                <h2 className="text-base font-semibold">Quick actions</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Jump to common tasks</p>
               </div>
 
               <div className="mt-3 flex flex-wrap gap-2">
@@ -1246,7 +1385,7 @@ export default function HomePage() {
                     {a.icon ? <a.icon className="h-4 w-4" /> : null}
                     <span className="font-medium">{a.label}</span>
                     <span className="hidden sm:inline text-xs text-muted-foreground">• {a.hint}</span>
-                    <span className="ml-1 scale-90 origin-right">
+                    <span className="ml-1 hidden sm:inline-flex scale-90 origin-right">
                       <ThumbStack seed={`qa:${a.label}`} />
                     </span>
                   </button>
@@ -1255,10 +1394,10 @@ export default function HomePage() {
             </section>
 
             {/* Recent activity */}
-            <section className="w-full rounded-2xl bg-muted/10 p-4">
+            <section className="w-full rounded-2xl bg-muted/10 p-4 ring-1 ring-border/50">
               <div>
-                <h2 className="text-xs font-semibold">Recent activity</h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">A quick snapshot based on your activity</p>
+                <h2 className="text-base font-semibold">Recent activity</h2>
+                <p className="mt-1 text-sm text-muted-foreground">A quick snapshot based on your activity</p>
               </div>
 
               <div className="mt-3 grid gap-2">
@@ -1269,7 +1408,9 @@ export default function HomePage() {
                       <ThumbStack seed="last-seen" />
                     </div>
                     <div className="mt-1 text-sm font-medium">{lastSeenLabel ? lastSeenLabel : 'First visit today'}</div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">{visitCount ? `Visit #${visitCount}` : '—'}</div>
+                    {isDemo ? (
+                      <div className="mt-0.5 text-xs text-muted-foreground">{visitCount ? `Visit #${visitCount}` : '—'}</div>
+                    ) : null}
                   </div>
 
                   <div className="rounded-xl bg-background/60 p-3 transition hover:bg-background/80">
@@ -1287,7 +1428,7 @@ export default function HomePage() {
                 <div className="rounded-xl bg-background/60 p-3 transition hover:bg-background/80">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-xs text-muted-foreground">Recent Stock searches</div>
-                    <span className="text-xs text-muted-foreground">Local</span>
+                    {isDemo ? <span className="text-xs text-muted-foreground">Local</span> : null}
                   </div>
                   <div className="mt-2 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -1333,13 +1474,13 @@ export default function HomePage() {
             </section>
           </div>
 
-          <section className="w-full rounded-2xl bg-muted/10 p-4">
+          <section className="w-full rounded-2xl bg-muted/10 p-4 ring-1 ring-border/50">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h2 className="text-xs font-semibold">Suggested next</h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">Small steps that keep your workspace clean</p>
+                <h2 className="text-base font-semibold">Suggested next</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Small steps that keep your workspace clean</p>
               </div>
-              <div className="text-xs text-muted-foreground">For you</div>
+              {isDemo ? <div className="text-xs text-muted-foreground">For you</div> : null}
             </div>
 
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -1369,13 +1510,13 @@ export default function HomePage() {
             </div>
           </section>
 
-          <section className="w-full rounded-2xl bg-muted/10 p-4">
+          <section className="w-full rounded-2xl bg-muted/10 p-4 ring-1 ring-border/50">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h2 className="text-xs font-semibold">Recently viewed</h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">A quick way back to visuals you opened</p>
+                <h2 className="text-base font-semibold">Recently viewed</h2>
+                <p className="mt-1 text-sm text-muted-foreground">A quick way back to visuals you opened</p>
               </div>
-              <div className="text-xs text-muted-foreground">Local history</div>
+              {isDemo ? <div className="text-xs text-muted-foreground">Local history</div> : null}
             </div>
 
             {recentViews.length ? (
@@ -1384,7 +1525,7 @@ export default function HomePage() {
                   <button
                     key={id}
                     onClick={() => openRecentView(id)}
-                    className="inline-flex items-center gap-2 rounded-full bg-background/60 px-3 py-1.5 text-sm transition hover:bg-background/80"
+                    className="inline-flex items-center gap-2 rounded-full bg-background/60 px-2.5 py-1.5 text-sm transition hover:bg-background/80 sm:px-3"
                   >
                     {(() => {
                       const src = getThumb(`view:${id}`, 0);
@@ -1395,7 +1536,7 @@ export default function HomePage() {
                       ) : null;
                     })()}
                     <Images className="h-4 w-4" />
-                    <span className="font-medium">{id}</span>
+                    <span className="max-w-[140px] truncate font-medium sm:max-w-none">{id}</span>
                     <span className="text-xs text-muted-foreground">Open</span>
                   </button>
                 ))}
@@ -1407,11 +1548,11 @@ export default function HomePage() {
             )}
           </section>
 
-          <section id="news" className="w-full rounded-2xl bg-muted/10 p-4">
+          <section id="news" className="w-full rounded-2xl bg-muted/10 p-4 ring-1 ring-border/50">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h2 className="text-xs font-semibold">What’s new</h2>
-                <p className="mt-0.5 text-xs text-muted-foreground">Updates and changes across Files and Stock.</p>
+                <h2 className="text-base font-semibold">What’s new</h2>
+                <p className="mt-1 text-sm text-muted-foreground">Updates and changes across Files and Stock.</p>
               </div>
               <div className="flex items-center gap-3">
                 <button
