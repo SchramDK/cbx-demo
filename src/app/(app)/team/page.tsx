@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   CheckCircle2,
@@ -99,9 +99,71 @@ function ModalShell({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const lastActiveRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    lastActiveRef.current = document.activeElement as HTMLElement | null;
+
+    const el = containerRef.current;
+    if (!el) return;
+
+    // Focus first focusable element
+    const focusable = el.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    focusable[0]?.focus();
+
+    return () => {
+      lastActiveRef.current?.focus();
+    };
+  }, []);
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Tab') return;
+    const el = containerRef.current;
+    if (!el) return;
+
+    const focusable = Array.from(
+      el.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter((n) => !n.hasAttribute('disabled'));
+
+    if (focusable.length === 0) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    if (e.shiftKey) {
+      if (document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-2xl bg-background p-5 ring-1 ring-border">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => {
+        // Clicking the backdrop closes
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div
+        ref={containerRef}
+        className="w-full max-w-md rounded-2xl bg-background p-5 ring-1 ring-border"
+        onMouseDown={(e) => e.stopPropagation()}
+        onKeyDown={onKeyDown}
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold">{title}</h2>
@@ -112,7 +174,7 @@ function ModalShell({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted/20 hover:text-foreground"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -143,6 +205,27 @@ export default function TeamPage() {
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [menuOpenFor]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (menuOpenFor) setMenuOpenFor(null);
+      if (inviteOpen) setInviteOpen(false);
+      if (createGroupOpen) setCreateGroupOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [menuOpenFor, inviteOpen, createGroupOpen]);
+  useEffect(() => {
+    const anyModalOpen = inviteOpen || createGroupOpen;
+    if (!anyModalOpen) return;
+
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [inviteOpen, createGroupOpen]);
   const setRoleForMember = (id: string, role: Member['role']) => {
     setMemberList((prev) => prev.map((m) => (m.id === id ? { ...m, role } : m)));
   };
@@ -418,7 +501,7 @@ export default function TeamPage() {
   }
 
   return (
-    <main className="mx-4 sm:mx-6 lg:mx-10">
+    <main className="w-full px-4 sm:px-6 lg:px-8">
       {showInviteSent ? (
         <div className="mb-4 rounded-xl border border-border bg-muted/30 p-4">
           <div className="flex items-start justify-between gap-3">
@@ -431,7 +514,7 @@ export default function TeamPage() {
             <button
               type="button"
               onClick={() => setShowInviteSent(false)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted/20 hover:text-foreground"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
               aria-label="Dismiss"
             >
               <X className="h-4 w-4" />
@@ -440,31 +523,60 @@ export default function TeamPage() {
         </div>
       ) : null}
       {/* Header */}
-      <header className="mb-6 flex items-center justify-between">
+      <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-lg font-semibold">Team</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">Invite members and manage access to your workspace</p>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-2 rounded-full bg-background/70 px-3 py-1.5 text-xs ring-1 ring-border/60">
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span className="font-medium">{memberStats.active}</span>
+              <span className="text-muted-foreground">active</span>
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full bg-background/70 px-3 py-1.5 text-xs ring-1 ring-border/60">
+              <Clock className="h-3.5 w-3.5" />
+              <span className="font-medium">{memberStats.invited}</span>
+              <span className="text-muted-foreground">invited</span>
+            </span>
+            <span className="inline-flex items-center gap-2 rounded-full bg-background/70 px-3 py-1.5 text-xs ring-1 ring-border/60">
+              <Users className="h-3.5 w-3.5" />
+              <span className="font-medium">{memberStats.total}</span>
+              <span className="text-muted-foreground">total</span>
+            </span>
+          </div>
         </div>
 
-        <button
-          onClick={() => setInviteOpen(true)}
-          className="inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:bg-foreground/90"
-        >
-          <MailPlus className="h-4 w-4" />
-          Invite member
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setCreateGroupOpen(true)}
+            className="inline-flex items-center gap-2 rounded-full bg-background/60 px-4 py-2 text-sm font-medium ring-1 ring-border/50 transition hover:bg-muted/20"
+          >
+            <Plus className="h-4 w-4" />
+            New group
+          </button>
+          <button
+            type="button"
+            onClick={() => setInviteOpen(true)}
+            className="inline-flex items-center gap-2 rounded-full bg-foreground px-4 py-2 text-sm font-semibold text-background transition hover:bg-foreground/90"
+          >
+            <MailPlus className="h-4 w-4" />
+            Invite member
+          </button>
+        </div>
       </header>
 
       {/* Layout */}
-      <div className="grid gap-4 lg:grid-cols-[1fr_420px]">
+      <div className="grid gap-4 lg:gap-6 lg:grid-cols-[minmax(0,1fr)_420px] xl:grid-cols-[minmax(0,1fr)_460px] 2xl:grid-cols-[minmax(0,1fr)_520px]">
         {/* Left: Members */}
         <section className="rounded-2xl bg-background/95 ring-1 ring-border">
-          <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+          <div className="flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm font-semibold">Members</span>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3">
               <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground">
                 <span>{memberStats.active} active</span>
                 <span>•</span>
@@ -472,15 +584,19 @@ export default function TeamPage() {
                 <span>•</span>
                 <span>{memberStats.total} total</span>
               </div>
-              <input
-                value={memberQuery}
-                onChange={(e) => {
-                  setMemberQuery(e.target.value);
-                  if (menuOpenFor) setMenuOpenFor(null);
-                }}
-                placeholder="Search members…"
-                className="h-9 w-[180px] sm:w-[220px] rounded-full bg-background px-4 text-sm ring-1 ring-border/60 outline-none focus:ring-2 focus:ring-foreground/20"
-              />
+              <div className="w-full sm:w-auto">
+                <label className="sr-only" htmlFor="team-member-search">Search members</label>
+                <input
+                  id="team-member-search"
+                  value={memberQuery}
+                  onChange={(e) => {
+                    setMemberQuery(e.target.value);
+                    if (menuOpenFor) setMenuOpenFor(null);
+                  }}
+                  placeholder="Search members…"
+                  className="h-9 w-full sm:w-[220px] rounded-full bg-background px-4 text-sm ring-1 ring-border/60 outline-none focus:ring-2 focus:ring-foreground/20"
+                />
+              </div>
             </div>
           </div>
 
@@ -512,8 +628,10 @@ export default function TeamPage() {
                   <div data-member-menu className="relative">
                     <button
                       type="button"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted/20 hover:text-foreground"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted/20 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
                       aria-label="Member actions"
+                      aria-expanded={menuOpenFor === m.id}
+                      aria-controls={`member-menu-${m.id}`}
                       onClick={(e) => {
                         e.preventDefault();
                         setMenuOpenFor((prev) => (prev === m.id ? null : m.id));
@@ -523,7 +641,7 @@ export default function TeamPage() {
                     </button>
 
                     {menuOpenFor === m.id ? (
-                      <div className="absolute right-0 top-9 z-20 w-52 overflow-hidden rounded-2xl bg-background shadow-lg ring-1 ring-border">
+                      <div id={`member-menu-${m.id}`} className="absolute right-0 top-9 z-20 w-52 overflow-hidden rounded-2xl bg-background shadow-lg ring-1 ring-border">
                         <div className="px-3 py-2 text-[11px] font-medium text-muted-foreground">Actions</div>
                         <div className="h-px bg-border/60" />
 
@@ -589,7 +707,7 @@ export default function TeamPage() {
         </section>
 
         {/* Right: Groups + Workspace */}
-        <div className="space-y-4">
+        <div className="space-y-4 lg:sticky lg:top-24 lg:self-start">
           {/* Groups */}
           <section className="rounded-2xl bg-background/95 ring-1 ring-border">
             <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
@@ -611,7 +729,7 @@ export default function TeamPage() {
               </button>
             </div>
 
-            <div className="p-4 space-y-3">
+            <div className="space-y-3 p-4">
               {groups.map((g) => {
                 const groupMembers = g.memberIds
                   .map((id) => memberById.get(id))
@@ -628,32 +746,32 @@ export default function TeamPage() {
                       <div className="text-xs text-muted-foreground">{g.memberIds.length}</div>
                     </div>
 
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {groupMembers.length ? (
-                        groupMembers.map((m) => (
-                          <span
-                            key={m.id}
-                            className="inline-flex items-center gap-2 rounded-full bg-background/70 px-2 py-1 text-xs ring-1 ring-border/40"
-                          >
-                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">
-                              {initials(m.name)}
-                            </span>
-                            <span className="max-w-[140px] truncate">{m.name}</span>
-                            <button
-                              type="button"
-                              onClick={() => removeMemberFromGroup(g.id, m.id)}
-                              className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted/30 hover:text-foreground"
-                              aria-label="Remove member"
-                              title="Remove from group"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </span>
-                        ))
-                      ) : (
-                        <div className="text-xs text-muted-foreground">No members yet — add someone below.</div>
-                      )}
-                    </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {groupMembers.length ? (
+                groupMembers.map((m) => (
+                  <span
+                    key={m.id}
+                    className="inline-flex items-center gap-2 rounded-full bg-background/70 px-2 py-1 text-xs ring-1 ring-border/40"
+                  >
+                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold">
+                      {initials(m.name)}
+                    </span>
+                    <span className="max-w-[140px] truncate">{m.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeMemberFromGroup(g.id, m.id)}
+                      className="inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20"
+                      aria-label="Remove member"
+                      title="Remove from group"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))
+              ) : (
+                <div className="text-xs text-muted-foreground">No members yet — add someone below.</div>
+              )}
+            </div>
 
                     <div className="mt-3">
                       <label className="text-xs font-medium text-muted-foreground">Add member</label>
@@ -756,6 +874,7 @@ export default function TeamPage() {
           <div className="mt-4">
             <label className="text-xs font-medium">Group name</label>
             <input
+              autoFocus
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
               placeholder="e.g. Marketing"
@@ -774,10 +893,11 @@ export default function TeamPage() {
           </div>
 
           <div className="mt-5 flex justify-end gap-2">
-            <button onClick={() => setCreateGroupOpen(false)} className="rounded-full px-4 py-2 text-sm">
+            <button type="button" onClick={() => setCreateGroupOpen(false)} className="rounded-full px-4 py-2 text-sm">
               Cancel
             </button>
             <button
+              type="button"
               onClick={createGroup}
               disabled={!groupName.trim()}
               className="rounded-full bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:opacity-50"
@@ -835,6 +955,7 @@ export default function TeamPage() {
             <p className="text-xs text-muted-foreground">Demo action: adds an invited member to this page.</p>
             <div className="flex justify-end gap-2">
               <button
+                type="button"
                 onClick={() => {
                   setInviteEmail('');
                   setInviteRole('Member');
@@ -846,6 +967,7 @@ export default function TeamPage() {
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={sendInviteDemo}
                 disabled={!isValidEmail(inviteEmail)}
                 className="rounded-full bg-foreground px-4 py-2 text-sm font-semibold text-background disabled:opacity-50"

@@ -29,6 +29,7 @@ type NavConfig = {
   primaryOrder: PrimaryKey[];
   moreOrder: MoreKey[];
   moreHidden: MoreKey[];
+  leftPinned: MoreKey[];
 };
 
 const NAV_CONFIG_KEY = 'CBX_NAV_CONFIG_V1';
@@ -38,6 +39,7 @@ const DEFAULT_NAV_CONFIG: NavConfig = {
   primaryOrder: ['home', 'stock', 'files'],
   moreOrder: ['team', 'consent', 'workflows', 'apps'],
   moreHidden: [],
+  leftPinned: [],
 };
 
 // Purchases notification dot constants and helpers
@@ -102,6 +104,9 @@ function readStoredNavConfig(): NavConfig | null {
     const moreHidden = Array.isArray(parsed.moreHidden)
       ? (parsed.moreHidden.filter((x): x is MoreKey => moreAllowed.includes(x as MoreKey)) as MoreKey[])
       : [];
+    const leftPinned = Array.isArray(parsed.leftPinned)
+      ? (parsed.leftPinned.filter((x): x is MoreKey => moreAllowed.includes(x as MoreKey)) as MoreKey[])
+      : [];
 
     // Ensure all keys exist exactly once
     const primaryNormalized = Array.from(new Set([...primaryOrder, ...primaryAllowed])).filter((x) =>
@@ -109,10 +114,15 @@ function readStoredNavConfig(): NavConfig | null {
     );
     const moreNormalized = Array.from(new Set([...moreOrder, ...moreAllowed])).filter((x) => moreAllowed.includes(x));
 
+    const pinnedNormalized = leftPinned
+      .filter((k) => moreNormalized.includes(k))
+      .filter((k) => !moreHidden.includes(k));
+
     return {
       primaryOrder: primaryNormalized,
       moreOrder: moreNormalized,
       moreHidden,
+      leftPinned: pinnedNormalized,
     };
   } catch {
     return null;
@@ -163,13 +173,13 @@ function MoreMenuPortal({
   const [size, setSize] = React.useState<{ w: number; h: number } | null>(null);
   const [customizeOpen, setCustomizeOpen] = React.useState(false);
 
-  const [draft, setDraft] = React.useState<NavConfig>(navConfig);
+  const [draft, setDraft] = React.useState<NavConfig>({ ...DEFAULT_NAV_CONFIG, ...navConfig });
   const menuRef = React.useRef<HTMLDivElement | null>(null);
   const dialogRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
     // keep draft in sync when opening
-    if (customizeOpen) setDraft(navConfig);
+    if (customizeOpen) setDraft({ ...DEFAULT_NAV_CONFIG, ...navConfig });
   }, [customizeOpen, navConfig]);
 
   React.useEffect(() => {
@@ -270,99 +280,100 @@ function MoreMenuPortal({
   if (typeof document === 'undefined') return null;
 
   return createPortal(
-    <div
-      id="cbx-more-menu"
-      ref={(node) => {
-        menuRef.current = node;
-        if (!node) return;
-        const r = node.getBoundingClientRect();
-        const next = { w: Math.round(r.width), h: Math.round(r.height) };
-        setSize((prev) => (prev && prev.w === next.w && prev.h === next.h ? prev : next));
-      }}
-      className="fixed z-[1000] w-[360px] -translate-y-1/2 overflow-hidden rounded-2xl border border-border/60 bg-background/95 shadow-2xl backdrop-blur supports-[backdrop-filter]:bg-background/80"
-      style={{ top: pos.top, left: pos.left }}
-      role="menu"
-      aria-label="More"
-    >
-      <div className="flex items-start justify-between gap-4 px-5 py-4">
-        <div>
-          <div className="text-sm font-semibold">More</div>
-          <div className="mt-0.5 text-xs text-muted-foreground">Switch to other products and tools.</div>
+    <>
+      <div
+        id="cbx-more-menu"
+        ref={(node) => {
+          menuRef.current = node;
+          if (!node) return;
+          const r = node.getBoundingClientRect();
+          const next = { w: Math.round(r.width), h: Math.round(r.height) };
+          setSize((prev) => (prev && prev.w === next.w && prev.h === next.h ? prev : next));
+        }}
+        className="fixed z-[1000] w-[360px] -translate-y-1/2 overflow-hidden rounded-2xl border border-border/60 bg-background/95 shadow-2xl backdrop-blur supports-[backdrop-filter]:bg-background/80"
+        style={{ top: pos.top, left: pos.left }}
+        role="menu"
+        aria-label="More"
+      >
+        <div className="flex items-start justify-between gap-4 px-5 py-4">
+          <div>
+            <div className="text-sm font-semibold">More</div>
+            <div className="mt-0.5 text-xs text-muted-foreground">Switch to other products and tools.</div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-2 text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+            aria-label="Close menu"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg p-2 text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
-          aria-label="Close menu"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
 
-      <div className="divide-y divide-border/60">
-        {items.map(({ href, label, description, icon: Icon }) => {
-          const isActive = href ? pathname === href : false;
-          const row = (
-            <div
-              className={
-                'group flex items-start gap-3 px-5 py-4 transition-colors outline-none focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring/40 ' +
-                (isActive ? 'bg-muted/60' : 'hover:bg-muted/40')
-              }
-            >
-              <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl bg-muted/50 ring-1 ring-border/40 transition group-hover:bg-muted/70">
-                <Icon className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <div className="text-sm font-medium text-foreground">{label}</div>
-                  {!href ? (
-                    <span className="rounded-full border border-border/60 bg-background/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                      Coming soon
-                    </span>
-                  ) : null}
+        <div className="divide-y divide-border/60">
+          {items.map(({ href, label, description, icon: Icon }) => {
+            const isActive = href ? pathname === href : false;
+            const row = (
+              <div
+                className={
+                  'group flex items-start gap-3 px-5 py-4 transition-colors outline-none focus-visible:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring/40 ' +
+                  (isActive ? 'bg-muted/60' : 'hover:bg-muted/40')
+                }
+              >
+                <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-xl bg-muted/50 ring-1 ring-border/40 transition group-hover:bg-muted/70">
+                  <Icon className="h-5 w-5" />
                 </div>
-                <div className="mt-0.5 text-xs text-muted-foreground">{description}</div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm font-medium text-foreground">{label}</div>
+                    {!href ? (
+                      <span className="rounded-full border border-border/60 bg-background/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        Coming soon
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">{description}</div>
+                </div>
               </div>
-            </div>
-          );
+            );
 
-          if (!href) {
+            if (!href) {
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  disabled
+                  className="block w-full cursor-not-allowed text-left"
+                >
+                  {row}
+                </button>
+              );
+            }
+
             return (
-              <button
-                key={label}
-                type="button"
-                disabled
-                className="block w-full cursor-not-allowed text-left"
+              <Link
+                key={href}
+                href={href}
+                onClick={onClose}
+                className="block"
               >
                 {row}
-              </button>
+              </Link>
             );
-          }
+          })}
+        </div>
 
-          return (
-            <Link
-              key={href}
-              href={href}
-              onClick={onClose}
-              className="block"
-            >
-              {row}
-            </Link>
-          );
-        })}
+        <div className="border-t border-border/60 bg-background/60">
+          <button
+            type="button"
+            onClick={() => setCustomizeOpen(true)}
+            className="flex w-full items-center justify-between gap-3 px-5 py-3 text-left text-xs text-muted-foreground transition hover:bg-muted/30 hover:text-foreground"
+          >
+            <span>Customize…</span>
+            <span className="text-[11px] text-muted-foreground/80">Show/hide items</span>
+          </button>
+        </div>
       </div>
-
-      <div className="border-t border-border/60 bg-background/60">
-        <button
-          type="button"
-          onClick={() => setCustomizeOpen(true)}
-          className="flex w-full items-center justify-between gap-3 px-5 py-3 text-left text-xs text-muted-foreground transition hover:bg-muted/30 hover:text-foreground"
-        >
-          <span>Customize…</span>
-          <span className="text-[11px] text-muted-foreground/80">Show/hide items</span>
-        </button>
-      </div>
-
       {customizeOpen ? (
         <div
           id="cbx-more-customize"
@@ -371,7 +382,11 @@ function MoreMenuPortal({
           aria-modal="true"
           aria-label="Customize navigation bar"
         >
-          <div className="absolute inset-0 bg-background/40 backdrop-blur-sm" />
+          <div
+            className="absolute inset-0 bg-background/40 backdrop-blur-sm"
+            aria-hidden="true"
+            onClick={() => setCustomizeOpen(false)}
+          />
 
           <div
             ref={dialogRef}
@@ -396,34 +411,52 @@ function MoreMenuPortal({
             </div>
 
             <div className="px-6 py-5">
-              <div className="text-xs font-semibold text-muted-foreground">PRIMARY</div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-semibold text-muted-foreground">MAIN</div>
+                  <div className="mt-1 text-xs text-muted-foreground">Reorder and manage the main navigation items.</div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setDraft((d) => ({ ...d, leftPinned: [] }))}
+                  className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+                  title="Reset main"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" /> Reset
+                </button>
+              </div>
               <div className="mt-2 overflow-hidden rounded-xl border border-border/60">
                 {draft.primaryOrder.map((key, idx) => {
                   const label = key === 'home' ? 'Home' : key === 'stock' ? 'Stock' : 'Files';
+                  const isHome = key === 'home';
                   return (
                     <div
                       key={key}
-                      className="flex items-center justify-between gap-3 border-b border-border/60 bg-background/70 px-4 py-3 last:border-b-0"
+                      className={
+                        "flex items-center justify-between gap-3 border-b border-border/60 bg-background/70 px-4 py-3 last:border-b-0 " +
+                        (isHome ? "opacity-70" : "")
+                      }
                     >
                       <div className="flex items-center gap-2">
-                        <GripVertical className="h-4 w-4 text-muted-foreground/70" />
+                        <GripVertical className={"h-4 w-4 " + (isHome ? "text-muted-foreground/30" : "text-muted-foreground/70")} />
                         <div className="text-sm font-medium">{label}</div>
                       </div>
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
-                          onClick={() => setDraft((d) => ({ ...d, primaryOrder: moveItem(d.primaryOrder, idx, idx - 1) }))}
-                          disabled={idx === 0}
-                          className="rounded-lg p-2 text-muted-foreground hover:bg-muted/40 hover:text-foreground disabled:opacity-40"
+                          onClick={() => { if (isHome) return; setDraft((d) => ({ ...d, primaryOrder: moveItem(d.primaryOrder, idx, idx - 1) })); }}
+                          disabled={isHome || idx === 0}
+                          className="rounded-lg p-2 text-muted-foreground hover:bg-muted/40 hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
                           aria-label="Move up"
                         >
                           <ChevronUp className="h-4 w-4" />
                         </button>
                         <button
                           type="button"
-                          onClick={() => setDraft((d) => ({ ...d, primaryOrder: moveItem(d.primaryOrder, idx, idx + 1) }))}
-                          disabled={idx === draft.primaryOrder.length - 1}
-                          className="rounded-lg p-2 text-muted-foreground hover:bg-muted/40 hover:text-foreground disabled:opacity-40"
+                          onClick={() => { if (isHome) return; setDraft((d) => ({ ...d, primaryOrder: moveItem(d.primaryOrder, idx, idx + 1) })); }}
+                          disabled={isHome || idx === draft.primaryOrder.length - 1}
+                          className="rounded-lg p-2 text-muted-foreground hover:bg-muted/40 hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
                           aria-label="Move down"
                         >
                           <ChevronDown className="h-4 w-4" />
@@ -432,7 +465,78 @@ function MoreMenuPortal({
                     </div>
                   );
                 })}
+                {draft.leftPinned.length > 0 ? (
+                  <div className="mx-4 h-px bg-border/60" aria-hidden="true" />
+                ) : null}
+
+                {draft.leftPinned.map((k, idx) => {
+                  const meta =
+                    k === 'team'
+                      ? { label: 'Team', desc: 'Invite members, manage roles and access.' }
+                      : k === 'consent'
+                        ? { label: 'Consent', desc: 'Manage consent flows, guardians and usage rights.' }
+                        : k === 'workflows'
+                          ? { label: 'Workflows', desc: 'Create automations and approvals across your assets.' }
+                          : { label: 'Apps', desc: 'Connect tools and extensions to your workspace.' };
+
+                  return (
+                    <div
+                      key={k}
+                      className="flex items-center justify-between gap-3 border-b border-border/60 bg-background/70 px-4 py-3 last:border-b-0"
+                    >
+                      <div className="flex min-w-0 items-start gap-2">
+                        <GripVertical className="mt-0.5 h-4 w-4 text-muted-foreground/70" />
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium">{meta.label}</div>
+                          <div className="mt-0.5 text-xs text-muted-foreground">{meta.desc}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDraft((d) => ({
+                              ...d,
+                              leftPinned: moveItem(d.leftPinned, idx, idx - 1),
+                            }))
+                          }
+                          disabled={idx === 0}
+                          className="rounded-lg p-2 text-muted-foreground hover:bg-muted/40 hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
+                          aria-label="Move up"
+                        >
+                          <ChevronUp className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDraft((d) => ({
+                              ...d,
+                              leftPinned: moveItem(d.leftPinned, idx, idx + 1),
+                            }))
+                          }
+                          disabled={idx === draft.leftPinned.length - 1}
+                          className="rounded-lg p-2 text-muted-foreground hover:bg-muted/40 hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
+                          aria-label="Move down"
+                        >
+                          <ChevronDown className="h-4 w-4" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setDraft((d) => ({ ...d, leftPinned: d.leftPinned.filter((x) => x !== k) }))}
+                          className="rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-[11px] font-medium text-muted-foreground transition hover:bg-muted/40 hover:text-foreground"
+                          aria-label="Remove from main"
+                          title="Remove from main"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
+
+              {/* MAIN section merged above; removed redundant block */}
 
               <div className="mt-6 flex items-center justify-between">
                 <div>
@@ -442,7 +546,12 @@ function MoreMenuPortal({
 
                 <button
                   type="button"
-                  onClick={() => setDraft({ ...DEFAULT_NAV_CONFIG, moreHidden: [] })}
+                  onClick={() =>
+                    setDraft((d) => ({
+                      ...d,
+                      moreHidden: [],
+                    }))
+                  }
                   className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs text-muted-foreground hover:bg-muted/40 hover:text-foreground"
                 >
                   <RotateCcw className="h-3.5 w-3.5" /> Reset
@@ -450,16 +559,23 @@ function MoreMenuPortal({
               </div>
 
               <div className="mt-2 overflow-hidden rounded-xl border border-border/60">
-                {draft.moreOrder.map((key, idx) => {
+                {draft.moreOrder
+                  .filter((key) => !draft.leftPinned.includes(key))
+                  .map((key, idx) => {
                   const meta =
-                    key === 'consent'
-                      ? { label: 'Consent', desc: 'Manage consent flows, guardians and usage rights.' }
-                      : key === 'workflows'
-                        ? { label: 'Workflows', desc: 'Create automations and approvals across your assets.' }
-                        : { label: 'Apps', desc: 'Connect tools and extensions to your workspace.' };
+                    key === 'team'
+                      ? { label: 'Team', desc: 'Invite members, manage roles and access.', href: '/team' }
+                      : key === 'consent'
+                        ? { label: 'Consent', desc: 'Manage consent flows, guardians and usage rights.', href: undefined }
+                        : key === 'workflows'
+                          ? { label: 'Workflows', desc: 'Create automations and approvals across your assets.', href: undefined }
+                          : { label: 'Apps', desc: 'Connect tools and extensions to your workspace.', href: undefined };
 
                   const checked = !draft.moreHidden.includes(key);
+                  const pinned = draft.leftPinned.includes(key);
+                  const inMain = pinned;
 
+                  // checked, pinned, inMain already defined above
                   return (
                     <div
                       key={key}
@@ -472,11 +588,18 @@ function MoreMenuPortal({
                           onChange={(e) =>
                             setDraft((d) => {
                               const show = e.target.checked;
+                              const nextHidden = show
+                                ? d.moreHidden.filter((x) => x !== key)
+                                : Array.from(new Set([...d.moreHidden, key]));
+
+                              const nextPinned = nextHidden.includes(key)
+                                ? d.leftPinned.filter((x) => x !== key)
+                                : d.leftPinned;
+
                               return {
                                 ...d,
-                                moreHidden: show
-                                  ? d.moreHidden.filter((x) => x !== key)
-                                  : Array.from(new Set([...d.moreHidden, key])),
+                                moreHidden: nextHidden,
+                                leftPinned: nextPinned,
                               };
                             })
                           }
@@ -494,9 +617,42 @@ function MoreMenuPortal({
                       <div className="flex items-center gap-1">
                         <button
                           type="button"
+                          onClick={() =>
+                            setDraft((d) => {
+                              const isInMain = d.leftPinned.includes(key);
+                              const nextMain = isInMain
+                                ? d.leftPinned.filter((x) => x !== key)
+                                : [...d.leftPinned, key];
+                              return { ...d, leftPinned: nextMain };
+                            })
+                          }
+                          disabled={!checked || !meta.href}
+                          className={
+                            "rounded-full px-2 py-1 text-[11px] font-medium transition " +
+                            (inMain
+                              ? "bg-foreground text-background hover:bg-foreground/90"
+                              : "border border-border/60 bg-background/70 text-muted-foreground hover:bg-muted/40 hover:text-foreground") +
+                            " disabled:cursor-not-allowed disabled:opacity-40"
+                          }
+                          aria-label="Add to main"
+                          title={
+                            !checked
+                              ? "Enable item to add"
+                              : !meta.href
+                                ? "Coming soon"
+                                : inMain
+                                  ? "Already in main"
+                                  : "Add to main"
+                          }
+                        >
+                          {inMain ? 'In main' : 'Add'}
+                        </button>
+
+                        <button
+                          type="button"
                           onClick={() => setDraft((d) => ({ ...d, moreOrder: moveItem(d.moreOrder, idx, idx - 1) }))}
                           disabled={idx === 0}
-                          className="rounded-lg p-2 text-muted-foreground hover:bg-muted/40 hover:text-foreground disabled:opacity-40"
+                          className="rounded-lg p-2 text-muted-foreground hover:bg-muted/40 hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
                           aria-label="Move up"
                         >
                           <ChevronUp className="h-4 w-4" />
@@ -505,7 +661,7 @@ function MoreMenuPortal({
                           type="button"
                           onClick={() => setDraft((d) => ({ ...d, moreOrder: moveItem(d.moreOrder, idx, idx + 1) }))}
                           disabled={idx === draft.moreOrder.length - 1}
-                          className="rounded-lg p-2 text-muted-foreground hover:bg-muted/40 hover:text-foreground disabled:opacity-40"
+                          className="rounded-lg p-2 text-muted-foreground hover:bg-muted/40 hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
                           aria-label="Move down"
                         >
                           <ChevronDown className="h-4 w-4" />
@@ -531,7 +687,6 @@ function MoreMenuPortal({
                   type="button"
                   onClick={() => {
                     setNavConfig(draft);
-                    persistNavConfig(draft);
                     setCustomizeOpen(false);
                     onClose();
                   }}
@@ -544,7 +699,7 @@ function MoreMenuPortal({
           </div>
         </div>
       ) : null}
-    </div>,
+    </>,
     document.body
   );
 }
@@ -611,7 +766,9 @@ export function LeftNavigation() {
 
   React.useEffect(() => {
     const stored = readStoredNavConfig();
-    if (stored) setNavConfig(stored);
+    if (stored) {
+      setNavConfig({ ...DEFAULT_NAV_CONFIG, ...stored });
+    }
   }, []);
 
   const [meLoaded, setMeLoaded] = React.useState(false);
@@ -648,6 +805,8 @@ export function LeftNavigation() {
 
   const productItems = navConfig.primaryOrder.map((k) => primaryMeta[k]);
 
+  const pinnedSet = new Set((navConfig.leftPinned ?? []) as MoreKey[]);
+
   const moreMeta: Record<MoreKey, { href?: string; label: string; description: string; icon: any }> = {
     team: {
       href: '/team',
@@ -675,8 +834,13 @@ export function LeftNavigation() {
     },
   };
 
+  const pinnedItems = (navConfig.leftPinned ?? [])
+    .filter((k) => !navConfig.moreHidden.includes(k))
+    .map((k) => ({ key: k, ...moreMeta[k] }));
+
   const moreItems = navConfig.moreOrder
     .filter((k) => !navConfig.moreHidden.includes(k))
+    .filter((k) => !pinnedSet.has(k))
     .map((k) => moreMeta[k]);
 
   return (
@@ -735,6 +899,53 @@ export function LeftNavigation() {
               );
             })}
 
+            {pinnedItems.length > 0 ? (
+              <div className="my-2 h-px w-8 bg-border/60" aria-hidden="true" />
+            ) : null}
+
+            {pinnedItems.map(({ key, href, label, icon: Icon }) => {
+              const active = href ? pathname === href || pathname?.startsWith(href + '/') : false;
+              const disabled = !href;
+
+              const content = (
+                <span className="relative">
+                  <Icon className="h-5 w-5" />
+                </span>
+              );
+
+              if (disabled) {
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    disabled
+                    className="flex w-full cursor-not-allowed flex-col items-center gap-1 rounded-lg px-2 py-3 text-[11px] text-muted-foreground opacity-70"
+                    title={label}
+                  >
+                    {content}
+                    <span className="leading-none">{label}</span>
+                  </button>
+                );
+              }
+
+              return (
+                <Link
+                  key={key}
+                  href={href}
+                  title={label}
+                  className={
+                    'flex w-full flex-col items-center gap-1 rounded-lg px-2 py-3 text-[11px] transition-colors ' +
+                    (active
+                      ? 'bg-muted text-foreground'
+                      : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground')
+                  }
+                >
+                  {content}
+                  <span className="leading-none">{label}</span>
+                </Link>
+              );
+            })}
+
             <div className="relative pt-2">
               <button
                 ref={moreAnchorRef}
@@ -764,8 +975,13 @@ export function LeftNavigation() {
         items={moreItems}
         navConfig={navConfig}
         setNavConfig={(next) => {
-          setNavConfig(next);
-          persistNavConfig(next);
+          const normalized: NavConfig = {
+            ...DEFAULT_NAV_CONFIG,
+            ...next,
+            leftPinned: Array.isArray((next as any)?.leftPinned) ? (next as any).leftPinned : [],
+          };
+          setNavConfig(normalized);
+          persistNavConfig(normalized);
         }}
       />
     </aside>

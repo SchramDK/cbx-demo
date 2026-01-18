@@ -82,7 +82,7 @@ type FolderNode = {
 
 type FolderAsset = { id: number; title: string; src: string };
 
-type DriveFolderContextDetail = { id: string; name: string };
+type DriveFolderContextDetail = { id: string; name: string; pathLabel?: string };
 
 type DriveFolderDataArgs = {
   allImages: (typeof baseDemoImages)[number][];
@@ -465,6 +465,7 @@ function DrivePageInner() {
   );
 
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const lastDriveFolderContextSentRef = useRef<string>("");
 
   const shareFolder = useCallback(async () => {
     if (!mounted) return;
@@ -494,32 +495,6 @@ function DrivePageInner() {
     );
   }, [selectedFolder]);
 
-  // Wiring for EmptyState actions (Suggested searches / Clear actions)
-  useEffect(() => {
-    if (!mounted) return;
-
-    const onSearchSet = (e: Event) => {
-      const ce = e as CustomEvent<string>;
-      const next = typeof ce.detail === "string" ? ce.detail : "";
-      setQuery(next);
-      // Keep current folder (scoped search)
-      scheduleQueryUrlUpdate(next);
-    };
-
-    const onFiltersClear = () => {
-      setFilters(clearFilters());
-      // Optional: close the filters panel if it was open
-      setFiltersOpen(false);
-    };
-
-    window.addEventListener("CBX_SEARCH_SET", onSearchSet as EventListener);
-    window.addEventListener("CBX_FILTERS_CLEAR", onFiltersClear as EventListener);
-
-    return () => {
-      window.removeEventListener("CBX_SEARCH_SET", onSearchSet as EventListener);
-      window.removeEventListener("CBX_FILTERS_CLEAR", onFiltersClear as EventListener);
-    };
-  }, [mounted, scheduleQueryUrlUpdate]);
   const [assetView, setAssetView] = useState<"grid" | "list">("grid");
   const [thumbSize, setThumbSize] = useState(220);
 
@@ -544,9 +519,10 @@ function DrivePageInner() {
     };
   }, [mounted]);
   useEffect(() => {
+    if (!mounted) return;
     const n = readNumber(LS_KEYS.thumbSize, 0);
     if (n >= 140 && n <= 520) setThumbSize(n);
-  }, []);
+  }, [mounted]);
   useEffect(() => {
     if (!mounted) return;
     writeString(LS_KEYS.thumbSize, String(thumbSize));
@@ -632,7 +608,7 @@ function DrivePageInner() {
   
     const raw = readString(LS_KEYS.selectedFolder, "");
     if (raw.length > 0) setSelectedFolder(raw);
-  }, [mounted, urlQ, urlFolder]);
+  }, [mounted, urlQ, urlFolder, setSelectedFolder]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -649,6 +625,33 @@ function DrivePageInner() {
     setFilters(clearFilters());
     setFiltersOpen(false);
   }, [setFilters, setFiltersOpen]);
+
+  // Wiring for EmptyState actions (Suggested searches / Clear actions)
+  useEffect(() => {
+    if (!mounted) return;
+
+    const onSearchSet = (e: Event) => {
+      const ce = e as CustomEvent<string>;
+      const next = typeof ce.detail === "string" ? ce.detail : "";
+      setQuery(next);
+      // Keep current folder (scoped search)
+      scheduleQueryUrlUpdate(next);
+    };
+
+    const onFiltersClear = () => {
+      setFilters(clearFilters());
+      // Optional: close the filters panel if it was open
+      setFiltersOpen(false);
+    };
+
+    window.addEventListener("CBX_SEARCH_SET", onSearchSet as EventListener);
+    window.addEventListener("CBX_FILTERS_CLEAR", onFiltersClear as EventListener);
+
+    return () => {
+      window.removeEventListener("CBX_SEARCH_SET", onSearchSet as EventListener);
+      window.removeEventListener("CBX_FILTERS_CLEAR", onFiltersClear as EventListener);
+    };
+  }, [mounted, scheduleQueryUrlUpdate, setQuery, setFilters, setFiltersOpen]);
 
   // --- Search-state bar logic ---
   const hasActiveQuery = query.trim().length > 0;
@@ -1047,6 +1050,9 @@ function DrivePageInner() {
 
     const id = (selectedFolder ?? "").trim();
     if (!id || id === "all") {
+      // Avoid dispatching the same clear event repeatedly
+      if (lastDriveFolderContextSentRef.current === "") return;
+      lastDriveFolderContextSentRef.current = "";
       try {
         window.dispatchEvent(
           new CustomEvent<DriveFolderContextDetail>("CBX_DRIVE_FOLDER_CONTEXT", {
@@ -1059,18 +1065,51 @@ function DrivePageInner() {
       return;
     }
 
-    const name = (isPurchasesView ? "Purchases" : (isRealFolderView ? folderName : "")) || folderIndex.get(id)?.name || id;
+    const name =
+      (isPurchasesView
+        ? "Purchases"
+        : isFavoritesView
+          ? "Favorites"
+          : isTrashView
+            ? "Trash"
+            : isRealFolderView
+              ? folderName
+              : "") ||
+      folderIndex.get(id)?.name ||
+      id;
+    const resolvedName = String(name || id);
+    const dedupeKey = `${id}|${resolvedName}`;
+    if (lastDriveFolderContextSentRef.current === dedupeKey) return;
+    lastDriveFolderContextSentRef.current = dedupeKey;
 
     try {
       window.dispatchEvent(
         new CustomEvent<DriveFolderContextDetail>("CBX_DRIVE_FOLDER_CONTEXT", {
-          detail: { id, name: String(name || id) },
+          detail: { id, name: resolvedName, pathLabel: fullBreadcrumbLabel },
         })
       );
     } catch {
       // ignore
     }
-  }, [mounted, selectedFolder, isRealFolderView, isPurchasesView, folderName, folderIndex]);
+  }, [mounted, selectedFolder, isRealFolderView, isPurchasesView, isFavoritesView, isTrashView, folderName, folderIndex, fullBreadcrumbLabel]);
+
+  // Clear folder context when leaving Drive (unmount only) to avoid stale scope elsewhere
+  useEffect(() => {
+    return () => {
+      try {
+        if (lastDriveFolderContextSentRef.current !== "") {
+          lastDriveFolderContextSentRef.current = "";
+          window.dispatchEvent(
+            new CustomEvent<DriveFolderContextDetail>("CBX_DRIVE_FOLDER_CONTEXT", {
+              detail: { id: "", name: "" },
+            })
+          );
+        }
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
 
 
   const {

@@ -237,7 +237,10 @@ export function Topbar({
     ""
   ).trim();
 
-  const driveFolderId = (pathname ?? "").startsWith("/drive") ? (sp.get("folder") ?? "").trim() : "";
+  const [driveFolderContextName, setDriveFolderContextName] = React.useState<string>("");
+  const [driveFolderContextId, setDriveFolderContextId] = React.useState<string>("");
+  const urlFolderId = (sp.get("folder") ?? "").trim();
+  const driveFolderId = (driveFolderContextId || ((pathname ?? "").startsWith("/drive") ? urlFolderId : "")).trim();
   const folderContextLabel = driveFolderId && driveFolderId !== "all" ? driveFolderId : "";
 
   const folderContextLabelPretty = React.useMemo(() => {
@@ -262,26 +265,68 @@ export function Topbar({
   const { count: liveCartCount } = useCart();
 
   const [mounted, setMounted] = React.useState(false);
-  const [driveFolderContextName, setDriveFolderContextName] = React.useState<string>("");
   React.useEffect(() => setMounted(true), []);
 
+  React.useEffect(() => {
+    if (!mounted) return;
+    // Hydrate last selected folder so the context chip works across the app (not only on /drive)
+    if ((driveFolderContextId ?? "").trim()) return;
+
+    try {
+      const raw = (window.localStorage.getItem("CBX_SELECTED_FOLDER_V1") ?? "").trim();
+      if (raw && raw !== "all") setDriveFolderContextId(raw);
+    } catch {
+      // ignore
+    }
+  }, [mounted, driveFolderContextId]);
+
   const driveContextLabel = React.useMemo(() => {
-    const label = (driveFolderContextName || folderContextLabelPretty || folderContextLabel).trim();
+    const label = (driveFolderContextName || folderContextLabelPretty || folderContextLabel || driveFolderContextId).trim();
     return label.length ? label : undefined;
-  }, [driveFolderContextName, folderContextLabelPretty, folderContextLabel]);
+  }, [driveFolderContextName, folderContextLabelPretty, folderContextLabel, driveFolderContextId]);
+
+  const hasDriveFolderContext = React.useMemo(() => {
+    const id = (driveFolderId ?? "").trim();
+    const hasId = Boolean(id) && id !== "all";
+    const hasName = Boolean((driveFolderContextName ?? "").trim());
+    const hasLabel = Boolean((driveContextLabel ?? "").trim());
+    return hasLabel && (hasId || hasName);
+  }, [driveFolderId, driveFolderContextName, driveContextLabel]);
 
   React.useEffect(() => {
     if (!mounted) return;
 
     const onCtx = (e: Event) => {
       const ce = e as CustomEvent<{ id: string; name: string }>;
+      const nextId = (ce.detail?.id ?? "").trim();
       const nextName = (ce.detail?.name ?? "").trim();
+      setDriveFolderContextId(nextId);
       setDriveFolderContextName(nextName);
     };
 
     window.addEventListener("CBX_DRIVE_FOLDER_CONTEXT", onCtx as EventListener);
     return () => window.removeEventListener("CBX_DRIVE_FOLDER_CONTEXT", onCtx as EventListener);
   }, [mounted]);
+
+  React.useEffect(() => {
+    if (!mounted) return;
+    if (!(pathname ?? "").startsWith("/drive")) return;
+
+    const next = (urlFolderId ?? "").trim();
+
+    // If Drive URL explicitly sets folder, prefer it
+    if (next && next !== "all") {
+      if (driveFolderContextId !== next) setDriveFolderContextId(next);
+      return;
+    }
+
+    // If Drive URL clears folder, also clear the id
+    if (!next || next === "all") {
+      if (driveFolderContextId === urlFolderId) {
+        setDriveFolderContextId("");
+      }
+    }
+  }, [mounted, pathname, urlFolderId, driveFolderContextId]);
 
   const { me, setMe, refreshMe } = useDemoMe(mounted);
 
@@ -453,6 +498,7 @@ export function Topbar({
   const resolvedSearchPlaceholder = searchPlaceholder;
 
   const clearFolderContext = React.useCallback(() => {
+    if (typeof window === "undefined") return;
     // Clearing folder context should be sticky even when query is empty.
     // Drive restores last selected folder from localStorage when there is no `q` and no `folder`.
     // So we also reset the stored folder to "all".
@@ -465,6 +511,7 @@ export function Topbar({
 
       // Clear chip immediately (in case Drive event arrives later)
       setDriveFolderContextName("");
+      setDriveFolderContextId("");
 
       const params = new URLSearchParams(searchParamsString);
       params.delete("folder");
@@ -484,7 +531,10 @@ export function Topbar({
       params.delete("search");
 
       const next = params.toString();
-      router.replace(`/drive${next ? `?${next}` : ""}`);
+      const inDrive = (pathname ?? "").startsWith("/drive");
+      if (inDrive) {
+        router.replace(`/drive${next ? `?${next}` : ""}`);
+      }
 
       // Notify listeners that folder context is cleared
       try {
@@ -497,7 +547,7 @@ export function Topbar({
     } catch {
       // ignore
     }
-  }, [router, searchParamsString]);
+  }, [router, searchParamsString, pathname]);
 
   const submitSearch = React.useCallback(() => {
     const q = (onSearchChange ? (searchValue ?? "") : internalQuery).trim();
@@ -609,7 +659,7 @@ export function Topbar({
           onChange={onSearchChange ?? setInternalQuery}
           {...(resolvedSearchPlaceholder ? { placeholder: resolvedSearchPlaceholder } : {})}
           contextLabel={driveContextLabel}
-          onClearContext={driveFolderId && driveFolderId !== "all" && driveContextLabel ? clearFolderContext : undefined}
+          onClearContext={hasDriveFolderContext ? clearFolderContext : undefined}
           scope={loggedIn ? searchScope : undefined}
           scopes={
             loggedIn

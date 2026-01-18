@@ -172,4 +172,24 @@
 .cbx-fade-in {
   animation: cbx-fade-in-up 500ms ease-out both;
 }
+
+/* Respect reduced-motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .cbx-fade-in {
+    animation: none !important;
+  }
+}
 /* stylelint-enable at-rule-no-unknown */

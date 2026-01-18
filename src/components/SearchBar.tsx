@@ -86,6 +86,7 @@ export function SearchBar({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const isDrivePage = React.useMemo(() => pathname?.startsWith("/drive"), [pathname]);
 
   const isStockSearchPage = pathname?.startsWith("/stock/search");
   const urlQ = (searchParams?.get("q") ?? "").trim();
@@ -252,8 +253,13 @@ export function SearchBar({
       return;
     }
 
-    // Fallback: clear folder context by removing folder-related params in Drive URLs
-    if (scope !== "drive") return;
+    // If scope selector is enabled, context is only relevant for Drive scope.
+    // If selector is NOT enabled, allow clearing on Drive pages when a context label is shown.
+    if (onScopeChange) {
+      if (scope !== "drive") return;
+    } else {
+      if (!isDrivePage) return;
+    }
     if (typeof window === "undefined") return;
 
     const params = new URLSearchParams(searchParams?.toString() ?? "");
@@ -273,7 +279,7 @@ export function SearchBar({
 
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);
-  }, [onClearContext, scope, searchParams, router, pathname]);
+  }, [onClearContext, onScopeChange, scope, isDrivePage, searchParams, router, pathname]);
 
   const setScope = React.useCallback(
     (next: string) => {
@@ -654,7 +660,8 @@ export function SearchBar({
                 onKeyDown={(e) => {
                   if (e.key === "Backspace") {
                     // If user is in Drive and the query is empty, backspace clears the folder context
-                    if (scope === "drive" && !value && contextLabel) {
+                    const inDrive = onScopeChange ? scope === "drive" : isDrivePage;
+                    if (inDrive && !value && contextLabel) {
                       e.preventDefault();
                       clearContext();
                       return;
