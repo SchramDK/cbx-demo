@@ -810,9 +810,9 @@ function DrivePageInner() {
       });
 
       // Take user straight to Purchases after import
-      setSelectedFolder("purchases");
+      navigateToFolder("purchases");
     },
-    [setSelectedFolder]
+    [navigateToFolder]
   );
 
   useEffect(() => {

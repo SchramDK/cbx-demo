@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useProtoAuth } from '@/lib/proto-auth';
@@ -197,7 +197,7 @@ function shuffleWithSeed<T>(arr: T[], seed: number): T[] {
   return a;
 }
 
-export default function HomePage() {
+function HomePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useProtoAuth();
@@ -1592,5 +1592,13 @@ export default function HomePage() {
         </div>
       </div>
     </AuthGate>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense fallback={null}>
+      <HomePageInner />
+    </Suspense>
   );
 }
